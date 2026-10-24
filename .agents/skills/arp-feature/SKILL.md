@@ -9,7 +9,7 @@ description: "Azure Retirement Plannerの機能追加・不具合修正を、要
 
 対象の要求・不具合、期待する挙動、関連Requirement IDを確認する。IDがなければ既存仕様へ対応付け、新要件なら理由付きで追加する。既に説明された条件を聞き直さない。
 
-最初に[AGENTS.md](../../../AGENTS.md)と[開発・運用基準](../../../docs/engineering.md)、関係する設計だけを読む。git status、実ファイル、manifest、既存テストを確認し、未実装と既存機能を分ける。現在は設計・Skillsのみであるため、コードが必要ならタスク範囲内で必要最小限を作る。
+最初に[AGENTS.md](../../../AGENTS.md)と[開発・運用基準](../../../docs/engineering.md)、関係する設計だけを読む。git status、実ファイル、manifest、既存テストを確認し、未実装と既存機能を分ける。現在の実装・未検証・残作業は[実装バックログ](../../../docs/implementation-backlog.md)を確認する。
 
 ## 実装方針
 
