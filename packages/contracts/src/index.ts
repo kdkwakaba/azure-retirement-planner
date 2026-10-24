@@ -1,0 +1,267 @@
+import { z } from 'zod'
+
+export const impactSchema = z.enum(['Low', 'Medium', 'High', 'Critical'])
+export const prioritySchema = z.enum(['P1', 'P2', 'P3', 'P4'])
+export const lifecycleKindSchema = z.enum([
+  'Deprecation',
+  'NewCreationBlocked',
+  'SupportEnded',
+  'Retirement',
+  'Unknown',
+])
+export const resourceClassSchema = z.enum([
+  'Confirmed',
+  'Probable',
+  'Possible',
+  'Verification Required',
+  'Not Impacted',
+  'Unknown',
+])
+export const categorySchema = z.enum([
+  'Impact Verification',
+  'Owner Confirmation',
+  'Migration Assessment',
+  'Architecture Design',
+  'Proof of Concept',
+  'Application Change',
+  'Infrastructure Change',
+  'Network Change',
+  'Security Review',
+  'Test',
+  'Change Management',
+  'Production Migration',
+  'Validation',
+  'Rollback Preparation',
+  'Legacy Resource Removal',
+  'Documentation Update',
+  'CMDB Update',
+  'Policy and IaC Update',
+])
+export const dateSchema = z.iso.date()
+export const evidenceSchema = z
+  .object({
+    id: z.string().min(1),
+    sourceType: z.enum(['Microsoft', 'Azure', 'Internal', 'Rule', 'Human']),
+    sourceVersion: z.string().min(1),
+    observedAt: z.iso.datetime(),
+    subjectIds: z.array(z.string()),
+    fact: z.string().min(1),
+    officialUrl: z.url().nullable(),
+  })
+  .strict()
+export const milestoneSchema = z
+  .object({
+    id: z.string().min(1),
+    kind: lifecycleKindSchema,
+    date: dateSchema.nullable(),
+    rawDateText: z.string().nullable(),
+    scope: z.string(),
+    evidenceIds: z.array(z.string()).min(1),
+  })
+  .strict()
+export const eventSchema = z
+  .object({
+    schemaVersion: z.literal('1'),
+    id: z.string(),
+    versionId: z.string(),
+    tenantId: z.uuid(),
+    trackingId: z.string().min(1),
+    source: z.literal('ServiceHealth'),
+    title: z.string().min(1),
+    body: z.string(),
+    sourceUpdatedAt: z.iso.datetime(),
+    contentHash: z.string(),
+    classification: z.enum(['InScope', 'OutOfScope', 'ReviewRequired']),
+    kinds: z.array(lifecycleKindSchema),
+    milestones: z.array(milestoneSchema),
+    evidence: z.array(evidenceSchema),
+    rawMetadata: z.record(z.string(), z.unknown()),
+  })
+  .strict()
+export const resourceSchema = z
+  .object({
+    id: z.string().regex(/^\/subscriptions\//i),
+    workloadId: z.string().nullable(),
+    type: z.string(),
+    sku: z.string().nullable(),
+    region: z.string(),
+    environment: z.string().nullable(),
+    ownerTeam: z.string().nullable(),
+    classification: resourceClassSchema,
+    verificationRequired: z.boolean(),
+    evidenceIds: z.array(z.string()),
+    properties: z.record(z.string(), z.unknown()),
+  })
+  .strict()
+export const decisionSchema = z
+  .object({
+    impactIfUnaddressed: impactSchema.nullable(),
+    impactDuringAndAfterChange: impactSchema.nullable(),
+    priority: prioritySchema.nullable(),
+    startWindow: z
+      .enum([
+        'Immediate',
+        'Within 30 days',
+        'Within 90 days',
+        'Within 180 days',
+        'Later',
+        'No action',
+      ])
+      .nullable(),
+    complexity: z.enum(['Low', 'Medium', 'High']).nullable(),
+    projectRequired: z.boolean().nullable(),
+    ownerTeam: z.string().nullable(),
+    probabilities: z.record(
+      z.string(),
+      z.record(z.string(), z.number().min(0).max(1)),
+    ),
+    status: z.enum(['Proposed', 'Unavailable', 'Abstained']),
+    model: z.string(),
+    modelVersion: z.string(),
+    promptVersion: z.string(),
+    ruleVersion: z.string(),
+  })
+  .strict()
+export const confidenceSchema = z
+  .object({
+    kind: z.enum(['EvidenceSupport', 'ModelProbability', 'Human']),
+    value: z.number().min(0).max(1).nullable(),
+    method: z.string(),
+    limitations: z.array(z.string()),
+  })
+  .strict()
+export const workItemSchema = z
+  .object({
+    id: z.string(),
+    category: categorySchema,
+    title: z.string().min(1),
+    description: z.string().min(1),
+    workloadId: z.string(),
+    resourceIds: z.array(z.string()),
+    ownerTeam: z.string().nullable(),
+    necessity: z.enum(['Required', 'Recommended']),
+    priority: prioritySchema.nullable(),
+    plannedStartDate: dateSchema.nullable(),
+    dueDate: dateSchema.nullable(),
+    applicableMilestoneIds: z.array(z.string()),
+    prerequisites: z.array(z.string()),
+    completionCriteria: z.array(z.string()).min(1),
+    humanApprovalRequired: z.literal(true),
+    evidenceIds: z.array(z.string()).min(1),
+    sourceType: z.enum(['Official', 'Internal', 'AIProposal', 'Mixed']),
+    officialReferenceIds: z.array(z.string()),
+    dependencyIds: z.array(z.string()),
+    status: z.enum([
+      'Draft',
+      'Approved',
+      'Exported',
+      'In Progress',
+      'Completed',
+      'Cancelled',
+    ]),
+    confidence: confidenceSchema,
+  })
+  .strict()
+export const claimSchema = z
+  .object({
+    id: z.string(),
+    text: z.string(),
+    kind: z.enum([
+      'Confirmed Fact',
+      'Derived Fact',
+      'Model Decision',
+      'Assumption',
+      'Unknown',
+      'Recommendation',
+    ]),
+    evidenceIds: z.array(z.string()),
+    decisionRefs: z.array(z.string()),
+  })
+  .strict()
+export const explanationSchema = z
+  .object({
+    impact: z.array(claimSchema),
+    increasingFactors: z.array(claimSchema),
+    reducingFactors: z.array(claimSchema),
+    startRationale: z.array(claimSchema),
+    missingInformation: z.array(claimSchema),
+    changeConditions: z.array(claimSchema),
+    microsoftFacts: z.array(claimSchema),
+    internalFacts: z.array(claimSchema),
+    judgments: z.array(claimSchema),
+    humanChecks: z.array(claimSchema),
+  })
+  .strict()
+export const correctionSchema = z
+  .object({
+    impactIfUnaddressed: impactSchema.nullable(),
+    impactDuringAndAfterChange: impactSchema.nullable(),
+    criticalWorkload: z.boolean(),
+    alternativeApproved: z.boolean(),
+    remainingCalendarDays: z.number().int().nonnegative().nullable(),
+    retirementDate: dateSchema.nullable(),
+    supportEndDate: dateSchema.nullable(),
+    creationStopDate: dateSchema.nullable(),
+    deprecationDate: dateSchema.nullable(),
+    applicableKind: lifecycleKindSchema.nullable(),
+    reason: z.string().min(1).max(2000),
+    workItemUpdates: z.array(
+      z
+        .object({
+          id: z.string(),
+          ownerTeam: z.string().nullable(),
+          plannedStartDate: dateSchema.nullable(),
+          dueDate: dateSchema.nullable(),
+        })
+        .strict(),
+    ),
+  })
+  .strict()
+export const assessmentSchema = z
+  .object({
+    id: z.string(),
+    sourceInputHash: z.string().optional(),
+    eventVersionId: z.string(),
+    workloadId: z.string(),
+    createdAt: z.iso.datetime(),
+    asOf: dateSchema,
+    event: eventSchema,
+    resources: z.array(resourceSchema),
+    scopeComplete: z.boolean(),
+    criticalWorkload: z.boolean(),
+    missingInformation: z.array(z.string()),
+    decision: decisionSchema,
+    humanContext: correctionSchema
+      .extend({ reviewerId: z.string(), reviewedAt: z.iso.datetime() })
+      .optional(),
+    effectivePriority: prioritySchema.nullable(),
+    reviewReasons: z.array(z.string()),
+    explanation: explanationSchema,
+    workItems: z.array(workItemSchema),
+    validationErrors: z.array(z.string()),
+    packageHash: z.string(),
+  })
+  .strict()
+export const approvalSchema = z
+  .object({
+    id: z.string(),
+    assessmentId: z.string(),
+    packageHash: z.string(),
+    approvedItemIds: z.array(z.string()),
+    reviewerId: z.string(),
+    reviewedAt: z.iso.datetime(),
+    reason: z.string().min(1),
+    result: z.enum(['Approved', 'Partial', 'Returned', 'Held']),
+  })
+  .strict()
+export type LifecycleEvent = z.infer<typeof eventSchema>
+export type ResourceImpact = z.infer<typeof resourceSchema>
+export type Evidence = z.infer<typeof evidenceSchema>
+export type Decision = z.infer<typeof decisionSchema>
+export type Explanation = z.infer<typeof explanationSchema>
+export type WorkItem = z.infer<typeof workItemSchema>
+export type Assessment = z.infer<typeof assessmentSchema>
+export type Approval = z.infer<typeof approvalSchema>
+export type Impact = z.infer<typeof impactSchema>
+export type Priority = z.infer<typeof prioritySchema>
+export type Correction = z.infer<typeof correctionSchema>
