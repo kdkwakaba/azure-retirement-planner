@@ -1,0 +1,4 @@
+interface:
+  display_name: "ARP 機能開発"
+  short_description: "要件と契約・承認境界を維持して機能追加と不具合修正を検証する"
+  default_prompt: "$arp-feature を使い、この変更を要件に対応付けて実装し、必要な検証と未確認事項を報告してください。"
