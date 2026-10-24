@@ -1,0 +1,4 @@
+interface:
+  display_name: "ARP セキュリティ保守"
+  short_description: "依存関係とランタイムの脆弱性・EOLを調査し安全な更新を検証する"
+  default_prompt: "$arp-security-maintenance を使い、対象依存の脆弱性とサポートを確認し、更新と検証結果を報告してください。"

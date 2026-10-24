@@ -1,0 +1,4 @@
+interface:
+  display_name: "ARP リリース"
+  short_description: "専用環境への手動リリースを対象・差分・権限・検証から管理する"
+  default_prompt: "$arp-release を使い、指定環境とCommitのリリース条件・差分・検証を確認し、許可範囲内で進めてください。"

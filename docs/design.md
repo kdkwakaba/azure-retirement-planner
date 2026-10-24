@@ -1,12 +1,12 @@
 # システム設計書
 
-版: 0.1 / 基準日: 2026-10-22 / 状態: 実装前の設計ベースライン
+版: 0.3 / 更新日: 2026-10-24 / 状態: 設計・開発用指示整備、アプリ実装前
 
-会話で採用された方針をまとめる。数値閾値はPoC用であり、企業一般の標準や実測値ではない。詳細な基準は[判断・承認基準](decision-policy.md)、検証条件は[Spike・テスト計画](spike-and-testing.md)を参照する。
+会話で採用された方針をまとめる。数値閾値はPoC用であり、企業一般の標準や実測値ではない。詳細な基準は[判断・承認基準](decision-policy.md)、検証条件は[Spike・テスト計画](spike-and-testing.md)、最新の開発・CI/CD・認証・撤去方針は[開発・運用基準](engineering.md)を参照する。
 
 ## 1. Executive Summary
 
-Azureリタイアメントを検知し、公式の対象情報と自社の実構成・業務情報を関連付け、影響度・優先度・開始時期・必要作業を提示する。人間が評価・方針・作業を承認し、選択した作業だけをGitHubへ登録する。
+Azureの非推奨化・新規作成停止・サポート終了・リタイアメントを検知し、公式の対象情報と自社の実構成・業務情報を関連付け、影響度・優先度・開始時期・必要作業を提示する。人間が評価・方針・作業を承認し、選択した作業だけをGitHubへ登録する。
 
 Microsoft-Decision-1を第一選択とする。生成LLMは説明と作業案を作るが、事実、期限、Resource ID、承認を確定しない。
 
@@ -25,7 +25,7 @@ Microsoft-Decision-1を第一選択とする。生成LLMは説明と作業案を
 ## 4. Non-Goals
 
 - OOS-001: インシデント対応・原因調査・復旧。
-- OOS-002: 本番変更、移行、削除の自動実行。
+- OOS-002: 評価対象リソースの変更、移行、削除。本システム専用環境の承認済み手動CDは対象内。
 - OOS-003: Microsoftの標準影響判定、Azure Policy、CMDBそのものの再実装。
 - OOS-004: PoCでのデータプレーン、ゲストOS、SDK、コード、接続文字列の探索。
 - OOS-005: 人間承認なしの最終確定、全Azureの網羅性保証。
@@ -35,6 +35,23 @@ Microsoft-Decision-1を第一選択とする。生成LLMは説明と作業案を
 同一Entraテナント、Azure Public Cloud、1 MG、最大5 Subscription、最大3サービス。既存Subscriptionの専用Resource Groupに評価システムを配置する。評価対象への読取権限は配置先権限と分離する。
 
 3事例はBasic Load Balancer、Storage GPv1、Application Insights URL ping tests。過去・保存・合成データによる再現と現環境への接続試験を分ける。旧サービスの新規作成や新規環境へのRetirement通知発生を前提としない。
+
+### 対象となるライフサイクル変更
+
+**非推奨（Deprecation）となる機能・サービスもPoCから評価対象に含む。** Service HealthのHealth Advisoryを受け、Retirementサブタイプの有無だけで捨てず、通知メタデータ、公式本文・参照からライフサイクル変更への関連を選別する。無関係な一般案内は理由付き対象外、判別不能は分類レビューへ送る。障害・復旧・一般的なセキュリティ対応へスコープを拡張しない。
+
+非推奨化、作成制限、サポート終了、廃止は別の意味とし、同じ通知で複数の変更を表せる。非推奨通知が必ず独立の公式サブタイプで配信されるとは仮定しない。Activity LogとARGで異なる項目名・値はソース別に正規化し、原値を保持する。ActionRequired／Informationalという値だけで対象・対象外を確定しない。実際の配送フィルターとPayloadはSP-02／03で確認する。
+
+| 通知 | 挙動 |
+|---|---|
+| 非推奨＋明示された廃止期限 | 適用対象・期限・必要工程から通常評価 |
+| 非推奨のみ・廃止期限未発表 | 対象・代替・制約を評価。廃止日はnull。要確認の対応は原則暫定P2＋人間レビュー |
+| 新規作成停止 | 既存利用停止とみなさず、増設・再構築・DRへの影響を確認 |
+| サポート終了 | 機能停止と分け、サポート・契約・運用上の影響を確認 |
+| 関連性・意味不明 | 分類保留と人間確認。移行必須やNo actionを自動確定しない |
+| 無関係な一般案内 | 対象外理由を記録し、移行作業や暫定P2を一律生成しない |
+
+Advisorがない非推奨も評価する。Retirement向けのTracking ID関連付けがすべての非推奨へ使えるとは仮定せず、Service Health明示対象、承認済みARG条件、人間確認を利用する。制御プレーンだけで確認できない利用実態は既存のVerification Requiredとして扱い、PoCのデータプレーン除外を維持する。
 
 将来はAzure Updates等の情報源、複数MG／テナント、CMDB、承認済み利用実態情報、ServiceNow等をアダプター追加で対応する。
 
@@ -64,13 +81,13 @@ Advisor Workbookと重複する公式情報のみの画面を中心にせず、�
 | A-03 | 存在・SKU・Region等の技術事実は実環境を正本とする |
 | A-04 | Owner、重要度、RTO/RPO、廃止予定は環境だけで断定せず人間管理 |
 | A-05 | 日次再照合＋手動評価。業務上の処理・承認期限SLAは未設定 |
-| A-06 | 営業時間運用。PoC終了後90日まで保存する |
+| A-06 | 営業時間運用。PoC終了時に関連リソース・実データ・資格情報を削除する |
 | A-07 | システム自体の暫定RTOは8営業時間、RPOは24時間 |
 | A-08 | A-07は通常障害の目標。地域全損保証ではなく、対象Workloadへ転用しない |
 
 ## 9. Open Questions
 
-管理対象ID、GitHub所有者ID・名称、利用リージョン・モデル提供条件、実Payload、評価ラベル、全社／Workload許容値、移行期間・予備期間、本番保持・DR・品質閾値は未確定。[合意・未決事項](decisions.md)で追跡する。Shadowから実登録・本番へ移る詳細ゲートも未確定である。
+管理対象ID、Project等のID、利用リージョン・モデル提供条件、実Payload、評価ラベル、全社／Workload許容値、移行期間・予備期間、本番保持・DR・品質閾値は未確定。[合意・未決事項](decisions.md)で追跡する。Shadowから実登録・本番へ移る詳細ゲートも未確定である。
 
 ## 10. Functional Requirements
 
@@ -78,7 +95,7 @@ Advisor Workbookと重複する公式情報のみの画面を中心にせず、�
 |---|---|
 | FR-001 | 通知原文を保存し、共通形式へ正規化する |
 | FR-002 | 新規・重複・更新・撤回・遅延旧版を区別する |
-| FR-003 | Tracking ID、公式期限、対象機能、公式参照の版を管理する |
+| FR-003 | Tracking ID、非推奨・作成停止・サポート終了・廃止の各公式日付、適用範囲、参照の版を管理する |
 | FR-004 | Service Health／Advisor明示対象と条件一致候補を取得する |
 | FR-005 | 6分類、独立した確認状態、取得完全性を保持する |
 | FR-006 | Workload集約、共有所属、業務属性の出典・矛盾を扱う |
@@ -89,6 +106,9 @@ Advisor Workbookと重複する公式情報のみの画面を中心にせず、�
 | FR-011 | 承認済み作業だけをGitHubへ冪等登録・更新する |
 | FR-012 | 構成・公式情報・業務情報・進捗変更を再評価する |
 | FR-013 | モデル停止時は事実・ルール結果と手動評価へ切り替える |
+| FR-014 | Health Advisoryから非推奨を含むライフサイクル変更を選別し、原分類・関連性・除外理由を保存する |
+| FR-015 | 期限未発表・複数期限・作成制限を区別し、適用可能な作業期限だけで計画余裕を算定する |
+| FR-016 | 非推奨から廃止期限発表への更新を再評価し、変更影響のある承認のみ失効させる |
 
 ## 11. Non-Functional Requirements
 
@@ -109,7 +129,10 @@ Advisor Workbookと重複する公式情報のみの画面を中心にせず、�
 | AUD-002 | 訂正・承認は理由・主体・時刻付き追記履歴にする |
 | OPS-001 | Retry、隔離、再実行、復旧、手動運用のRunbookを用意する |
 | OPS-002 | 原本と監査を通常ログのサンプリング対象にしない |
-| OPS-003 | 保持期限と外部複製を含む削除を管理する |
+| OPS-003 | PoC終了時の関連リソース・実データ・資格情報の削除を台帳で管理する |
+| SEC-009 | EOL・サポート終了済みランタイム・依存を新規採用・リリースしない |
+| SEC-010 | 全依存の既知脆弱性検査を必須とし、不適合・検査不能でリリースしない |
+| OPS-005 | 継続監査、EOL確認、更新と既存環境の暫定対策を管理する |
 
 ## 12. Proposed Architecture
 
@@ -153,7 +176,7 @@ flowchart LR
   G --> W
 ```
 
-Functions Flex Consumption（Always Readyなし）、評価用と出力用の2 Function Apps、ホスト用と業務用のStorage、Foundry、Key Vault、Application Insights／Log Analyticsを基本候補とする。実際の対応リージョン・認証・課金はSpikeで確認する。
+Functions Flex Consumption（Always Readyなし）、評価用と出力用の2 Function Apps、ホスト用と業務用のStorage、Foundry、Key Vault、Application Insights／Log Analyticsを基本候補とする。React画面もAzureへ配置し、Entra認証とAPI認可を必須とする。配信サービスと対応リージョン・認証・課金はSpikeで確認する。TypeScriptモノレポ、Bicep、GitHub Actions CI＋手動CDを採用し、詳細はengineering.mdを正本とする。
 
 複数テナント化はテナント別Collector・Identityを追加し、中央に全権限を集中させない。PoCではtenantIdとScope契約の確保まで。
 
@@ -185,7 +208,7 @@ Functions Flex Consumption（Always Readyなし）、評価用と出力用の2 F
 ```mermaid
 flowchart TD
   A[認証済み通知] --> B[原本・Receipt保存]
-  B --> C[正規化・重複・新版判定]
+  B --> C[正規化・関連性選別・重複・新版判定]
   C --> D[Scopeと公式対象・構成取得]
   D --> E[候補分類・業務情報・Workload集約]
   E --> F[特徴量計算・Decision-1]
@@ -215,12 +238,12 @@ flowchart TD
 
 全体共通にtenantId、schemaVersion、createdAt、classification、出典と観測日時を持つ。論理モデルはIDで正規化し、不変JSONをBlob、状態・索引・OutboxをTableに保存。大きな本文はTableへ詰め込まない。
 
-H1＝PoC中＋終了後90日、H2＝現行状態とH1までの履歴。分類は原則機密。公開公式文書は公開分類、Subscription固有通知は社内分類以上とする。
+H1＝PoC実施中に保持し終了時に削除、H2＝現行状態と終了時までの履歴。旧90日保持方針は撤回。GitHub・CI等の外部複製も対象とし、サービス側の削除待ち等は残存として報告する。コード・設計・非実データの試験資材はGitへ残す。分類は原則機密。公開公式文書は公開分類、Subscription固有通知は社内分類以上とする。
 
 | Entity／目的 | 主キー・主要属性・関係 | 更新契機 | 保持・情報源 |
 |---|---|---|---|
-| RetirementEvent／論理発表 | eventId、sourceKey、currentVersionId | 新規・状態変更 | H2／通知 |
-| RetirementEventVersion／履歴 | eventVersionId、eventId、feature、deadline、Hash、refs | 本文更新 | H1／公式 |
+| RetirementEvent／非推奨等も含む論理発表 | eventId、sourceKey、currentVersionId | 新規・状態変更 | H2／通知 |
+| RetirementEventVersion／履歴 | eventVersionId、eventId、feature、lifecycleKinds、classificationStatus、milestones、Hash、refs | 本文更新 | H1／公式 |
 | OfficialReference／公式版 | referenceVersionId、URL、Hash、原本、取得時刻 | 取得・更新 | H1／Microsoft |
 | ResourceImpact／対象評価 | impactId、runId、snapshotId、分類、確認状態、根拠 | 評価 | H1／公式・探索 |
 | Workload／業務単位 | workloadId、名称、状態、contextVersionId | 確認・更新 | H2／管理者・台帳 |
@@ -247,13 +270,20 @@ Draft 2020-12を基本とする。ここでは実装コードでなく型契約�
 
 | 型 | 必須属性 |
 |---|---|
-| EventVersion | eventId:ref、source:string、feature:string、retirementDate:dateまたはnull、datePrecision:enum、deadlineStatus:enum、referenceIds:ref[]、contentHash:string |
+| EventVersion | eventId:ref、source:string、sourceMetadata:object、feature:string、lifecycleKinds:enum[]、classificationStatus:enum、milestones:LifecycleMilestone[]、retirementDate:dateまたはnull、datePrecision:enum、deadlineStatus:enum、referenceIds:ref[]、contentHash:string |
+| LifecycleMilestone | milestoneId:string、kind:enum、date:dateまたはnull、rawDateText:stringまたはnull、datePrecision:enum、scope:string、evidenceIds:ref[] |
 | ResourceImpact | runId:ref、snapshotId:ref、impactClass:6分類enum、verificationStatus:enum、evidenceIds:ref[]、discoveryMethod:string、confidence:Confidence |
 | DecisionAnswer | questionId:string、selectedOption:stringまたはnull、optionProbabilities:object、abstained:boolean |
 | DecisionResult | inputId:ref、decisionStatus:enum、answers:DecisionAnswer[]、effectiveResult:object、ruleOverrides:array、versionManifest:object |
 | Claim | claimId:string、text:string、claimType:enum、evidenceIds:ref[]、decisionRefs:ref[]、validationStatus:enum |
 | Confidence | kind:enum、value:numberまたはnull、method:string、evidenceIds:ref[]、limitations:string[] |
 | HumanReview | packageId:ref、packageHash:string、reviewerId:string、result:enum、reason:string、reviewedAt:date-time |
+
+既存のRetirementEventという名称は非推奨等も含む共通ライフサイクルイベントの論理名として維持する。現状はSchema案のみで、既存データ移行はない。lifecycleKindsとmilestone.kindの内部候補はDeprecation／NewCreationBlocked／SupportEnded／Retirement／Unknown。これは本システムの分類であり、Microsoft公式APIのenumを新設・仮定するものではない。classificationStatusはInScope／OutOfScope／ReviewRequired。sourceMetadataには受信した種別・サブタイプ・タグ・incidentType等の原値を保持する。
+
+非推奨開始日、新規作成停止日、サポート終了日、廃止日を個別に保持し、対象SKU・Region・利用条件とEvidenceを結び付ける。月単位の公式日付はrawDateTextと精度を保存し、架空の日を補わない。retirementDateは公式廃止日が日単位で確認できるときだけ設定する。
+
+DecisionInputとWorkItemはapplicableMilestoneIdsとapplicableDeadline（dateまたはnull）、deadlineBasis（公式期限／社内計画／未定）を持ち、どの期限が当該作業に適用されるかを追跡する。非推奨開始日は過去というだけで期限超過扱いしない。通知の一般的なImpactMitigationTimeを一律に廃止日へ変換しない。複数日付から無条件に最小日を取らず、影響シナリオと必要工程を確認する。
 
 共通はadditionalPropertiesを原則禁止し、拡張領域のみ許可。日時UTC、業務日程は業務Timezone、欠損nullと空集合を区別。確率は0〜1、合計と選択肢整合は意味検証。影響度は4値、判断不能は別状態。参照実在、日付比較、DAGはSchema外で検証する。モデル送信用は対応サブセットへ変換する。
 
@@ -298,9 +328,9 @@ Deterministicは構成・件数・日数・所属等、Human-maintainedは重要
 
 ## 20. Validation and Guardrails
 
-VAL-001: Resource IDは当該RunのARG／ARM／公式明示対象Snapshotに存在。VAL-002: Workload所属実在。VAL-003: 期限・適用範囲が公式版と整合。VAL-004: 後継と作業の引用支持。VAL-005: Planned Start ≤ Due < Retirement。VAL-006: DAG・前提日程整合。VAL-007: Criticalと不確実性は強制レビュー。VAL-008: Unknown等の自動クローズ禁止。VAL-009: 最新版・承認Hash照合。VAL-010: 取得欠落を影響なしにしない。
+VAL-001: Resource IDは当該RunのARG／ARM／公式明示対象Snapshotに存在。VAL-002: Workload所属実在。VAL-003: 期限・適用範囲が公式版と整合。VAL-004: 後継と作業の引用支持。VAL-005: Planned Start ≤ Dueを検証し、適用可能な明示期限がある作業ではDue < applicableDeadline。廃止日だけに一律比較しない。VAL-006: DAG・前提日程整合。VAL-007: Criticalと不確実性は強制レビュー。VAL-008: Unknown等の自動クローズ禁止。VAL-009: 最新版・承認Hash照合。VAL-010: 取得欠落を影響なしにしない。
 
-期限不明はnull、超過・完了不能は例外として是正方針を人間判断。過去日を捏造して制約を通さない。構文修正再生成は1回までとし、事実不適合は黙って修正しない。
+期限未発表はnullを維持し、調査・方針確認は人間承認の日程を設定可能とするが、公式廃止日前の完了検証済みとは表示しない。超過・完了不能は適用期限のある場合の例外として是正方針を人間判断。過去日を捏造して制約を通さない。構文修正再生成は1回までとし、事実不適合は黙って修正しない。
 
 ```mermaid
 flowchart TD
@@ -419,7 +449,7 @@ S=1〜2人日、M=3〜5、L=6〜10。依存完了後の並行可否。合計は�
 | T-17 Security | 脅威試験・強化 | T-12〜14 | 越権・SSRF等阻止 | 見逃し | M／Security／Yes |
 | T-18 Evaluation | 品質・障害・負荷 | T-02,10〜17 | 指標・未評価報告 | 正解不足 | L／QA・SME／Yes |
 | T-19 Readiness | Shadow・復旧・判定 | T-18 | 合否・残課題 | 早期本番化 | M／Architect・SRE／No |
-| D-01 Demo | 保存結果と3分画面 | T-12,13 | 再生・リセット | 時間超過 | M／Full Stack／Yes |
+| D-01 Demo | 実データとAzure上の3分ライブ画面 | T-12,13 | Entra認証・ライブ処理・状態確認 | 時間超過・実対象不足 | M／Full Stack／Yes |
 | D-02 Demo | 台本・動画・公開確認 | D-01 | 3回リハーサル | 情報露出 | S／登壇者／Yes |
 
 ## 27. Risks and Mitigations
@@ -449,16 +479,18 @@ sequenceDiagram
 
 ## 29. Acceptance Criteria
 
-AC-001: 100回再送でも版・作業・Issueが増殖しない。AC-002: 通知から根拠・対象へ追跡可能。AC-003: 空結果を対象外にしない。AC-004: 取得欠落を明示。AC-005: 2軸判断・確率・ルール理由保存。AC-006: 主張・作業に根拠。AC-007: 架空ID・不正日付・DAG・無承認の外部通過0。AC-008: 訂正・部分承認・失効。AC-009: 外部成否不明を隔離。AC-010: Unknownと外部Closeだけで自動完了しない。AC-011: モデル停止時に手動評価。AC-012: Azure変更権限なし。AC-013: 復旧・再実行試験。AC-014: 品質・費用・未評価を報告。
+AC-001: 100回再送でも版・作業・Issueが増殖しない。AC-002: 通知から根拠・対象へ追跡可能。AC-003: 空結果を対象外にしない。AC-004: 取得欠落を明示。AC-005: 2軸判断・確率・ルール理由保存。AC-006: 主張・作業に根拠。AC-007: 架空ID・不正日付・DAG・無承認の外部通過0。AC-008: 訂正・部分承認・失効。AC-009: 外部成否不明を隔離。AC-010: Unknownと外部Closeだけで自動完了しない。AC-011: モデル停止時に手動評価。AC-012: Azure変更権限なし。AC-013: 復旧・再実行試験。AC-014: 品質・費用・未評価を報告。AC-015: 非Retirement分類の非推奨も選別し、未発表日付の補完・移行断定をしない。AC-016: 作成停止・サポート終了・廃止の適用範囲を分け、期限更新で再評価・再承認する。
 
 ## 30. Recommended Next Steps
 
-設計書をレビューし、未確定項目を確認する。Spike実行前に対象ID・資格情報・課金条件を確認する。実装・Azure作成は別途着手指示後に行う。Shadowから登録・本番へ移る段階ゲートを続けて決める。
+ルートAGENTS.mdと3 Skillsを整備。次はモノレポ・CI／IaC／手動CDの最小基盤を実装し、Spikeを実行する。Azure作成は対象ID・資格情報・課金条件と実行範囲を確認後に行う。Shadowから登録・本番へ移る段階ゲートは引き続き決める。
 
 ## 公式参照
 
 機能・期限は再確認が必要。サンプルの値を顧客環境の実測値と扱わない。
 
+- [Service Healthの種別・サブタイプ・タグ](https://learn.microsoft.com/en-us/azure/service-health/service-health-event-tags)
+- [Service Health通知のデータ項目](https://learn.microsoft.com/en-us/azure/service-health/service-health-event-properties)
 - [Service HealthとAdvisorの関連付け](https://learn.microsoft.com/en-us/azure/service-health/service-retirement-unified-impact-queries)
 - [Health Advisory影響対象・反映遅延](https://learn.microsoft.com/en-us/azure/service-health/impacted-resources-retirements)
 - [Advisor Workbook](https://learn.microsoft.com/en-us/azure/advisor/advisor-workbook-service-retirement)
