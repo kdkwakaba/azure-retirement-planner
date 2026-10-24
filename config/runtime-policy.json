@@ -1,0 +1,10 @@
+{
+  "nodeMajor": 24,
+  "minimumNode": "24.22.1",
+  "nodeEol": "2028-04-30",
+  "verifiedOn": "2026-10-24",
+  "sources": [
+    "https://github.com/nodejs/Release",
+    "https://learn.microsoft.com/en-us/azure/azure-functions/functions-reference-node"
+  ]
+}

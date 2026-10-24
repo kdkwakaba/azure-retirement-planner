@@ -1,0 +1,44 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run verify
+      - name: Validate Bicep without Azure credentials
+        run: |
+          az bicep build --file infra/main.bicep --stdout > /dev/null
+          az bicep build --file infra/ingestion.bicep --stdout > /dev/null
+          az bicep build --file infra/bootstrap/oidc.bicep --stdout > /dev/null
+          az bicep build --file infra/bootstrap/permissions.bicep --stdout > /dev/null
+      - name: Package tested artifacts
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          (cd .artifacts/api && zip -qr ../api.zip .)
+          (cd .artifacts/exporter && zip -qr ../exporter.zip .)
+          sha256sum .artifacts/api.zip .artifacts/exporter.zip > .artifacts/SHA256SUMS
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2 / node24
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          name: release-${{ github.sha }}
+          path: |
+            .artifacts/api.zip
+            .artifacts/exporter.zip
+            .artifacts/SHA256SUMS
+          retention-days: 7
+          if-no-files-found: error

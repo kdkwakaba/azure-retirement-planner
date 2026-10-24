@@ -1,0 +1,112 @@
+name: Manual PoC deployment
+on:
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: Successful main CI run ID
+        required: true
+        type: string
+      phase:
+        description: Preview infrastructure or apply reviewed changes
+        type: choice
+        options: [plan, apply]
+        default: plan
+      infrastructure_only:
+        description: First deployment requires separate identity bootstrap before application deployment
+        type: boolean
+        default: true
+      expected_plan_hash:
+        description: SHA256 from the plan phase, required for apply
+        type: string
+        required: false
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+concurrency:
+  group: deploy-poc
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CI_RUN_ID: ${{ inputs.ci_run_id }}
+      PHASE: ${{ inputs.phase }}
+      EXPECTED_PLAN_HASH: ${{ inputs.expected_plan_hash }}
+      ARP_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARP_ENTRA_CLIENT_ID: ${{ vars.ENTRA_CLIENT_ID }}
+      ARP_TARGET_SUBSCRIPTION_IDS: ${{ vars.TARGET_SUBSCRIPTION_IDS }}
+      ARP_LOCATION: ${{ vars.AZURE_LOCATION }}
+      ARP_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Resolve successful main CI from this workflow version
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CI_RUN_ID" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID" > /tmp/ci-run.json
+          CI_WORKFLOW_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml" --jq .id)
+          jq -e --argjson workflow "$CI_WORKFLOW_ID" '.conclusion == "success" and .head_branch == "main" and .event == "push" and .workflow_id == $workflow and .head_repository.full_name == .repository.full_name' /tmp/ci-run.json
+          SOURCE_SHA=$(jq -r .head_sha /tmp/ci-run.json)
+          [[ "$SOURCE_SHA" == "$GITHUB_SHA" ]]
+          echo "sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version-file: .node-version
+      - run: npm ci --ignore-scripts
+      - run: npm run security
+      - run: npm run check:runtime
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2 / node24
+        with:
+          name: release-${{ steps.source.outputs.sha }}
+          run-id: ${{ inputs.ci_run_id }}
+          github-token: ${{ github.token }}
+          path: .artifacts
+      - run: sha256sum --check .artifacts/SHA256SUMS
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0 / node24
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Recompute infrastructure plan
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ARP_RESOURCE_GROUP"
+          az deployment group what-if --resource-group "$ARP_RESOURCE_GROUP" --parameters infra/environments/poc.bicepparam --result-format FullResourcePayloads --output json --no-pretty-print > /tmp/what-if.json
+          jq -S . /tmp/what-if.json > /tmp/what-if-canonical.json
+          PLAN_HASH=$(sha256sum /tmp/what-if-canonical.json | cut -d' ' -f1)
+          echo "Plan SHA256: $PLAN_HASH"
+          jq '[.changes[] | {resourceId, changeType}]' /tmp/what-if.json
+          if [[ "$PHASE" == "apply" ]]; then
+            [[ "$EXPECTED_PLAN_HASH" =~ ^[0-9a-f]{64}$ ]]
+            [[ "$EXPECTED_PLAN_HASH" == "$PLAN_HASH" ]]
+            jq -e '[.changes[] | select(.changeType == "Delete" or .changeType == "Unsupported" or .changeType == "Deploy")] | length == 0' /tmp/what-if.json
+          fi
+      - name: Apply reviewed infrastructure
+        if: inputs.phase == 'apply'
+        run: az deployment group create --resource-group "$ARP_RESOURCE_GROUP" --parameters infra/environments/poc.bicepparam --name arp-release --output json > /tmp/deployment.json
+      - name: Read target app names
+        if: inputs.phase == 'apply'
+        id: targets
+        run: |
+          echo "api=$(jq -r .properties.outputs.apiName.value /tmp/deployment.json)" >> "$GITHUB_OUTPUT"
+          echo "exporter=$(jq -r .properties.outputs.exporterName.value /tmp/deployment.json)" >> "$GITHUB_OUTPUT"
+      - uses: Azure/functions-action@c5060b3b8bb1ebbcb531abd00c822ecbaa8ea656 # v1.5.7 / node24
+        if: inputs.phase == 'apply' && !inputs.infrastructure_only
+        with:
+          app-name: ${{ steps.targets.outputs.api }}
+          package: .artifacts/api.zip
+          sku: flexconsumption
+      - uses: Azure/functions-action@c5060b3b8bb1ebbcb531abd00c822ecbaa8ea656
+        if: inputs.phase == 'apply' && !inputs.infrastructure_only
+        with:
+          app-name: ${{ steps.targets.outputs.exporter }}
+          package: .artifacts/exporter.zip
+          sku: flexconsumption
