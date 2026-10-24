@@ -1,8 +1,8 @@
 # システム設計書
 
-版: 0.1 / 基準日: 2026-10-22 / 状態: 実装前の設計ベースライン
+版: 0.2 / 更新日: 2026-10-24 / 状態: 設計・開発用指示整備、アプリ実装前
 
-会話で採用された方針をまとめる。数値閾値はPoC用であり、企業一般の標準や実測値ではない。詳細な基準は[判断・承認基準](decision-policy.md)、検証条件は[Spike・テスト計画](spike-and-testing.md)を参照する。
+会話で採用された方針をまとめる。数値閾値はPoC用であり、企業一般の標準や実測値ではない。詳細な基準は[判断・承認基準](decision-policy.md)、検証条件は[Spike・テスト計画](spike-and-testing.md)、最新の開発・CI/CD・認証・撤去方針は[開発・運用基準](engineering.md)を参照する。
 
 ## 1. Executive Summary
 
@@ -25,7 +25,7 @@ Microsoft-Decision-1を第一選択とする。生成LLMは説明と作業案を
 ## 4. Non-Goals
 
 - OOS-001: インシデント対応・原因調査・復旧。
-- OOS-002: 本番変更、移行、削除の自動実行。
+- OOS-002: 評価対象リソースの変更、移行、削除。本システム専用環境の承認済み手動CDは対象内。
 - OOS-003: Microsoftの標準影響判定、Azure Policy、CMDBそのものの再実装。
 - OOS-004: PoCでのデータプレーン、ゲストOS、SDK、コード、接続文字列の探索。
 - OOS-005: 人間承認なしの最終確定、全Azureの網羅性保証。
@@ -64,13 +64,13 @@ Advisor Workbookと重複する公式情報のみの画面を中心にせず、�
 | A-03 | 存在・SKU・Region等の技術事実は実環境を正本とする |
 | A-04 | Owner、重要度、RTO/RPO、廃止予定は環境だけで断定せず人間管理 |
 | A-05 | 日次再照合＋手動評価。業務上の処理・承認期限SLAは未設定 |
-| A-06 | 営業時間運用。PoC終了後90日まで保存する |
+| A-06 | 営業時間運用。PoC終了時に関連リソース・実データ・資格情報を削除する |
 | A-07 | システム自体の暫定RTOは8営業時間、RPOは24時間 |
 | A-08 | A-07は通常障害の目標。地域全損保証ではなく、対象Workloadへ転用しない |
 
 ## 9. Open Questions
 
-管理対象ID、GitHub所有者ID・名称、利用リージョン・モデル提供条件、実Payload、評価ラベル、全社／Workload許容値、移行期間・予備期間、本番保持・DR・品質閾値は未確定。[合意・未決事項](decisions.md)で追跡する。Shadowから実登録・本番へ移る詳細ゲートも未確定である。
+管理対象ID、Project等のID、利用リージョン・モデル提供条件、実Payload、評価ラベル、全社／Workload許容値、移行期間・予備期間、本番保持・DR・品質閾値は未確定。[合意・未決事項](decisions.md)で追跡する。Shadowから実登録・本番へ移る詳細ゲートも未確定である。
 
 ## 10. Functional Requirements
 
@@ -109,7 +109,10 @@ Advisor Workbookと重複する公式情報のみの画面を中心にせず、�
 | AUD-002 | 訂正・承認は理由・主体・時刻付き追記履歴にする |
 | OPS-001 | Retry、隔離、再実行、復旧、手動運用のRunbookを用意する |
 | OPS-002 | 原本と監査を通常ログのサンプリング対象にしない |
-| OPS-003 | 保持期限と外部複製を含む削除を管理する |
+| OPS-003 | PoC終了時の関連リソース・実データ・資格情報の削除を台帳で管理する |
+| SEC-009 | EOL・サポート終了済みランタイム・依存を新規採用・リリースしない |
+| SEC-010 | 全依存の既知脆弱性検査を必須とし、不適合・検査不能でリリースしない |
+| OPS-005 | 継続監査、EOL確認、更新と既存環境の暫定対策を管理する |
 
 ## 12. Proposed Architecture
 
@@ -153,7 +156,7 @@ flowchart LR
   G --> W
 ```
 
-Functions Flex Consumption（Always Readyなし）、評価用と出力用の2 Function Apps、ホスト用と業務用のStorage、Foundry、Key Vault、Application Insights／Log Analyticsを基本候補とする。実際の対応リージョン・認証・課金はSpikeで確認する。
+Functions Flex Consumption（Always Readyなし）、評価用と出力用の2 Function Apps、ホスト用と業務用のStorage、Foundry、Key Vault、Application Insights／Log Analyticsを基本候補とする。React画面もAzureへ配置し、Entra認証とAPI認可を必須とする。配信サービスと対応リージョン・認証・課金はSpikeで確認する。TypeScriptモノレポ、Bicep、GitHub Actions CI＋手動CDを採用し、詳細はengineering.mdを正本とする。
 
 複数テナント化はテナント別Collector・Identityを追加し、中央に全権限を集中させない。PoCではtenantIdとScope契約の確保まで。
 
@@ -215,7 +218,7 @@ flowchart TD
 
 全体共通にtenantId、schemaVersion、createdAt、classification、出典と観測日時を持つ。論理モデルはIDで正規化し、不変JSONをBlob、状態・索引・OutboxをTableに保存。大きな本文はTableへ詰め込まない。
 
-H1＝PoC中＋終了後90日、H2＝現行状態とH1までの履歴。分類は原則機密。公開公式文書は公開分類、Subscription固有通知は社内分類以上とする。
+H1＝PoC実施中に保持し終了時に削除、H2＝現行状態と終了時までの履歴。旧90日保持方針は撤回。GitHub・CI等の外部複製も対象とし、サービス側の削除待ち等は残存として報告する。コード・設計・非実データの試験資材はGitへ残す。分類は原則機密。公開公式文書は公開分類、Subscription固有通知は社内分類以上とする。
 
 | Entity／目的 | 主キー・主要属性・関係 | 更新契機 | 保持・情報源 |
 |---|---|---|---|
@@ -419,7 +422,7 @@ S=1〜2人日、M=3〜5、L=6〜10。依存完了後の並行可否。合計は�
 | T-17 Security | 脅威試験・強化 | T-12〜14 | 越権・SSRF等阻止 | 見逃し | M／Security／Yes |
 | T-18 Evaluation | 品質・障害・負荷 | T-02,10〜17 | 指標・未評価報告 | 正解不足 | L／QA・SME／Yes |
 | T-19 Readiness | Shadow・復旧・判定 | T-18 | 合否・残課題 | 早期本番化 | M／Architect・SRE／No |
-| D-01 Demo | 保存結果と3分画面 | T-12,13 | 再生・リセット | 時間超過 | M／Full Stack／Yes |
+| D-01 Demo | 実データとAzure上の3分ライブ画面 | T-12,13 | Entra認証・ライブ処理・状態確認 | 時間超過・実対象不足 | M／Full Stack／Yes |
 | D-02 Demo | 台本・動画・公開確認 | D-01 | 3回リハーサル | 情報露出 | S／登壇者／Yes |
 
 ## 27. Risks and Mitigations
@@ -453,7 +456,7 @@ AC-001: 100回再送でも版・作業・Issueが増殖しない。AC-002: 通�
 
 ## 30. Recommended Next Steps
 
-設計書をレビューし、未確定項目を確認する。Spike実行前に対象ID・資格情報・課金条件を確認する。実装・Azure作成は別途着手指示後に行う。Shadowから登録・本番へ移る段階ゲートを続けて決める。
+ルートAGENTS.mdと3 Skillsを整備。次はモノレポ・CI／IaC／手動CDの最小基盤を実装し、Spikeを実行する。Azure作成は対象ID・資格情報・課金条件と実行範囲を確認後に行う。Shadowから登録・本番へ移る段階ゲートは引き続き決める。
 
 ## 公式参照
 
