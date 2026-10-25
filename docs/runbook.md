@@ -82,3 +82,7 @@ BicepのbooleanをApp Settingsへ渡す際は`toLower(string(value))`で`true`/`
 ServiceHealthResourcesの`LastUpdateTime`は数値で返る場合がある。ARGの投影で`tostring(todatetime(tolong(properties.LastUpdateTime)))`をISO日時へ変換し、JavaScriptへ渡す前に大きな整数の精度損失を避ける。ISO文字列の応答も保持する。識別子・日時が不正な通知は推測で補完せず部分失敗として扱い、画面に取得範囲の不完全性を表示する。更新日時はRetirement日として使用しない。
 
 [Microsoft公式のService Healthクエリ例](https://learn.microsoft.com/azure/service-health/resource-graph-samples)
+
+## 2026-10-26 実データ確認
+
+専用PoC環境へmainの検査済み成果物を再配置し、Entra認証済み画面で「Azure情報を取得・評価」を実行。Health Advisory 7件と対象Subscription内の構成2件を取得した。Service Healthの`LastUpdateTime`は数値ticksを含み、ARGで日時へ変換してから処理する。7評価がQueue経由で作成され、全件で取得範囲完了・Schema validation errors 0を確認した。モデル上限0のためDecision-1/説明モデルは呼び出しておらず、評価はUnavailable・人間レビュー待ちとなる。外部Project登録、Advisor明示関連、Action Group配送、Poison Queue復旧、業務訂正／承認のUATは未検証。画面上の実データやResource IDをログ・Gitへ転記しない。
