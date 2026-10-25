@@ -76,3 +76,9 @@ GitHubはIssue作成前にOutboxを`Sending`へ条件更新する。作成応答
 `infra/bootstrap/auth-diagnostics.bicep`にAPI名と既存Workspace名を渡すと、AppServiceAuthenticationLogsだけを専用Log Analyticsへ送信する。認証コールバックの障害はアプリの手前で発生するため、App Insightsの例外0件だけでは正常と判断しない。初回同意後のコールバック、API内のJWT検証、Storage読取をそれぞれ確認する。認証ログは実環境の監査データとしてAzure内で管理し、GitやCI成果物へ複製しない。
 
 BicepのbooleanをApp Settingsへ渡す際は`toLower(string(value))`で`true`/`false`へ統一する。アプリの厳密比較と表記が一致することを実設定でも確認する。
+
+## Service Healthの実応答形式
+
+ServiceHealthResourcesの`LastUpdateTime`は数値で返る場合がある。ARGの投影で`tostring(todatetime(tolong(properties.LastUpdateTime)))`をISO日時へ変換し、JavaScriptへ渡す前に大きな整数の精度損失を避ける。ISO文字列の応答も保持する。識別子・日時が不正な通知は推測で補完せず部分失敗として扱い、画面に取得範囲の不完全性を表示する。更新日時はRetirement日として使用しない。
+
+[Microsoft公式のService Healthクエリ例](https://learn.microsoft.com/azure/service-health/resource-graph-samples)

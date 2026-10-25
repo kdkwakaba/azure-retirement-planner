@@ -85,12 +85,12 @@ export async function discover(subscriptionIds: string[], tenantId: string) {
     try {
       const notices = await argRows(
         [subscription],
-        "servicehealthresources | where type =~ 'microsoft.resourcehealth/events' | where tostring(properties.EventType) =~ 'HealthAdvisory' | project id, properties",
+        "servicehealthresources | where type =~ 'microsoft.resourcehealth/events' | where tostring(properties.EventType) =~ 'HealthAdvisory' | project id, properties, lastUpdateTime=tostring(todatetime(tolong(properties.LastUpdateTime)))",
       )
       for (const notice of notices) {
         const p = z.record(z.string(), z.unknown()).parse(notice.properties)
         const tracking = String(p.TrackingId ?? '')
-        const updated = String(p.LastUpdateTime ?? '')
+        const updated = String(notice.lastUpdateTime || p.LastUpdateTime || '')
         if (!tracking || !Number.isFinite(Date.parse(updated))) {
           failures.push(`通知の識別子・更新日時不足: ${subscription}`)
           continue

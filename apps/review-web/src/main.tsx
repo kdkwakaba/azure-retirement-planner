@@ -4,7 +4,7 @@ import { assessmentSchema, type Assessment } from '@arp/contracts'
 import './styles.css'
 import { CorrectionForm } from './CorrectionForm.tsx'
 
-import { request } from './api.ts'
+import { request, syncFeedback } from './api.ts'
 
 function App() {
   const [items, setItems] = useState<Assessment[]>([]),
@@ -33,11 +33,10 @@ function App() {
     setBusy(true)
     setError('')
     try {
-      const result = await request('sync', 'POST')
-      setNotice(
-        `通知${result.events}件、構成${result.resources}件を取得しました。評価はバックグラウンドで実行されます。`,
-      )
+      const feedback = syncFeedback(await request('sync', 'POST'))
       await refresh()
+      setNotice(feedback.notice)
+      if (feedback.error) setError(feedback.error)
     } catch (e) {
       setError(e instanceof Error ? e.message : '同期失敗')
     } finally {
