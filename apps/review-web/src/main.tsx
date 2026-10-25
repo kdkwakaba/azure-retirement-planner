@@ -4,27 +4,8 @@ import { assessmentSchema, type Assessment } from '@arp/contracts'
 import './styles.css'
 import { CorrectionForm } from './CorrectionForm.tsx'
 
-async function request(path: string, body?: unknown) {
-  const response = await fetch('/api/' + path, {
-    credentials: 'same-origin',
-    ...(body === undefined
-      ? {}
-      : {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-ARP-Request': '1' },
-          body: JSON.stringify(body),
-        }),
-  })
-  if (!response.ok)
-    throw new Error(
-      response.status === 401
-        ? 'サインインが必要です'
-        : response.status === 403
-          ? 'この操作の権限がありません'
-          : `処理できませんでした (${response.status})`,
-    )
-  return response.json()
-}
+import { request } from './api.ts'
+
 function App() {
   const [items, setItems] = useState<Assessment[]>([]),
     [selected, setSelected] = useState<string | null>(null),
@@ -37,7 +18,9 @@ function App() {
   async function refresh() {
     setError('')
     try {
-      const data = assessmentSchema.array().parse(await request('assessments'))
+      const data = assessmentSchema
+        .array()
+        .parse(await request('assessments', 'GET'))
       setItems(data)
     } catch (e) {
       setError(e instanceof Error ? e.message : '取得失敗')
@@ -50,7 +33,7 @@ function App() {
     setBusy(true)
     setError('')
     try {
-      const result = await request('sync')
+      const result = await request('sync', 'POST')
       setNotice(
         `通知${result.events}件、構成${result.resources}件を取得しました。評価はバックグラウンドで実行されます。`,
       )
@@ -66,7 +49,7 @@ function App() {
     setBusy(true)
     setError('')
     try {
-      const response = await request('review', {
+      const response = await request('review', 'POST', {
         assessmentId: current.id,
         packageHash: current.packageHash,
         approvedItemIds: ['Approved', 'Partial'].includes(result)

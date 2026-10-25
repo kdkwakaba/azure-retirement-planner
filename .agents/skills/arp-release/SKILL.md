@@ -9,7 +9,7 @@ description: "Azure Retirement Planner自身のリリース計画、Bicep差分�
 
 [AGENTS.md](../../../AGENTS.md)と[開発・運用基準](../../../docs/engineering.md)を確認する。依頼が計画・検証・実行のどれか、環境、Subscription／専用RG、Commit、成果物、Workflowを特定する。既に得た承認は再要求しないが、Skillの呼出自体を未知の実環境への包括許可と解釈しない。
 
-実装済みWorkflow・IaCと[Runbook](../../../docs/runbook.md)を確認する。実Azureへの配置は未実施のため、Bootstrap、接続先、秘密、モデル提供条件を確認してから実行する。欠落を成功扱いしない。
+実装済みWorkflow・IaCと[Runbook](../../../docs/runbook.md)を確認する。配置済み環境でも、Bootstrap、接続先、秘密、モデル提供条件を確認してから実行する。欠落を成功扱いしない。
 
 ## 事前確認
 

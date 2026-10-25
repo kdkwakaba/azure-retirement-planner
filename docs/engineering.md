@@ -1,6 +1,6 @@
 # 開発・運用基準
 
-2026-10-24 / 状態: コード・IaC・Workflowの初期実装あり。実Azure配置・モデル・GitHub実連携は未検証。実装状態は[バックログ](implementation-backlog.md)、実行手順は[Runbook](runbook.md)を正とする。
+2026-10-25 / 状態: コード・IaC・Workflowを実装しAzure配置・認証を確認。実通知取得・モデル・GitHub実連携は未完了。実装状態は[バックログ](implementation-backlog.md)、実行手順は[Runbook](runbook.md)を正とする。
 
 ## 技術とモノレポ
 
@@ -48,4 +48,4 @@ PoC終了後90日保持という旧方針は撤回。終了時に専用Azureリ�
 
 動作すること→要件を満たすこと→必要なテスト・ビルド・セキュリティ検査合格、をすべて満たす。優先順は検査を省略する意味ではない。今回の文書・Skill作成はリンク・構文・メタデータ・内容整合を検証し、未実装アプリのビルド・Azure疎通を成功扱いしない。
 
-npm run verify、infraの4つのBicep、PR/push CI・日次監査・手動CDを実装。UIはAPIと同一Azure Functionsで配信しEasy Auth＋APIのJWT検証を使用。Node24.22.1を初期基準とする。Shadow→実登録は実接続ゲート後。本番ゲート、セキュリティ対応期限、モデル提供条件は未確定。本文の設計目標すべてが実装済みとは限らないため実装バックログを参照する。
+npm run verify、Bootstrapを含むBicep、PR/push CI・日次監査・手動CDを実装。UIはAPIと同一Azure Functionsで配信しEasy Auth＋APIのJWT検証を使用。Node24.22.1を初期基準とする。Shadow→実登録は実接続ゲート後。本番ゲート、セキュリティ対応期限、モデル提供条件は未確定。本文の設計目標すべてが実装済みとは限らないため実装バックログを参照する。

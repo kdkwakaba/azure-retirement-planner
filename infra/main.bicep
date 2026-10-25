@@ -112,9 +112,9 @@ resource functions 'Microsoft.Web/sites@2024-11-01' = [for (name,i) in ['api','e
         { name: 'EXPLANATION_ENDPOINT', value: explanationEndpoint }
         { name: 'EXPLANATION_DEPLOYMENT', value: explanationDeployment }
         { name: 'MAX_MODEL_CALLS_PER_DAY', value: string(maxModelCallsPerDay) }
-        { name: 'EXPORT_ENABLED', value: string(exportEnabled) }
-        { name: 'SYNC_ENABLED', value: string(syncEnabled) }
-        { name: 'INGEST_ENABLED', value: string(ingestEnabled) }
+        { name: 'EXPORT_ENABLED', value: toLower(string(exportEnabled)) }
+        { name: 'SYNC_ENABLED', value: toLower(string(syncEnabled)) }
+        { name: 'INGEST_ENABLED', value: toLower(string(ingestEnabled)) }
         { name: 'GITHUB_OWNER', value: githubOwner }
         { name: 'GITHUB_REPOSITORY', value: githubRepository }
         { name: 'GITHUB_PROJECT_ID', value: githubProjectId }

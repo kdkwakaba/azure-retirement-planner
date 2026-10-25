@@ -4,7 +4,7 @@
 
 ## 現在の状態と正本
 
-- アプリ、npm workspaces、IaC、CI・手動CDを実装。Azureデプロイ、モデル実接続、個人Project連携の実証は未実施。現在の状態は[実装バックログ](docs/implementation-backlog.md)を参照。
+- アプリ、npm workspaces、IaC、CI・手動CDを実装。AzureデプロイとEntra認証・評価一覧読取は確認済。実通知取得、Queue評価、モデル実接続、個人Project連携は未完了。現在の状態は[実装バックログ](docs/implementation-backlog.md)を参照。
 - 実行コマンド、検証結果、モデル利用可否を推測で記載しない。実装時は実際のmanifest・Workflowを確認する。
 - 開発環境・CI/CD・セキュリティ・撤去の正本は[開発・運用基準](docs/engineering.md)。仕様は[システム設計](docs/design.md)、[判断基準](docs/decision-policy.md)、[合意事項](docs/decisions.md)。
 - 直近のユーザー指示を優先し、文書間の矛盾は関連箇所を合わせて直す。未確定のサービス・SKU・閾値を既決として扱わない。
