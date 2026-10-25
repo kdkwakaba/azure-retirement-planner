@@ -1,3 +1,5 @@
+import { z } from 'zod'
+
 export async function request(
   path: string,
   method: 'GET' | 'POST',
@@ -22,4 +24,22 @@ export async function request(
           : `処理できませんでした (${response.status})`,
     )
   return response.json()
+}
+
+export function syncFeedback(value: unknown) {
+  const result = z
+    .object({
+      events: z.number().int().nonnegative(),
+      resources: z.number().int().nonnegative(),
+      scopeComplete: z.boolean(),
+      failures: z.array(z.string()),
+    })
+    .parse(value)
+  return {
+    notice: `通知${result.events}件、構成${result.resources}件を取得しました。評価はバックグラウンドで実行されます。`,
+    error:
+      result.scopeComplete && result.failures.length === 0
+        ? ''
+        : `取得が不完全です。${result.failures.join(' / ') || '取得範囲の完全性を確認できません。'} 通知0件でも影響なしとは判断できません。`,
+  }
 }
