@@ -12,6 +12,7 @@ npm run verify
 az bicep build --file infra/main.bicep --stdout
 az bicep build --file infra/ingestion.bicep --stdout
 az bicep build --file infra/bootstrap/oidc.bicep --stdout
+az bicep build --file infra/bootstrap/foundry.bicep --stdout
 az bicep build --file infra/bootstrap/permissions.bicep --stdout
 ```
 
@@ -22,7 +23,7 @@ az bicep build --file infra/bootstrap/permissions.bicep --stdout
 1. 既存Subscriptionに専用RGを作る前にID・リージョン・Tenantを確定。Azure Policy、Flex Node24の提供、課金枠、既存資源との区別を確認する。
 2. Entraの単一テナントApp登録を作成し、`Reader`、`Reviewer`、`Governance`、`Operator`（User）と`NotificationSender`（Application）のApp rolesを定義する。割当必須としユーザーを割り当てる。WebリダイレクトURIは`https://<api>.azurewebsites.net/.auth/login/aad/callback`。ID Tokenを使用するUIと、aud/issuer/tid/rolesを検証するAPIの両方を試験する。
 3. Secure Webhookは専用サービスプリンシパルのアプリ権限に限定。Access Token v2と`idtyp=app`のoptional claim、audienceを合わせる。Action Groupsの実際の送信主体へのApp role割当をSP-03で確認する。未設定のまま匿名受付へ緩和しない。
-4. `infra/bootstrap/oidc.bicep`でGitHub main branch subjectのUAMI/Federationを作成。通常CDのIdentityへ専用RGの必要なデプロイ権限を別途付与。Owner／権限付与権限は通常CDへ付けない。
+4. `infra/bootstrap/oidc.bicep`でGitHub main branch subjectのUAMI/Federationを作成。GitHub APIから取得した`githubOwnerId`と`githubRepositoryId`も渡す。新規Repositoryのsubjectは`repo:OWNER@OWNER_ID/REPOSITORY@REPOSITORY_ID:ref:refs/heads/main`であり、azure/loginが記録する実際のsubjectと完全一致させる。旧形式を使うRepositoryは実際の形式を確認してテンプレートを調整し、ワイルドカードへ緩和しない。通常CDのIdentityへ専用RGの必要なデプロイ権限を別途付与。Owner／権限付与権限は通常CDへ付けない。
 5. Repository Variablesに`AZURE_CLIENT_ID`、`AZURE_TENANT_ID`、`AZURE_SUBSCRIPTION_ID`、`AZURE_RESOURCE_GROUP`、`AZURE_LOCATION`、`ENTRA_CLIENT_ID`、`TARGET_SUBSCRIPTION_IDS`（カンマ区切り）を設定。秘密はVariablesへ入れない。
 6. mainのCI合格後、Manual PoC deploymentの`plan`を起動して差分とHashを確認し、同じCI runで`apply`、`infrastructure_only=true`を起動。最初はアプリ配置を行わずMIと保管先を作る。
 7. 管理者がoutputsを用いて`infra/bootstrap/permissions.bicep`を適用。データ用Blob/Queue/Table、ホストStorage、Key Vaultに用途別ロールを付与する。ホストBlob OwnerはFunctionsホストの要件であり、評価対象へのOwnerではない。評価対象はAPIのMIに許可Subscription/MGのReaderを別途付与。Exporterには評価対象読取を与えない。Foundry呼出ロールは対象モデルの実仕様確認後、APIのMIに対象Foundryだけで付与。
@@ -63,3 +64,9 @@ GitHubはIssue作成前にOutboxを`Sending`へ条件更新する。作成応答
 - [Microsoft-Decision-1](https://learn.microsoft.com/azure/foundry/foundry-models/how-to/use-foundry-models-microsoft-decision)。型付き判断・確率の提供は文書確認、実環境の版・権限・応答契約は未確認。
 - [ARG REST](https://learn.microsoft.com/rest/api/azureresourcegraph/resourcegraph/resources/resources)。APIの実契約とライブ可否はSP-02で照合する。
 - 機能の詳細な残作業は[実装バックログ](implementation-backlog.md)。本Runbookを完了していない段階で登壇デモやPoC成立を宣言しない。
+
+## Foundry Bootstrap
+
+`infra/bootstrap/foundry.bicep`は新規FoundryとProjectを専用RGへ作成する。アカウント名とリージョンをパラメーターで渡し、What-ifで確認してから管理者が適用する。キー認証を無効にし、モデル配置・有料推論・アプリへの利用権限付与は含めない。モデル提供・クォータ・Previewの期限は実環境で別途確認する。
+
+[GitHub OIDCのimmutable subject仕様](https://docs.github.com/en/actions/reference/security/oidc#immutable-subject-claims)
