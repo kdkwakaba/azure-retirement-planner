@@ -86,3 +86,7 @@ ServiceHealthResourcesの`LastUpdateTime`は数値で返る場合がある。ARG
 ## 2026-10-26 実データ確認
 
 専用PoC環境へmainの検査済み成果物を再配置し、Entra認証済み画面で「Azure情報を取得・評価」を実行。Health Advisory 7件と対象Subscription内の構成2件を取得した。Service Healthの`LastUpdateTime`は数値ticksを含み、ARGで日時へ変換してから処理する。7評価がQueue経由で作成され、全件で取得範囲完了・Schema validation errors 0を確認した。モデル上限0のためDecision-1/説明モデルは呼び出しておらず、評価はUnavailable・人間レビュー待ちとなる。外部Project登録、Advisor明示関連、Action Group配送、Poison Queue復旧、業務訂正／承認のUATは未検証。画面上の実データやResource IDをログ・Gitへ転記しない。
+
+## 2026-10-26 Microsoft-Decision-1配置
+
+`[foundry-resource-name-removed]` に `arp-decision-1`（Microsoft-Decision-1 version 1、DataZoneStandard、capacity 500）を配置し、Runningを確認した。Deploymentのサービスレートは500 requests/minute・500,000 tokens/minuteで、要求ごとの生成トークン上限ではない。Decision-1のEndpoint・Deployment・Model Versionはアプリ設定へまだ接続しておらず、Managed Identityの推論権限も未付与。アプリのモデル呼び出し上限0を維持し、推論呼び出しは未実施。モデル配置自体の費用はCost Managementで照合する。利用者が定めたPoC累計20,000円は予算目標として記録する。Cost Management budgetは通知であり課金を停止しないため、ハード上限として保証しない。Azure Cost Managementの累計反映も遅延するため、金額制御が未確認のままモデル呼び出しを有効にしない。
