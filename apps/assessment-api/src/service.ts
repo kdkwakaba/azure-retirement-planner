@@ -23,6 +23,7 @@ import {
   explain,
   groundedInput,
   matchProfile,
+  PROMPT_VERSION,
   required,
   unavailableDecision,
 } from '@arp/adapters'
@@ -46,6 +47,18 @@ export function config() {
       .nonnegative()
       .parse(process.env.MAX_MODEL_CALLS_PER_DAY ?? '0'),
   }
+}
+export function decisionRevision(limit: number): string | null {
+  const endpoint = process.env.DECISION_ENDPOINT,
+    deployment = process.env.DECISION_DEPLOYMENT,
+    modelVersion = process.env.DECISION_MODEL_VERSION
+  if (limit <= 0 || !endpoint || !deployment || !modelVersion) return null
+  return hash({
+    endpoint,
+    deployment,
+    modelVersion,
+    promptVersion: PROMPT_VERSION,
+  })
 }
 export async function synchronize(): Promise<{
   events: number
@@ -224,6 +237,7 @@ async function assessWorkload(
       })
       .sort((a, b) => a.id.localeCompare(b.id)),
     complete,
+    decisionRevision: decisionRevision(limit),
   })
   const prior = await store.head(hash({ eventId: event.id, workloadId }))
   if (prior) {
