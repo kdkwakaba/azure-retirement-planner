@@ -1,0 +1,16 @@
+{
+  "name": "@arp/adapters",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@arp/contracts": "*",
+    "@arp/domain": "*",
+    "@azure/data-tables": "13.3.2",
+    "@azure/storage-blob": "12.34.0",
+    "@azure/storage-queue": "12.32.0",
+    "jose": "6.2.13",
+    "zod": "4.6.7"
+  }
+}
