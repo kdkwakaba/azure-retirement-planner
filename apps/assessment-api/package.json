@@ -1,0 +1,14 @@
+{
+  "name": "@arp/assessment-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.cjs",
+  "dependencies": {
+    "@arp/adapters": "*",
+    "@arp/contracts": "*",
+    "@arp/domain": "*",
+    "@azure/functions": "4.17.0",
+    "zod": "4.6.7"
+  }
+}

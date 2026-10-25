@@ -1,0 +1,69 @@
+export class RemoteError extends Error {
+  status: number
+  retryAfterMs: number
+  constructor(status: number, retryAfterMs = 1000) {
+    super(`Remote service failed (${status})`)
+    this.status = status
+    this.retryAfterMs = retryAfterMs
+  }
+}
+export async function jsonRequest(
+  url: string,
+  init: RequestInit = {},
+  fetcher: typeof fetch = fetch,
+): Promise<unknown> {
+  const response = await fetcher(url, {
+    ...init,
+    redirect: 'error',
+    signal: AbortSignal.timeout(45000),
+  })
+  if (!response.ok) {
+    const retry = Number(response.headers.get('retry-after') ?? '1')
+    throw new RemoteError(
+      response.status,
+      Number.isFinite(retry)
+        ? Math.max(0, Math.min(30000, retry * 1000))
+        : 1000,
+    )
+  }
+  const contentLength = Number(response.headers.get('content-length') ?? 0)
+  if (contentLength > 8_000_000) throw new Error('Remote response too large')
+  const reader = response.body?.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  if (reader)
+    for (;;) {
+      const part = await reader.read()
+      if (part.done) break
+      size += part.value.byteLength
+      if (size > 8_000_000) {
+        await reader.cancel()
+        throw new Error('Remote response too large')
+      }
+      chunks.push(part.value)
+    }
+  if (!size) return null
+  return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+}
+export function safeModelEndpoint(raw: string): string {
+  const url = new URL(raw)
+  if (
+    url.protocol !== 'https:' ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash ||
+    ![
+      '.cognitiveservices.azure.com',
+      '.openai.azure.com',
+      '.services.ai.azure.com',
+    ].some((s) => url.hostname.endsWith(s))
+  )
+    throw new Error('Unapproved model endpoint')
+  return url.origin
+}
+export function required(name: string): string {
+  const value = process.env[name]
+  if (!value) throw new Error(`Missing setting: ${name}`)
+  return value
+}
