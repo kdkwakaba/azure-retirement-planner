@@ -70,3 +70,9 @@ GitHubはIssue作成前にOutboxを`Sending`へ条件更新する。作成応答
 `infra/bootstrap/foundry.bicep`は新規FoundryとProjectを専用RGへ作成する。アカウント名とリージョンをパラメーターで渡し、What-ifで確認してから管理者が適用する。キー認証を無効にし、モデル配置・有料推論・アプリへの利用権限付与は含めない。モデル提供・クォータ・Previewの期限は実環境で別途確認する。
 
 [GitHub OIDCのimmutable subject仕様](https://docs.github.com/en/actions/reference/security/oidc#immutable-subject-claims)
+
+## 認証障害の診断
+
+`infra/bootstrap/auth-diagnostics.bicep`にAPI名と既存Workspace名を渡すと、AppServiceAuthenticationLogsだけを専用Log Analyticsへ送信する。認証コールバックの障害はアプリの手前で発生するため、App Insightsの例外0件だけでは正常と判断しない。初回同意後のコールバック、API内のJWT検証、Storage読取をそれぞれ確認する。認証ログは実環境の監査データとしてAzure内で管理し、GitやCI成果物へ複製しない。
+
+BicepのbooleanをApp Settingsへ渡す際は`toLower(string(value))`で`true`/`false`へ統一する。アプリの厳密比較と表記が一致することを実設定でも確認する。
