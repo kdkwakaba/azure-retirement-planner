@@ -94,3 +94,13 @@ ServiceHealthResourcesの`LastUpdateTime`は数値で返る場合がある。ARG
 ## 2026-10-26 Microsoft-Decision-1配置
 
 `arp-foundry-0e2e4716` に `arp-decision-1`（Microsoft-Decision-1 version 1、DataZoneStandard、capacity 500）を配置し、Runningを確認した。Deploymentのサービスレートは500 requests/minute・500,000 tokens/minuteで、要求ごとの生成トークン上限ではない。API endpoint／deployment／model versionをBicepへ設定し、API Managed IdentityへFoundryアカウント範囲のCognitive Services Userを付与した。実通知の1評価でversion 1の有効応答（Abstained）を確認し、合成3事例×3回も9/9契約検証を通過した。後者は精度保証ではなく、結果詳細は`docs/spike-and-testing.md`に記録する。CLI利用者へはCognitive Services UserをFoundryアカウント範囲で付与した。Unknownや不確実性を解消せず、すべての作業項目は引き続き人間承認を要する。説明用LLMは未設定。モデル呼出枠は200/日、要求単位Token capなし。利用者がPoC累計20,000円をCost Managementで確認し、アプリ側の金額ハード停止は実装しない。Cost Managementのbudgetは通知用で、課金停止機能ではなく反映に遅延がある。
+
+## GitHub Project フィールド同期
+
+- 外部Issue／Projectへの登録は既定で無効のまま。実運用前にProjectのStatus、Priority、Due dateフィールドを用意し、field IDと各Status/Priority option IDを検証する。
+- IDは`GITHUB_PROJECT_*`のBicepパラメーター／Function App設定で管理する。Tokenや秘密はKey Vaultに置き、フィールドIDは機密情報として扱わない。
+- Priority option IDはP1〜P4を個別に設定する。Due dateは公式に確認された期限だけを設定する。未確定値や空値はProjectへ書き込まない。
+- Statusの初期値はProject itemの新規追加時だけ設定する。再承認や改訂ではStatusを上書きせず、担当者がProjectで進めた状態を保つ。
+- Issue本文は`<!-- arp:managed:start -->`と`<!-- arp:managed:end -->`の間だけ更新する。前回Hashと異なる管理領域の変更を検知した場合は停止し、外部本文を上書きしない。区切りのない既存Issueは自動更新せず、人間による移行が必要。
+- Issue更新後は管理本文HashをOutboxに先に保存し、Project APIが一時失敗してもIssueを重複作成・再更新しない。Project登録を再試行する際はProject内の既存Issueを照合する。
+- GitHub ProjectのフィールドIDやoption ID、外部APIのアクセス権が未検証の場合、ExportはエラーとしてQueue再試行／Poisonへ流す。設定不足を空の成功として扱わない。
