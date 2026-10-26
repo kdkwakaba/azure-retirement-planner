@@ -8,7 +8,9 @@ import { hash, reviseAssessment } from '@arp/domain'
 import {
   AzureStore,
   createVerifier,
-  requireRole,
+  requireApplicationRole,
+  requireUserRole,
+  apiRolePolicy,
   required,
   verifyWriteRequest,
   logProcessingFailure,
@@ -44,9 +46,7 @@ app.http('api', {
       const principal = await verifier(token)
       const path = String(request.params.path ?? '').replace(/^\/+|\/+$/g, '')
       if (path === 'ingest' && request.method === 'POST') {
-        requireRole(principal, ['NotificationSender'])
-        if (principal.kind !== 'Application')
-          return reply(403, { error: 'Application identity required' })
+        requireApplicationRole(principal, apiRolePolicy.notification)
         if (process.env.INGEST_ENABLED !== 'true')
           return reply(503, { error: 'Ingestion disabled' })
         const content = await request.text()
@@ -57,7 +57,7 @@ app.http('api', {
         const receiptId = await store.receiveNotice(raw)
         return reply(202, { receiptId })
       }
-      requireRole(principal, ['Reader', 'Reviewer', 'Governance', 'Operator'])
+      requireUserRole(principal, apiRolePolicy.read)
       if (request.method === 'GET' && path === 'me')
         return reply(200, principal)
       const store = new AzureStore(config().account)
@@ -73,7 +73,7 @@ app.http('api', {
         if (Number(request.headers.get('content-length') ?? 0) > 200000)
           return reply(413, { error: 'Request too large' })
         if (path === 'sync') {
-          requireRole(principal, ['Operator', 'Governance'])
+          requireUserRole(principal, apiRolePolicy.sync)
           return reply(202, await synchronize())
         }
         const content = await request.text()
@@ -81,7 +81,7 @@ app.http('api', {
           return reply(413, { error: 'Request too large' })
         const payload: unknown = JSON.parse(content)
         if (path === 'revise') {
-          requireRole(principal, ['Reviewer', 'Governance'])
+          requireUserRole(principal, apiRolePolicy.review)
           const body = z
             .object({
               assessmentId: z.string().regex(/^[a-f0-9]{64}$/),
@@ -154,7 +154,8 @@ app.http('api', {
       return reply(404, { error: 'Not found' })
     } catch (error) {
       const message = error instanceof Error ? error.message : ''
-      if (message === 'Forbidden') return reply(403, { error: 'Forbidden' })
+      if (message === 'Forbidden' || message === 'Application identity required')
+        return reply(403, { error: 'Forbidden' })
       if (error instanceof z.ZodError)
         return reply(400, { error: 'Invalid request' })
       if (/JWT|token|tenant|principal|signature/i.test(message))
