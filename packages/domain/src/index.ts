@@ -283,7 +283,9 @@ export function impactDiscoveryOutcome(input: {
   | 'Incomplete' {
   if (!input.scopeComplete) return 'Incomplete'
   if (!input.resources.length)
-    return input.applicableProfile ? 'NoResourcesDetected' : 'ProfileUnavailable'
+    return input.applicableProfile
+      ? 'NoResourcesDetected'
+      : 'ProfileUnavailable'
   if (input.resources.every((r) => r.classification === 'Not Impacted'))
     return 'NoImpactMatched'
   return 'CandidatesFound'
