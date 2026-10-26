@@ -395,14 +395,21 @@ test('managed Issue updates preserve manual text and reject edits inside the man
 })
 
 test('Project field sync skips status on existing items and updates mapped values', async (t) => {
-  const client = new GitHubClient('synthetic-owner', 'synthetic-repo', 'synthetic-token')
+  const client = new GitHubClient(
+    'synthetic-owner',
+    'synthetic-repo',
+    'synthetic-token',
+  )
   const item = {
     ...fixture().workItems[0]!,
     priority: 'P2' as const,
     dueDate: '2026-08-20',
   }
   const updates: unknown[] = []
-  t.mock.method(globalThis, 'fetch', async (_input: RequestInfo | URL, init?: RequestInit) => {
+  t.mock.method(
+    globalThis,
+    'fetch',
+    async (_input: RequestInfo | URL, init?: RequestInit) => {
       updates.push(JSON.parse(String(init?.body)))
       return Response.json({
         data: {
@@ -443,31 +450,39 @@ test('Project field sync skips status on existing items and updates mapped value
 })
 
 test('Project item reconciliation reuses existing item instead of creating duplicates', async (t) => {
-  const client = new GitHubClient('synthetic-owner', 'synthetic-repo', 'synthetic-token')
+  const client = new GitHubClient(
+    'synthetic-owner',
+    'synthetic-repo',
+    'synthetic-token',
+  )
   let mutations = 0
-  t.mock.method(globalThis, 'fetch', async (_input: RequestInfo | URL, init?: RequestInit) => {
-    const payload = JSON.parse(String(init?.body)) as { query: string }
-    if (payload.query.startsWith('query('))
-      return Response.json({
-        data: {
-          node: {
-            items: {
-              nodes: [
+  t.mock.method(
+    globalThis,
+    'fetch',
+    async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const payload = JSON.parse(String(init?.body)) as { query: string }
+      if (payload.query.startsWith('query('))
+        return Response.json({
+          data: {
+            node: {
+              items: {
+                nodes: [
                   {
                     id: 'synthetic-project-item',
                     content: { __typename: 'Issue', id: 'synthetic-issue' },
                   },
                 ],
-              pageInfo: { hasNextPage: false, endCursor: null },
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
             },
           },
-        },
+        })
+      mutations++
+      return Response.json({
+        data: { addProjectV2ItemById: { item: { id: 'unexpected' } } },
       })
-    mutations++
-    return Response.json({
-      data: { addProjectV2ItemById: { item: { id: 'unexpected' } } },
-    })
-  })
+    },
+  )
   assert.deepEqual(
     await client.ensureProjectItem('synthetic-project', 'synthetic-issue'),
     { id: 'synthetic-project-item', created: false },
