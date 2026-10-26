@@ -1,6 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { approvalSchema, assessmentSchema, dateSchema } from '@arp/contracts'
+import {
+  approvalSchema,
+  assessmentSchema,
+  dateSchema,
+  resourceSchema,
+} from '@arp/contracts'
 import {
   applyRules,
   canClose,
@@ -284,6 +289,74 @@ test('unclassified advisory is held for review, not silently discarded', () => {
 })
 test('TST-30: explicit list absence never means Not Impacted', () =>
   assert.equal(classifyResource(classification), 'Unknown'))
+test('TST-31: known Basic Load Balancer profile without SKU requires verification', () => {
+  const a = fixture()
+  const result = matchProfile(
+    a.event,
+    { ...a.resources[0]!, sku: null },
+    new Set(),
+  )
+  assert.equal(result.classification, 'Verification Required')
+  assert.equal(result.classificationReason, 'RequiredAttributeMissing')
+  assert.deepEqual(result.missingAttributes, ['sku.name'])
+  assert.equal(result.verificationRequired, true)
+})
+test('known GPv1 and ping-test profiles name missing Azure attributes', () => {
+  const a = fixture()
+  const storage = matchProfile(
+    { ...a.event, title: 'Synthetic GPv1 retirement' },
+    {
+      ...a.resources[0]!,
+      type: 'Microsoft.Storage/storageAccounts',
+      sku: null,
+      properties: { kind: null },
+    },
+    new Set(),
+  )
+  const ping = matchProfile(
+    { ...a.event, title: 'Synthetic URL ping test retirement' },
+    {
+      ...a.resources[0]!,
+      type: 'Microsoft.Insights/webTests',
+      sku: null,
+      properties: { webTestKind: null },
+    },
+    new Set(),
+  )
+  assert.deepEqual(storage.missingAttributes, ['kind'])
+  assert.equal(storage.classification, 'Verification Required')
+  assert.deepEqual(ping.missingAttributes, ['properties.Kind'])
+  assert.equal(ping.classification, 'Verification Required')
+})
+test('TST-32: unsupported resource and event relation stays Unknown with a reason', () => {
+  const a = fixture()
+  const result = matchProfile(
+    { ...a.event, title: 'Synthetic unrelated lifecycle notice' },
+    a.resources[0]!,
+    new Set(),
+  )
+  assert.equal(result.classification, 'Unknown')
+  assert.equal(result.classificationReason, 'NoApplicableProfile')
+})
+test('TST-33: a known profile with an unmatched attribute is Unknown, not excluded', () => {
+  const a = fixture()
+  const result = matchProfile(
+    a.event,
+    { ...a.resources[0]!, sku: 'UnexpectedSku' },
+    new Set(),
+  )
+  assert.equal(result.classification, 'Unknown')
+  assert.equal(result.classificationReason, 'NoMatchingProfileCondition')
+  assert.equal(result.verificationRequired, false)
+})
+test('legacy resource records parse with an explicit unrecorded reason', () => {
+  const resource = { ...fixture().resources[0]! }
+  delete (resource as Partial<typeof resource>).classificationReason
+  assert.equal(
+    resourceSchema.parse(resource).classificationReason,
+    'LegacyUnrecorded',
+  )
+})
 test('cyclic work dependencies are rejected', () => {
   const a = fixture(),
     first = a.workItems[0]!

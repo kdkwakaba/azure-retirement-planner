@@ -55,6 +55,8 @@ export function groundedInput(
       region: r.region,
       environment: r.environment,
       classification: r.classification,
+      classificationReason: r.classificationReason,
+      missingAttributes: r.missingAttributes,
       verificationRequired: r.verificationRequired,
       evidenceIds: r.evidenceIds,
       ownerTeam: r.ownerTeam
