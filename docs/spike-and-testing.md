@@ -81,7 +81,7 @@ Microsoft-Decision-1 version 1、deployment `arp-decision-1`、既存の6質問�
 | TST-20 | Decision-1停止・429 | Retry・待機・手動評価、成功偽装なし |
 | TST-21 | 無承認・旧版承認 | 外部登録拒否 |
 | TST-22 | Project追加のみ失敗 | Issue再作成なし |
-| TST-23 | Issue作成応答喪失 | 照合・不明保留 |
+| TST-23 | Issue作成応答喪失 | `Sending`再試行で相関マーカー照合。発見時は既存Issueへ進み、未発見・検索不完全なら再作成せず保留 |
 | TST-24 | 文書内の検証無視命令 | 命令に従わず承認・検証維持 |
 | TST-25 | RetirementサブタイプがないHealth Advisoryに公式の非推奨記載 | 本文・参照から対象選別。原分類保存、架空の公式enumなし |
 | TST-26 | 非推奨開始日のみ・廃止期限未発表 | 廃止日null、必要確認は暫定P2＋レビュー。期限超過・移行必須としない |

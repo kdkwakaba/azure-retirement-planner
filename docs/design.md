@@ -410,7 +410,7 @@ flowchart TD
 
 原本とReceipt永続化後に受信成功を返す。Queue投入失敗はOutbox再走査で回復。同一イベントはETagと期限付きリース。QueueはID参照のみ。一時失敗は原則5試行、429は待機指示を優先。403・未対応Schemaは無限Retryしない。
 
-外部作成の応答喪失時は相関IDで照合し、不明なら保留。Exactly Onceを保証とはしない。Project追加だけ失敗した場合はIssue再作成をしない。障害中も公式ポータルと保存入力から手動評価できるRunbookを用意する。
+外部Issue作成後の応答喪失は`Sending`状態で相関マーカーを検索し、見つかれば`IssueCreated`へ回復する。未発見または検索不完全ならIssueを再作成せず保留する。Exactly Onceを保証とはしない。Project追加だけ失敗した場合は保存済みIssue IDから再開し、Issue再作成をしない。障害中も公式ポータルと保存入力から手動評価できるRunbookを用意する。
 
 ## 23. Observability
 
