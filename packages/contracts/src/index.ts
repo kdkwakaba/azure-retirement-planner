@@ -260,6 +260,8 @@ export const assessmentSchema = z
       .object({
         subscriptionIds: z.array(z.uuid()),
         resourceTypes: z.array(z.string()),
+        profileIds: z.array(z.string()),
+        profileRegistryVersion: z.string(),
         resourceCount: z.number().int().nonnegative(),
         scopeComplete: z.boolean(),
       })
