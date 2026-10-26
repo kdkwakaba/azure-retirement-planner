@@ -11,7 +11,7 @@
 | IMP-05 | Release: OIDC Bootstrap、CI成果物Hash、What-if手動CD | 02,04 | main CI成果物のみ、差分Hash一致、権限分離 | main CI→OIDC→What-if/Hash→手動CDを実行・成功 | L / Cloud / Yes |
 | IMP-06 | Ingestion: Secure Webhook、原本受付、Queue/Outbox | 03,04 | アプリ権限検証、重複・停止・再開・Poison確認 | 受付経路は実装済。Service Health実通知7件をARG取得しQueue評価を確認。Action Groupの実配送は未検証 | L / Dev+Cloud / Yes |
 | IMP-07 | Discovery: ARG Health Advisory、Advisor関連、3サービス構成 | 03 | 全ページ、部分失敗、公式明示対象・不明を区別 | Service Health実データ7件・構成2件を確認。AdvisorのTracking ID→recommendationTypeId→New／InProgress／Postponed推奨を関連付け、両ソースの部分失敗時に他方の結果を保持する契約試験を追加。2026-10-26の実ARG集計はAdvisor retirement recommendation Completed 1件、active 0件、metadata 0件で正の相関未検証。全ページ網羅・実環境精度も未評価 | L / Dev / Yes |
-| IMP-08 | Normalization: 非推奨ほか4種、版・旧通知・不明日付 | 07 | 非推奨開始日を廃止日にせず旧版巻戻し拒否 | 実装済。無関係通知の人間による対象外確定UIは追加対象 | M / Dev / No |
+| IMP-08 | Normalization: 非推奨ほか4種、版・旧通知・不明日付 | 07 | 非推奨開始日を廃止日にせず旧版巻戻し拒否 | 実装済。TST-11/12で旧版巻戻し拒否と同時刻内容競合を比較関数として回帰確認。無関係通知の人間による対象外確定UIは追加対象 | M / Dev / No |
 | IMP-09 | Context: タグ集約、未設定Owner・業務情報の確認 | 07 | 構成は実値、業務値は推測しない | Unknown／Possible／Verification Requiredの理由と不足属性を表示し、説明モデル停止時もEvidence付きImpact Verification作業を決定的に生成。CMDB、依存探索、RTO/RPO・提供時間等の構造化入力は追加対象 | M / Dev+Architect / Yes |
 | IMP-10 | Spike: Decision-1と説明モデルの利用条件・MI・応答契約 | 04,05 | SP-01/04。3事例×3回、確率・版・費用の実測 | Decision-1 v1 DataZoneStandard capacity 500、API設定、Foundry限定MIロールを反映済。実データ1件の応答に加え、合成3事例×3回で契約・確率検証合格。判断品質・説明モデルは未完了 | L / AI+Cloud / Yes |
 | IMP-11 | Decision: 影響2軸、P1〜P4、余裕、低確率・欠損レビュー | 03 | 境界日、未確定、移行強制なしを単体試験 | 実装済 | M / Architect+Dev / Yes |
@@ -35,7 +35,7 @@
 
 ## 検証の読み方
 
-`tests/`は合成データのみ。TST番号付き単体試験は30シナリオ全体の完了を意味しない。TST-11/12/22/23/29、実Azure権限・Queue再配送、Project更新・負荷・Shadow・モデル品質は個別に統合/UATで記録する。テスト件数は実行結果を正とする。
+`tests/`は合成データのみ。TST番号付き単体試験は30シナリオ全体の完了を意味しない。TST-22/23/29、実Azure権限・Queue再配送、Project更新・負荷・Shadow・モデル品質は個別に統合/UATで記録する。TST-11/12はドメイン比較関数の回帰試験で、評価キューを含む実環境再配送までは証明しない。テスト件数は実行結果を正とする。
 
 ## 2026-10-25〜26 配置・実データ検証
 
