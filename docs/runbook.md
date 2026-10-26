@@ -113,3 +113,22 @@ ServiceHealthResourcesの`LastUpdateTime`は数値で返る場合がある。ARG
 - Status optionの表示名とoption IDをそのまま監査用進捗として保存する。企業固有の値をARPの承認・検証状態へ自動変換しない。
 - `/api/project-progress`はEntra認証を要求し、レビュー画面に登録済作業項目ごとの最終取込Statusを表示する。`未同期`は未登録、未出力、同期無効、同期未実行のいずれかであり、完了を意味しない。
 - Project read権限不足、API制限、ページング不備は同期失敗として記録し、前回値を保持する。失敗時にProject状態を空にしない。
+
+
+## ProcessingFailure監視とPoison Queue復旧
+
+- `processingFailureAlertsEnabled`は既定false。専用RGの運用監視を整えた後、`processingFailureAlertActionGroupId`にAction GroupのResource IDを指定して有効化する。Action Group未設定時はAzure Monitor上のAlertだけが作成され、通知先はない。アラートはApp Insightsの直近5分にあるサニタイズ済み`ProcessingFailure`を検知する。
+- KQLで対象記録を調べる（本文、Resource ID、例外メッセージを追加でログ出力しない）。
+
+```kusto
+traces
+| where timestamp > ago(24h)
+| where message contains '"event":"ProcessingFailure"'
+| summarize Failures=count() by bin(timestamp, 15m), tostring(customDimensions.stage), tostring(customDimensions.errorType)
+| order by timestamp desc
+```
+
+- Poison Queueは`assessments-poison`と`exports-poison`をStorage Queue metrics／Portalで別々に確認する。Queue本文には識別情報があるため、画面共有・チケット・ログへ貼り付けない。
+- 再投入前にfailure stage、Functions invocation、Storage Queueのdequeue count、Outbox state、承認Hashを照合する。ExporterではGitHub Issueのmarkerと保存済Issue IDを先に照合し、`Sending`が未解決の場合は再投入しない。IssueCreatedのProject失敗は既存Issueを確認してからProject段階のみを再開する。
+- 原因を直し、対象メッセージが現行承認・現行評価へ結び付くことを確認後、OperatorがPoison Queueから個別に再投入する。再投入後に重複Issue、承認外登録、対象リソース変更がないことを確認し、時刻・相関ID・件数・結果を運用記録へ残す。現状、専用の自動再投入UI/APIはない。
+- Alert発報は障害の調査開始を示すだけで、処理失敗の全件捕捉やPoison Queue到達を保証しない。Functions失敗、Queue深度、ARG throttling、GitHub 403/429と合わせて確認する。

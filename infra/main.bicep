@@ -31,6 +31,8 @@ param syncEnabled bool = false
 param projectProgressSyncEnabled bool = false
 param ingestEnabled bool = false
 param exportEnabled bool = false
+param processingFailureAlertsEnabled bool = false
+param processingFailureAlertActionGroupId string = ''
 
 var suffix = uniqueString(resourceGroup().id)
 var tags = { application: 'azure-retirement-planner', environment: 'poc', managedBy: 'bicep' }
@@ -77,6 +79,45 @@ resource insights 'Microsoft.Insights/components@2020-02-02' = {
   tags: tags
   kind: 'web'
   properties: { Application_Type: 'web', WorkspaceResourceId: workspace.id, IngestionMode: 'LogAnalytics', Flow_Type: null, Request_Source: null }
+}
+resource processingFailureAlert 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = if (processingFailureAlertsEnabled) {
+  name: '${prefix}-processing-failure-${suffix}'
+  location: 'global'
+  kind: 'LogAlert'
+  properties: {
+    displayName: 'ARP processing failures'
+    description: 'Detects sanitized ProcessingFailure records emitted by ARP Functions.'
+    enabled: true
+    severity: 2
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT5M'
+    scopes: [insights.id]
+    autoMitigate: true
+    criteria: {
+      allOf: [
+        {
+          query: '''
+            traces
+            | where message contains '"event":"ProcessingFailure"'
+            | summarize FailureCount = count()
+          '''
+          timeAggregation: 'Maximum'
+          metricMeasureColumn: 'FailureCount'
+          operator: 'GreaterThan'
+          threshold: 0
+          failingPeriods: {
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
+          }
+        }
+      ]
+    }
+    actions: {
+      actionGroups: empty(processingFailureAlertActionGroupId)
+        ? []
+        : [processingFailureAlertActionGroupId]
+    }
+  }
 }
 resource plans 'Microsoft.Web/serverfarms@2024-11-01' = [for name in ['api','exporter']: {
   name: '${prefix}-${name}-plan-${suffix}'
