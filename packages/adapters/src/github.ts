@@ -159,7 +159,10 @@ export class GitHubClient {
     if (updated.errors) throw new Error('Issue update failed')
     return hash(nextContent)
   }
-  async ensureProjectItem(projectId: string, contentId: string): Promise<string> {
+  async ensureProjectItem(
+    projectId: string,
+    contentId: string,
+  ): Promise<{ id: string; created: boolean }> {
     let cursor: string | null = null
     for (let page = 0; page < 50; page++) {
       const result = z
@@ -171,7 +174,12 @@ export class GitHubClient {
                   nodes: z.array(
                     z.object({
                       id: z.string(),
-                      content: z.object({ id: z.string() }).nullable(),
+                      content: z
+                        .object({
+                          __typename: z.string(),
+                          id: z.string().optional(),
+                        })
+                        .nullable(),
                     }),
                   ),
                   pageInfo: z.object({
@@ -196,24 +204,28 @@ export class GitHubClient {
         (projectItem) => projectItem.content?.id === contentId,
       )
       if (matches.length > 1) throw new Error('Duplicate Project item')
-      if (matches[0]) return matches[0].id
+      if (matches[0]) return { id: matches[0].id, created: false }
       const pageInfo = result.data.node.items.pageInfo
       if (!pageInfo.hasNextPage) break
       if (!pageInfo.endCursor) throw new Error('Project pagination incomplete')
       cursor = pageInfo.endCursor
       if (page === 49) throw new Error('Project reconciliation incomplete')
     }
-    return this.addToProject(projectId, contentId)
+    return {
+      id: await this.addToProject(projectId, contentId),
+      created: true,
+    }
   }
   async updateProjectFields(
     projectId: string,
     itemId: string,
     item: WorkItem,
     config: ProjectFieldConfig,
+    initializeStatus: boolean,
   ): Promise<void> {
     if (Boolean(config.statusFieldId) !== Boolean(config.todoOptionId))
       throw new Error('Project status field configuration incomplete')
-    if (config.statusFieldId && config.todoOptionId)
+    if (initializeStatus && config.statusFieldId && config.todoOptionId)
       await this.setProjectField(projectId, itemId, config.statusFieldId, {
         singleSelectOptionId: config.todoOptionId,
       })
