@@ -24,9 +24,9 @@ az bicep build --file infra/bootstrap/permissions.bicep --stdout
 2. Entraの単一テナントApp登録を作成し、`Reader`、`Reviewer`、`Governance`、`Operator`（User）と`NotificationSender`（Application）のApp rolesを定義する。割当必須としユーザーを割り当てる。WebリダイレクトURIは`https://<api>.azurewebsites.net/.auth/login/aad/callback`。ID Tokenを使用するUIと、aud/issuer/tid/rolesを検証するAPIの両方を試験する。
 3. Secure Webhookは専用サービスプリンシパルのアプリ権限に限定。Access Token v2と`idtyp=app`のoptional claim、audienceを合わせる。Action Groupsの実際の送信主体へのApp role割当をSP-03で確認する。未設定のまま匿名受付へ緩和しない。
 4. `infra/bootstrap/oidc.bicep`でGitHub main branch subjectのUAMI/Federationを作成。GitHub APIから取得した`githubOwnerId`と`githubRepositoryId`も渡す。新規Repositoryのsubjectは`repo:OWNER@OWNER_ID/REPOSITORY@REPOSITORY_ID:ref:refs/heads/main`であり、azure/loginが記録する実際のsubjectと完全一致させる。旧形式を使うRepositoryは実際の形式を確認してテンプレートを調整し、ワイルドカードへ緩和しない。通常CDのIdentityへ専用RGの必要なデプロイ権限を別途付与。Owner／権限付与権限は通常CDへ付けない。
-5. Repository Variablesに`AZURE_CLIENT_ID`、`AZURE_TENANT_ID`、`AZURE_SUBSCRIPTION_ID`、`AZURE_RESOURCE_GROUP`、`AZURE_LOCATION`、`ENTRA_CLIENT_ID`、`TARGET_SUBSCRIPTION_IDS`（カンマ区切り）を設定。秘密はVariablesへ入れない。
+5. Repository Variablesに`AZURE_CLIENT_ID`、`AZURE_TENANT_ID`、`AZURE_SUBSCRIPTION_ID`、`AZURE_RESOURCE_GROUP`、`AZURE_LOCATION`、`AZURE_HOST_STORAGE_BLOB_ENDPOINT`、`ENTRA_CLIENT_ID`、`TARGET_SUBSCRIPTION_IDS`（カンマ区切り）、`DECISION_ENDPOINT`を設定。いずれも非機密設定で、秘密はVariablesへ入れない。
 6. mainのCI合格後、Manual PoC deploymentの`plan`を起動して差分とHashを確認し、同じCI runで`apply`、`infrastructure_only=true`を起動。最初はアプリ配置を行わずMIと保管先を作る。
-  7. 管理者がoutputsを用いて`infra/bootstrap/permissions.bicep`を適用。データ用Blob/Queue/Table、ホストStorage、Key Vaultに用途別ロールを付与する。ホストBlob OwnerはFunctionsホストの要件であり、評価対象へのOwnerではない。評価対象はAPIのMIに許可Subscription/MGのReaderを別途付与。Exporterには評価対象読取を与えない。Foundry呼出ロールはAPIのMIに対象Foundryアカウント範囲で付与する。
+7. 管理者がoutputsを用いて`infra/bootstrap/permissions.bicep`を適用。データ用Blob/Queue/Table、ホストStorage、Key Vaultに用途別ロールを付与する。ホストBlob OwnerはFunctionsホストの要件であり、評価対象へのOwnerではない。評価対象はAPIのMIに許可Subscription/MGのReaderを別途付与。Exporterには評価対象読取を与えない。Foundry呼出ロールはAPIのMIに対象Foundryアカウント範囲で付与する。
 8. `entra-client-secret`をKey Vaultに直接保存。PoCのGitHub Tokenも必要になった時点で`github-token`へ保存し、有効期限と実権限を台帳へ記録。秘密をログ・CLI引数・Gitへ残さない。Secretを完全排除した設計とは主張しない。
 9. Entraのcallbackを更新し、再度plan/applyを確認して`infrastructure_only=false`で検査済みの同一ZIPを配置。RBAC伝播・Key Vault参照成功を確認する。
 
