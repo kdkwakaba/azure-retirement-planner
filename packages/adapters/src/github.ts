@@ -135,7 +135,9 @@ export class GitHubClient {
         ? currentHash !== previousManagedHash
         : previousContent !== nextContent
     )
-      throw new Error('Managed Issue section changed; human conflict review required')
+      throw new Error(
+        'Managed Issue section changed; human conflict review required',
+      )
     if (previousContent === nextContent) return currentHash
     const updatedBody =
       body.slice(0, contentStart) +
@@ -152,7 +154,8 @@ export class GitHubClient {
       })
       .parse(
         await this.request('/graphql', {
-          query: 'mutation($id:ID!,$body:String!){updateIssue(input:{id:$id,body:$body}){issue{id}}}',
+          query:
+            'mutation($id:ID!,$body:String!){updateIssue(input:{id:$id,body:$body}){issue{id}}}',
           variables: { id: issueId, body: updatedBody },
         }),
       )
@@ -194,7 +197,8 @@ export class GitHubClient {
         })
         .parse(
           await this.request('/graphql', {
-            query: 'query($id:ID!,$cursor:String){node(id:$id){...on ProjectV2{items(first:100,after:$cursor){nodes{id content{...on Issue{id}}}pageInfo{hasNextPage endCursor}}}}}',
+            query:
+              'query($id:ID!,$cursor:String){node(id:$id){...on ProjectV2{items(first:100,after:$cursor){nodes{id content{...on Issue{id}}}pageInfo{hasNextPage endCursor}}}}}',
             variables: { id: projectId, cursor },
           }),
         )
@@ -233,7 +237,8 @@ export class GitHubClient {
       throw new Error('Project priority field configuration incomplete')
     if (config.priorityFieldId && config.priorityOptionIds && item.priority) {
       const optionId = config.priorityOptionIds[item.priority]
-      if (!optionId) throw new Error('Project priority option is not configured')
+      if (!optionId)
+        throw new Error('Project priority option is not configured')
       await this.setProjectField(projectId, itemId, config.priorityFieldId, {
         singleSelectOptionId: optionId,
       })
@@ -262,8 +267,14 @@ export class GitHubClient {
       })
       .parse(
         await this.request('/graphql', {
-          query: 'mutation($project:ID!,$item:ID!,$field:ID!,$value:ProjectV2FieldValue!){updateProjectV2ItemFieldValue(input:{projectId:$project,itemId:$item,fieldId:$field,value:$value}){projectV2Item{id}}}',
-          variables: { project: projectId, item: itemId, field: fieldId, value },
+          query:
+            'mutation($project:ID!,$item:ID!,$field:ID!,$value:ProjectV2FieldValue!){updateProjectV2ItemFieldValue(input:{projectId:$project,itemId:$item,fieldId:$field,value:$value}){projectV2Item{id}}}',
+          variables: {
+            project: projectId,
+            item: itemId,
+            field: fieldId,
+            value,
+          },
         }),
       )
     if (result.errors) throw new Error('Project field update failed')
