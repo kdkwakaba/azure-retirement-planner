@@ -7,12 +7,14 @@ import {
   ensureIssueForExport,
   GitHubClient,
   required,
+  withProcessingFailureLog,
 } from '@arp/adapters'
 
 app.storageQueue('export', {
   queueName: 'exports',
   connection: 'DATA_QUEUE',
-  handler: async (raw) => {
+  handler: async (raw) =>
+    withProcessingFailureLog('issue-project-export', async () => {
     if (process.env.EXPORT_ENABLED !== 'true')
       throw new Error('Export disabled; preserve queue work')
     const message = z
@@ -94,5 +96,6 @@ app.storageQueue('export', {
       },
       'Merge',
     )
+    }),
   },
 })
