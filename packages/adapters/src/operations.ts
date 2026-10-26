@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto'
+
 export interface ProcessingFailureRecord {
   event: 'ProcessingFailure'
   stage: string
@@ -12,7 +14,7 @@ export interface ProcessingFailureRecord {
 export function logProcessingFailure(
   stage: string,
   error: unknown,
-  correlationId = crypto.randomUUID(),
+  correlationId = randomUUID(),
 ): string {
   const rawType =
     error instanceof Error ? error.name : typeof error === 'string' ? 'Error' : 'UnknownError'
