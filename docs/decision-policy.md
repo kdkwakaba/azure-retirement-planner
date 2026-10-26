@@ -59,6 +59,8 @@ Immediate、Within 30 days、Within 90 days、Within 180 days、Later、No actio
 
 リソース分類の`Unknown`は「カテゴリに該当しない」ではなく、現在の証拠で影響を特定できない状態を表す。`classificationReason`で評価前、対応プロファイルなし、条件不一致、旧データの理由未記録を区別する。既知プロファイルが必要とするSKU／kind等が取得できない場合は`Verification Required`とし、不足属性を人間の確認項目にする。プロファイルに存在しない属性値は`Not Impacted`へ倒さずUnknownとしてレビューに残す。
 
+Unknown、Possible、Verification Required、または確認フラグ付きConfirmedには、分類理由・不足属性・該当Evidenceに沿った`Impact Verification`作業を用意する。これはRecommendedの確認作業であり、移行必須や本番変更を意味しない。説明LLMが停止している場合も同じ安全な作業案を決定的に生成し、根拠がなければUnknownを維持する。
+
 欠損数ではなく結論への影響で判定する。以下は強制レビュー。
 
 - 期限、重要度、対象範囲、移行期間、代替手段等の不可欠情報が未確定。

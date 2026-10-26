@@ -14,6 +14,7 @@ import {
   packageHash,
   validateAssessment,
   refreshAssessment,
+  resourceVerificationWorkItems,
 } from '@arp/domain'
 import {
   AzureStore,
@@ -91,6 +92,7 @@ export async function synchronize(): Promise<{
 function fallbackExplanation(
   event: LifecycleEvent,
   missing: string[],
+  resources: ResourceImpact[],
 ): Explanation {
   const empty = {
     impact: [],
@@ -123,15 +125,59 @@ function fallbackExplanation(
       decisionRefs: [],
     })),
     humanChecks: [
+      ...resources
+        .filter(
+          (r) =>
+            r.verificationRequired ||
+            ['Unknown', 'Possible', 'Verification Required'].includes(
+              r.classification,
+            ),
+        )
+        .map((r) => ({
+          id: `resource-check-${hash({ id: r.id, reason: r.classificationReason })}`,
+          text: resourceGapText(r),
+          kind: 'Unknown' as const,
+          evidenceIds: r.evidenceIds,
+          decisionRefs: [],
+        })),
       {
         id: 'review',
         text: '業務重要度・Owner・期限・移行方式を確認してください。',
-        kind: 'Recommendation',
+        kind: 'Recommendation' as const,
         evidenceIds: event.evidence.map((e) => e.id),
         decisionRefs: [],
       },
     ],
   }
+}
+function resourceGapText(resource: ResourceImpact): string {
+  const attributes = resource.missingAttributes
+  if (resource.classificationReason === 'RequiredAttributeMissing')
+    return `影響判定に必要な属性が不足: ${resource.type} / ${attributes.join(', ') || '属性名未特定'}。実構成を読み取り専用で確認してください。`
+  if (resource.classificationReason === 'NoApplicableProfile')
+    return `現在の判定プロファイルに${resource.type}と通知の組合せがありません。公式適用範囲と対象可否を確認してください。`
+  if (resource.classificationReason === 'NoMatchingProfileCondition')
+    return `既知の判定条件に一致しない${resource.type}があります。未知の値を対象外とせず、公式条件との照合が必要です。`
+  if (resource.classificationReason === 'UsageRequiresVerification')
+    return `制御プレーン情報から利用実態を確認できない${resource.type}があります。許可された確認手段で利用状況を確認してください。`
+  if (resource.classificationReason === 'DependencyEvidence')
+    return `依存関係の根拠がある${resource.type}について、依存元・依存先と影響経路を確認してください。`
+  return `明示対象の${resource.type}について、Azure Resource IDとWorkload所属などの不足情報を確認してください。`
+}
+function resourceMissingInformation(resources: ResourceImpact[]): string[] {
+  return [
+    ...new Set(
+      resources
+        .filter(
+          (r) =>
+            r.verificationRequired ||
+            ['Unknown', 'Possible', 'Verification Required'].includes(
+              r.classification,
+            ),
+        )
+        .map(resourceGapText),
+    ),
+  ]
 }
 export async function assessSnapshot(message: unknown): Promise<void> {
   const job = z
@@ -206,6 +252,10 @@ export async function assessSnapshot(message: unknown): Promise<void> {
     const resources = candidates
       .filter((r) => (r.workloadId ?? 'unassigned') === workloadId)
       .map((r) => ({ ...r, workloadId }))
+    const workloadMissing = [
+      ...missing,
+      ...resourceMissingInformation(resources),
+    ]
     await assessWorkload(
       store,
       event,
@@ -213,7 +263,7 @@ export async function assessSnapshot(message: unknown): Promise<void> {
       snapshot.evidence,
       workloadId,
       complete,
-      missing,
+      workloadMissing,
       settings.modelCalls,
     )
   }
@@ -279,7 +329,7 @@ async function assessWorkload(
     ],
   }
   let decision = unavailableDecision(),
-    explanation = fallbackExplanation(event, missing)
+    explanation = fallbackExplanation(event, missing, resources)
   let workItems: WorkItem[] = []
   const endpoint = process.env.DECISION_ENDPOINT,
     deployment = process.env.DECISION_DEPLOYMENT
@@ -371,6 +421,14 @@ async function assessWorkload(
       missing = [...missing, '生成結果未確認。固定テンプレートで確認事項を提示']
     }
   }
+  if (!workItems.length)
+    workItems = resourceVerificationWorkItems({
+      eventId: event.id,
+      workloadId,
+      priority: rules.priority,
+      eventEvidenceIds: event.evidence.map((e) => e.id),
+      resources,
+    })
   if (!workItems.length)
     workItems = [
       {

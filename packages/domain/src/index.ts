@@ -9,6 +9,7 @@ import type {
   LifecycleEvent,
   Priority,
   ResourceImpact,
+  WorkItem,
 } from '@arp/contracts'
 import { assessmentSchema, dateSchema, eventSchema } from '@arp/contracts'
 
@@ -243,6 +244,106 @@ export function classifyResourceDetails(input: {
     missingAttributes: [],
     verificationRequired: false,
   }
+}
+export function resourceVerificationWorkItems(input: {
+  eventId: string
+  workloadId: string
+  priority: Priority | null
+  eventEvidenceIds: string[]
+  resources: ResourceImpact[]
+}): WorkItem[] {
+  const groups = new Map<string, ResourceImpact[]>()
+  for (const resource of input.resources) {
+    if (
+      !resource.verificationRequired &&
+      !['Unknown', 'Possible', 'Verification Required'].includes(
+        resource.classification,
+      )
+    )
+      continue
+    const missingAttributes = [...resource.missingAttributes].sort()
+    const key = hash({
+      type:
+        resource.classificationReason === 'NoApplicableProfile'
+          ? 'all-resource-types'
+          : resource.type,
+      classification: resource.classification,
+      reason: resource.classificationReason,
+      missingAttributes,
+    })
+    groups.set(key, [...(groups.get(key) ?? []), resource])
+  }
+  return [...groups.entries()].map(([key, resources]) => {
+    const sample = resources[0]!
+    const attributes = [...sample.missingAttributes].sort()
+    const resourceTypes = [...new Set(resources.map((r) => r.type))].sort()
+    const resourceIds = [...new Set(resources.map((r) => r.id))].sort()
+    const evidenceIds = [
+      ...new Set([
+        ...input.eventEvidenceIds,
+        ...resources.flatMap((r) => r.evidenceIds),
+      ]),
+    ].sort()
+    const detail =
+      sample.classificationReason === 'RequiredAttributeMissing'
+        ? `必要なAzure属性「${attributes.join('、')}」が取得結果にありません。現在の構成を読み取り専用で確認してください。`
+        : sample.classificationReason === 'NoApplicableProfile'
+          ? '現在の影響判定プロファイルにこの通知とリソース種別の組合せがありません。公式の適用範囲と実構成を人が確認してください。'
+          : sample.classificationReason === 'NoMatchingProfileCondition'
+            ? '既知の判定プロファイル条件に一致しません。未知の属性値を対象外とはみなさず、公式条件と実構成を人が確認してください。'
+            : sample.classificationReason === 'DependencyEvidence'
+              ? '依存関係の根拠が影響範囲を示すか、人が依存元・依存先を確認してください。'
+              : sample.classificationReason === 'UsageRequiresVerification'
+                ? '制御プレーン情報だけでは利用実態を確認できません。許可された運用手順で利用状況を確認してください。'
+                : '明示対象のリソース情報またはWorkloadとの対応が不足しています。Resource IDと所属を人が確認してください。'
+    const title =
+      sample.classificationReason === 'RequiredAttributeMissing'
+        ? `影響確認: ${attributes.join('、')} の確認`
+        : sample.classificationReason === 'NoApplicableProfile'
+          ? '影響確認: 判定プロファイルの適用範囲'
+          : sample.classificationReason === 'NoMatchingProfileCondition'
+            ? `影響確認: 条件不一致 (${sample.type})`
+            : `影響確認: ${sample.classification}`
+    return {
+      id: hash({
+        eventId: input.eventId,
+        workloadId: input.workloadId,
+        group: key,
+        resourceIds,
+      }),
+      category: 'Impact Verification',
+      title,
+      description: `${resources.length}件の対象候補（${resourceTypes.join('、')}）: ${detail} 結論と根拠を訂正理由へ記録し、確認できなければUnknownを維持してください。この作業は影響確認であり、移行必須やAzureリソース変更を意味しません。`,
+      workloadId: input.workloadId,
+      resourceIds,
+      ownerTeam: null,
+      necessity: 'Recommended',
+      priority: input.priority,
+      plannedStartDate: null,
+      dueDate: null,
+      applicableMilestoneIds: [],
+      prerequisites: [],
+      completionCriteria: [
+        '根拠と結論、確認できなかった情報を人が訂正理由へ記録する',
+        '影響分類を確定できない場合はUnknownを維持し、移行・変更の要否は別途判断する',
+      ],
+      humanApprovalRequired: true,
+      evidenceIds,
+      sourceType: 'Mixed',
+      officialReferenceIds: [],
+      dependencyIds: [],
+      status: 'Draft',
+      confidence: {
+        kind: 'EvidenceSupport',
+        value: null,
+        method: 'ResourceImpactの分類理由と不足属性からの決定的抽出',
+        limitations: [
+          '確認作業の生成は影響や移行必須を確定しない',
+          'Unknownを対象外へ自動変換しない',
+        ],
+      },
+    }
+  })
 }
 export function packageHash(assessment: Assessment): string {
   const { packageHash: _ignored, ...content } = assessment
