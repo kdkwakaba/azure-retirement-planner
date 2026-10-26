@@ -109,6 +109,12 @@ small {
 .metrics strong {
   font-size: 24px;
 }
+.operations-summary {
+  margin-bottom: 20px;
+}
+.operations-summary > p {
+  color: #526c6d;
+}
 .error {
   padding: 16px;
   background: #fcebe5;
