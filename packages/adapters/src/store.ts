@@ -132,10 +132,7 @@ export class AzureStore {
       const rowKey = 'outbox:' + itemId
       let existing: Record<string, unknown> | null = null
       try {
-        existing = await this.table.getEntity(
-          current.partitionKey,
-          rowKey,
-        )
+        existing = await this.table.getEntity(current.partitionKey, rowKey)
       } catch (error) {
         if (
           typeof error !== 'object' ||
@@ -165,12 +162,7 @@ export class AzureStore {
       }
       outboxActions.push(
         existing
-          ? [
-              'update',
-              entity,
-              'Replace',
-              { etag: existing.etag as string },
-            ]
+          ? ['update', entity, 'Replace', { etag: existing.etag as string } ]
           : ['create', entity],
       )
     }
