@@ -10,6 +10,7 @@ import type {
 import { assessmentSchema } from '@arp/contracts'
 import {
   applyRules,
+  compareEventVersion,
   hash,
   packageHash,
   validateAssessment,
@@ -297,11 +298,9 @@ async function assessWorkload(
   const prior = await store.head(hash({ eventId: event.id, workloadId }))
   if (prior) {
     const current = await store.assessment(prior.assessmentId)
-    if (current.event.sourceUpdatedAt > event.sourceUpdatedAt) return
-    if (
-      current.event.sourceUpdatedAt === event.sourceUpdatedAt &&
-      current.event.contentHash !== event.contentHash
-    ) {
+    const versionComparison = compareEventVersion(current.event, event)
+    if (versionComparison === 'IncomingStale') return
+    if (versionComparison === 'Conflict') {
       complete = false
       missing = [
         ...missing,
