@@ -17,7 +17,7 @@
 | IMP-11 | Decision: 影響2軸、P1〜P4、余裕、低確率・欠損レビュー | 03 | 境界日、未確定、移行強制なしを単体試験 | 実装済 | M / Architect+Dev / Yes |
 | IMP-12 | Explanation: 10区分、ID別名化、根拠参照、作業案 | 10,11 | 元応答保存、Schema・ID参照検証、失敗は手動確認 | 実装済。モデルによる意味的Groundingは実評価待ち | L / AI / No |
 | IMP-13 | Guardrails: ID・日付・DAG・根拠・Owner・承認Hash | 03,11 | 架空・旧版・不適合の登録0 | 実装済。許可URL本文の取得と後継サービスの意味検証は追加対象 | L / Security+Dev / Yes |
-| IMP-14 | Human Review: Azure配信React、訂正、部分承認・保留・差戻し | 04,11,13 | APIロール、訂正新版、承認失効、Entraログイン | [レビュー画面UAT手順](review-screen-uat.md)を追加。Live read-onlyとControlled write-pathを分離。画面表示の実環境UATおよび業務訂正／承認のUATは未実施 | L / Frontend+Security / Yes |
+| IMP-14 | Human Review: Azure配信React、訂正、部分承認・保留・差戻し | 04,11,13 | APIロール、訂正新版、承認失効、Entraログイン | [レビュー画面UAT手順](review-screen-uat.md)を追加。認証済み一覧・詳細・読取更新・未保存の理由ガードを実環境確認。旧AssessmentのLegacyUnrecordedにより最新の分類理由／Evidence紐づきはBlocked。同期・承認・外部登録、ロール別API、匿名拒否、Controlled write-pathは未検証 | L / Frontend+Security / Yes |
 | IMP-15 | Integration: Issue作成→Project追加、相関ID・成否不明停止 | 13,14 | 無承認拒否、重複防止、Project失敗のみ再開 | 保存済みIssue IDのProject再試行、`Sending`再試行の相関マーカー照合を共通関数と合成テストで確認。実Queue再配送、個人Project権限SP-05、実登録は未検証 | L / Dev / Yes |
 | IMP-16 | Integration: Projectフィールド、改訂Issue更新・進捗取込 | 15 | 項目対応、競合・手動編集を保持、自動Closeなし | 未実装。Project契約確定後 | L / Dev / No |
 | IMP-17 | Operations: 再評価・処理ログ・Poison・復旧Runbook | 06–15 | 日次再取得、部分失敗表示、成否不明の手動照合 | 最小実装。集計KPI・通知・管理画面は追加対象 | M / SRE / Yes |
