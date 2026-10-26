@@ -7,6 +7,7 @@ import { approvalSchema, correctionSchema } from '@arp/contracts'
 import { hash, reviseAssessment } from '@arp/domain'
 import {
   AzureStore,
+  GitHubClient,
   createVerifier,
   requireApplicationRole,
   requireUserRole,
@@ -63,6 +64,8 @@ app.http('api', {
       const store = new AzureStore(config().account)
       if (request.method === 'GET' && path === 'assessments')
         return reply(200, await store.list())
+      if (request.method === 'GET' && path === 'project-progress')
+        return reply(200, await store.projectProgress())
       if (request.method === 'POST') {
         verifyWriteRequest(
           request.headers.get('origin'),
@@ -246,5 +249,23 @@ app.timer('receiptOutbox', {
     withProcessingFailureLog('receipt-outbox', async () => {
       if (process.env.INGEST_ENABLED === 'true')
         await new AzureStore(config().account).dispatchReceipts()
+    }),
+})
+
+app.timer('projectProgress', {
+  schedule: '0 */15 * * * *',
+  handler: async () =>
+    withProcessingFailureLog('project-progress-import', async () => {
+      if (process.env.PROJECT_PROGRESS_SYNC_ENABLED !== 'true') return
+      const github = new GitHubClient(
+        required('GITHUB_OWNER'),
+        required('GITHUB_REPOSITORY'),
+        required('GITHUB_TOKEN'),
+      )
+      const progress = await github.readProjectProgress(
+        required('GITHUB_PROJECT_ID'),
+        required('GITHUB_PROJECT_STATUS_FIELD_ID'),
+      )
+      await new AzureStore(config().account).recordProjectProgress(progress)
     }),
 })

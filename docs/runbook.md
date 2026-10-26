@@ -43,7 +43,7 @@ az bicep build --file infra/bootstrap/permissions.bicep --stdout
 - 外部Issue作成の成否が不明でOutboxが`Sending`の場合、Queue再試行で`<!-- arp:<Work Item ID> -->`をIssue一覧から照合する。見つかった場合のみ既存Issue IDを保存してProject追加へ進み、見つからない／一覧検索が不完全な場合は状態を`Sending`のまま保留し、新規Issueを作成しない。検索可能範囲・権限エラーを確認し、安易にOutboxを`Pending`へ戻さない。Issueが`IssueCreated`でProject追加だけ失敗した場合は保存済みIDからProject追加を再試行する。
 - 日付は人間が公式情報を確認して訂正画面へ入力。4マイルストーンを分離し、適用期限・必要日数で余裕と優先度を再計算する。訂正は新版になり旧承認は使えない。原モデル判断・説明は原出力として別欄に残る。
 - 個人の非公開Projectを作成し、GitHub Tokenの最小権限をSP-05で試験。RepositoryのIssue作成権限と個人Projectの追加権限は別。`GITHUB_OWNER/REPOSITORY/PROJECT_ID`を設定し、モデルの意味的根拠と作業をレビューした後に外部登録を有効化する。
-- 現在のIssueは相関ID・分類・優先度・日程・Evidence IDのみを送り、自由文・実Resource IDを複製しない。詳細は認証画面で確認する。Projectのフィールド更新・進捗同期はIMP-16で追加する。
+- 現在のIssueは相関ID・分類・優先度・日程・Evidence IDのみを送り、自由文・実Resource IDを複製しない。詳細は認証画面で確認する。ProjectのStatusフィールドは15分ごとに任意同期できる。`PROJECT_PROGRESS_SYNC_ENABLED`は既定でfalse。設定済みStatus field IDだけを読み、Issueと対応する内部Outboxへ外部Status名・option ID・取得時刻を別属性として保存する。承認・評価状態・Issue本文は変更せず、ProjectのDoneだけで自動クローズしない。認証済み`GET /api/project-progress`とレビュー画面の各作業項目で取得済みStatusを確認できる。未同期は完了を意味しない。
 
 ## 4. リリースと障害対応
 
@@ -104,3 +104,12 @@ ServiceHealthResourcesの`LastUpdateTime`は数値で返る場合がある。ARG
 - Issue本文は`<!-- arp:managed:start -->`と`<!-- arp:managed:end -->`の間だけ更新する。前回Hashと異なる管理領域の変更を検知した場合は停止し、外部本文を上書きしない。区切りのない既存Issueは自動更新せず、人間による移行が必要。
 - Issue更新後は管理本文HashをOutboxに先に保存し、Project APIが一時失敗してもIssueを重複作成・再更新しない。Project登録を再試行する際はProject内の既存Issueを照合する。
 - GitHub ProjectのフィールドIDやoption ID、外部APIのアクセス権が未検証の場合、ExportはエラーとしてQueue再試行／Poisonへ流す。設定不足を空の成功として扱わない。
+
+
+### GitHub Project進捗の取込
+
+- 進捗の読取は`PROJECT_PROGRESS_SYNC_ENABLED=false`が既定。Project IDとStatusフィールドID、およびTokenのProject読取権限を確認してから、個別に有効化する。
+- 15分ごとにProject itemを全ページ読取し、設定されたStatusフィールド値だけを内部Outboxへ保存する。Issue内容・承認・作業の完了状態は更新しない。
+- Status optionの表示名とoption IDをそのまま監査用進捗として保存する。企業固有の値をARPの承認・検証状態へ自動変換しない。
+- `/api/project-progress`はEntra認証を要求し、レビュー画面に登録済作業項目ごとの最終取込Statusを表示する。`未同期`は未登録、未出力、同期無効、同期未実行のいずれかであり、完了を意味しない。
+- Project read権限不足、API制限、ページング不備は同期失敗として記録し、前回値を保持する。失敗時にProject状態を空にしない。

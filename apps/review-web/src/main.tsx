@@ -34,7 +34,10 @@ function App() {
     [busy, setBusy] = useState(false),
     [checked, setChecked] = useState<string[]>([]),
     [reason, setReason] = useState(''),
-    [notice, setNotice] = useState('')
+    [notice, setNotice] = useState(''),
+    [projectProgress, setProjectProgress] = useState<
+      Array<{ workItemId: string; status: string | null; syncedAt: string }>
+    >([])
   const current = items.find((a) => a.id === selected)
   async function refresh() {
     setError('')
@@ -43,6 +46,25 @@ function App() {
         .array()
         .parse(await request('assessments', 'GET'))
       setItems(data)
+      const progress = await request('project-progress', 'GET')
+      setProjectProgress(
+        Array.isArray(progress)
+          ? progress.filter(
+              (
+                item,
+              ): item is {
+                workItemId: string
+                status: string | null
+                syncedAt: string
+              } =>
+                typeof item === 'object' &&
+                item !== null &&
+                typeof item.workItemId === 'string' &&
+                (typeof item.status === 'string' || item.status === null) &&
+                typeof item.syncedAt === 'string',
+            )
+          : [],
+      )
     } catch (e) {
       setError(e instanceof Error ? e.message : '取得失敗')
     }
@@ -400,6 +422,11 @@ function App() {
                           {w.priority ?? '未確定'}
                         </p>
                         <p>{w.description}</p>
+                        <small>
+                          GitHub Project進捗:{' '}
+                          {projectProgress.find((p) => p.workItemId === w.id)
+                            ?.status ?? '未同期'}
+                        </small>
                         <p>
                           開始 {w.plannedStartDate ?? '未確定'} ／ 完了{' '}
                           {w.dueDate ?? '未確定'} ／ Owner{' '}

@@ -192,6 +192,85 @@ export class AzureStore {
       ...outboxActions,
     ])
   }
+  async recordProjectProgress(
+    progress: Array<{
+      projectItemId: string
+      statusName: string | null
+      statusOptionId: string | null
+    }>,
+  ): Promise<number> {
+    const byProjectItemId = new Map(
+      progress.map((item) => [item.projectItemId, item]),
+    )
+    let updated = 0
+    for await (const row of this.table.listEntities({
+      queryOptions: { filter: "entityKind eq 'outbox'" },
+    })) {
+      if (
+        !row.partitionKey ||
+        !row.rowKey ||
+        typeof row.projectItemId !== 'string'
+      )
+        continue
+      const current = byProjectItemId.get(row.projectItemId)
+      if (!current) continue
+      const syncedAt = new Date().toISOString()
+      if (
+        row.externalStatus === current.statusName &&
+        row.externalStatusOptionId === current.statusOptionId
+      )
+        continue
+      await this.table.updateEntity(
+        {
+          partitionKey: row.partitionKey,
+          rowKey: row.rowKey,
+          externalStatus: current.statusName,
+          externalStatusOptionId: current.statusOptionId,
+          externalStatusSyncedAt: syncedAt,
+        },
+        'Merge',
+        { etag: row.etag },
+      )
+      updated++
+    }
+    return updated
+  }
+  async projectProgress(): Promise<
+    Array<{
+      workItemId: string
+      status: string | null
+      statusOptionId: string | null
+      syncedAt: string
+    }>
+  > {
+    const progress: Array<{
+      workItemId: string
+      status: string | null
+      statusOptionId: string | null
+      syncedAt: string
+    }> = []
+    for await (const row of this.table.listEntities({
+      queryOptions: { filter: "entityKind eq 'outbox'" },
+    })) {
+      if (
+        typeof row.rowKey !== 'string' ||
+        !row.rowKey.startsWith('outbox:') ||
+        typeof row.externalStatusSyncedAt !== 'string'
+      )
+        continue
+      progress.push({
+        workItemId: row.rowKey.slice('outbox:'.length),
+        status:
+          typeof row.externalStatus === 'string' ? row.externalStatus : null,
+        statusOptionId:
+          typeof row.externalStatusOptionId === 'string'
+            ? row.externalStatusOptionId
+            : null,
+        syncedAt: row.externalStatusSyncedAt,
+      })
+    }
+    return progress
+  }
   async dispatchOutbox(): Promise<void> {
     for await (const row of this.table.listEntities({
       queryOptions: { filter: "entityKind eq 'outbox' and state eq 'Pending'" },
