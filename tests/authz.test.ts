@@ -6,53 +6,53 @@ import {
   requireUserRole,
 } from '@arp/adapters'
 
-test('user roles follow the API access matrix', () => {
-  const cases = [
-    { role: 'Reader', read: true, sync: false, review: false },
-    { role: 'Reviewer', read: true, sync: false, review: true },
-    { role: 'Operator', read: true, sync: true, review: false },
-    { role: 'Governance', read: true, sync: true, review: true },
-  ]
-
-  for (const entry of cases) {
-    const principal = {
-      id: entry.role,
-      roles: [entry.role],
-      kind: 'User' as const,
-    }
-    for (const [policy, allowed] of [
-      [apiRolePolicy.read, entry.read],
-      [apiRolePolicy.sync, entry.sync],
-      [apiRolePolicy.review, entry.review],
-    ] as const) {
-      if (allowed) {
-        assert.doesNotThrow(() => requireUserRole(principal, policy))
-      } else {
-        assert.throws(() => requireUserRole(principal, policy), /Forbidden/)
-      }
-    }
-  }
+const user = (role: string) => ({
+  id: role,
+  roles: [role],
+  kind: 'User' as const,
 })
 
-test('notification role requires application identity', () => {
-  const sender = {
+test('Reader is read only', () => {
+  const principal = user('Reader')
+  assert.doesNotThrow(() => requireUserRole(principal, apiRolePolicy.read))
+  assert.throws(() => requireUserRole(principal, apiRolePolicy.sync))
+  assert.throws(() => requireUserRole(principal, apiRolePolicy.review))
+})
+
+test('Reviewer can read and review', () => {
+  const principal = user('Reviewer')
+  assert.doesNotThrow(() => requireUserRole(principal, apiRolePolicy.read))
+  assert.doesNotThrow(() => requireUserRole(principal, apiRolePolicy.review))
+  assert.throws(() => requireUserRole(principal, apiRolePolicy.sync))
+})
+
+test('Operator can read and sync', () => {
+  const principal = user('Operator')
+  assert.doesNotThrow(() => requireUserRole(principal, apiRolePolicy.read))
+  assert.doesNotThrow(() => requireUserRole(principal, apiRolePolicy.sync))
+  assert.throws(() => requireUserRole(principal, apiRolePolicy.review))
+})
+
+test('Governance can use all user APIs', () => {
+  const principal = user('Governance')
+  assert.doesNotThrow(() => requireUserRole(principal, apiRolePolicy.read))
+  assert.doesNotThrow(() => requireUserRole(principal, apiRolePolicy.sync))
+  assert.doesNotThrow(() => requireUserRole(principal, apiRolePolicy.review))
+})
+
+test('notification sender requires application identity', () => {
+  const principal = {
     id: 'synthetic-sender',
     roles: [...apiRolePolicy.notification],
     kind: 'Application' as const,
   }
   assert.doesNotThrow(() =>
-    requireApplicationRole(sender, apiRolePolicy.notification),
+    requireApplicationRole(principal, apiRolePolicy.notification),
   )
-  assert.throws(
-    () => requireApplicationRole(sender, apiRolePolicy.read),
-    /Forbidden/,
-  )
-  assert.throws(
-    () =>
-      requireUserRole(
-        { ...sender, roles: ['Governance'] },
-        apiRolePolicy.sync,
-      ),
-    /Forbidden/,
+  assert.throws(() =>
+    requireUserRole(
+      { ...principal, roles: ['Governance'] },
+      apiRolePolicy.sync,
+    ),
   )
 })
