@@ -39,6 +39,7 @@ az bicep build --file infra/bootstrap/permissions.bicep --stdout
 - Decision-1のDeployment、API設定、API MIへのFoundry限定推論権限を反映済み。実データ通知1件のv1応答に加え、合成3事例×3回の型・確率契約検証を完了（9/9成功、9/9 Unknownを含みAbstained相当）。これは判断精度の実証ではない。CLI利用者のCognitive Services UserはFoundryアカウント範囲に限定。説明モデルと実環境精度評価は未完了。応答契約不一致は原応答をAzureへ保存してUnavailable＋人間判断。採用契約は`packages/adapters/src/models.ts`、Prompt/Rule Versionはコードで追跡する。別モデルへの自動切替はない。
 - Unknown／Possible／Verification Requiredまたは確認フラグ付きConfirmedは分類理由・不足属性をレビュー欄に示す。説明モデル未設定・利用不可の場合は、未確定理由とEvidenceから確認タスクを決定的に生成する。いずれもRecommendedの確認であり、移行必須やAzure変更ではない。
 - 説明モデルはJSON Schema対応とMIを確認。Resource/Workload/Ownerは別名化し、選別済み構成属性だけ送る。公式本文に機密が混ざらないことをSP-04で確認する。現在は外部URL本文の自動取得を行わない。
+- 外部Issue作成の成否が不明でOutboxが`Sending`の場合、Queue再試行で`<!-- arp:<Work Item ID> -->`をIssue一覧から照合する。見つかった場合のみ既存Issue IDを保存してProject追加へ進み、見つからない／一覧検索が不完全な場合は状態を`Sending`のまま保留し、新規Issueを作成しない。検索可能範囲・権限エラーを確認し、安易にOutboxを`Pending`へ戻さない。Issueが`IssueCreated`でProject追加だけ失敗した場合は保存済みIDからProject追加を再試行する。
 - 日付は人間が公式情報を確認して訂正画面へ入力。4マイルストーンを分離し、適用期限・必要日数で余裕と優先度を再計算する。訂正は新版になり旧承認は使えない。原モデル判断・説明は原出力として別欄に残る。
 - 個人の非公開Projectを作成し、GitHub Tokenの最小権限をSP-05で試験。RepositoryのIssue作成権限と個人Projectの追加権限は別。`GITHUB_OWNER/REPOSITORY/PROJECT_ID`を設定し、モデルの意味的根拠と作業をレビューした後に外部登録を有効化する。
 - 現在のIssueは相関ID・分類・優先度・日程・Evidence IDのみを送り、自由文・実Resource IDを複製しない。詳細は認証画面で確認する。Projectのフィールド更新・進捗同期はIMP-16で追加する。

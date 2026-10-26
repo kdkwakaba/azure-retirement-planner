@@ -202,6 +202,57 @@ test('GitHub registration uses safe text and persists Issue separately from Proj
     '/graphql',
   ])
 })
+test('TST-23: ambiguous Issue creation is reconciled by marker or remains unresolved', async (t) => {
+  const client = new GitHubClient(
+    'synthetic-owner',
+    'synthetic-repo',
+    'synthetic-token',
+  )
+  const item = fixture().workItems[0]!
+  let createAttempted = false
+  t.mock.method(
+    globalThis,
+    'fetch',
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        createAttempted = true
+        throw new Error('Unexpected create during reconciliation')
+      }
+      assert.ok(String(input).includes('state=all&per_page=100&page=1'))
+      return Response.json([
+        {
+          node_id: 'synthetic-reconciled-issue',
+          body: `<!-- arp:${item.id} -->`,
+          html_url:
+            'https://github.com/synthetic-owner/synthetic-repo/issues/1',
+        },
+      ])
+    },
+  )
+  assert.equal(
+    (await client.recoverAmbiguousCreate(item.id)).id,
+    'synthetic-reconciled-issue',
+  )
+  assert.equal(createAttempted, false)
+})
+test('ambiguous Issue creation is not repeated when reconciliation finds no marker', async (t) => {
+  const client = new GitHubClient(
+    'synthetic-owner',
+    'synthetic-repo',
+    'synthetic-token',
+  )
+  let createAttempted = false
+  t.mock.method(
+    globalThis,
+    'fetch',
+    async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') createAttempted = true
+      return Response.json([])
+    },
+  )
+  await assert.rejects(client.recoverAmbiguousCreate('synthetic-item'))
+  assert.equal(createAttempted, false)
+})
 test('approval and stable per-item outbox are one conditional transaction', async (t) => {
   const store = new AzureStore('syntheticaccount')
   const a = fixture()
