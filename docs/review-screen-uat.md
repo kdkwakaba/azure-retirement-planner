@@ -71,6 +71,10 @@ Git内には実データを記録しない。次の要約だけを管理され�
 - 書込みが発生した場合のAssessment版、承認記録、外部登録の有無と復旧確認
 - 未解決事項、再試験条件、最終受入者
 
+
+
+Fixture-only lower-layer evidence: existing CI case TST-29 verifies that a human-confirmed OutOfScope revision records Human Evidence, clears priority and work items, persists through refresh, and rejects a domain approval. This is not a browser/API integration UAT and does not exercise the live Assessment.
+
 ## Exit Criteria
 
 - UAT-R-01〜08がLive read-onlyでPass。ただし機能が環境に存在しない場合はFailではなくBlockedとして記録し、修正後に再実施。
@@ -82,3 +86,49 @@ Git内には実データを記録しない。次の要約だけを管理され�
 ## 制約
 
 この文書は手順と期待結果を定義する。ブラウザー自動化ツール、CIのE2E実行、認証セッションの保存、UAT実施自体は実装しない。現在のCIにはブラウザー・画面操作を許可する機能はなく、UAT文書を追加してもComputer UseのURL判定／操作制御は変更されない。
+
+## UAT実施記録
+
+### UAT-RUN-2026-10-26-READONLY-01
+
+実施区分: Live read-only。専用PoC画面で認証済みセッションを使用。実通知タイトル、Resource ID、本文、Evidence本文、トークンはこの記録へ保存しない。
+
+| ID | 結果 | 記録 |
+|---|---|---|
+| UAT-R-01 | Pass（認証済み画面のみ） | 認証済み画面を表示。匿名アクセス拒否とサインアウト後の挙動は未確認 |
+| UAT-R-02 | Pass | 7件の通知一覧から1件を選択し、同じ評価の詳細を表示 |
+| UAT-R-03 | Blocked | Resource一覧は表示された。既存AssessmentのUnknownに旧データ理由LegacyUnrecordedが付いており、現行ルールでの分類理由・不足属性の表示は再評価前のため検証できず |
+| UAT-R-04 | Partial | 説明カテゴリとEvidence一覧は表示された。公式情報・社内情報・判断の各主張とEvidence IDの対応関係はこの画面確認だけでは検証できず |
+| UAT-R-05 | Pass | 「評価結果を更新」を実行。7件の一覧と選択中の詳細が維持された |
+| UAT-R-06 | Pass（未送信） | 訂正欄を展開。理由を空欄のまま対象判定を一時的にOutOfScopeへ切り替えても保存ボタンは無効。InScopeへ戻し、未送信を確認 |
+| UAT-R-07 | Pass（明示依頼後の実行） | 再認証後に1回同期。7通知・構成2件の取得とQueue受付を確認し、一覧の7評価すべてに新しい評価時刻を確認。最初の401要求は未認証で処理開始せず |
+| UAT-R-08 | Partial | 未認証別タブでは画面外枠とサインイン案内のみ表示、一覧0件。未認証GET `/api/me`・`/api/assessments`はAuthentication required。サインアウト後の挙動は未実施 |
+
+UAT-R-05の更新は画面の読取更新で、訂正POST、評価同期、承認、外部Work Item登録は実行していない。UAT-R-06で変更したのはブラウザー上の未保存フォーム値のみで、保存前に元の選択へ戻した。Assessment版・Evidence・Work Itemに書込みはない。
+
+Controlled write-path UAT-W-01〜10、ロール別API拒否、匿名アクセス、サインアウト後の確認は未実施。現在のAssessmentを試験データとして訂正・承認せず、fixtureまたは明示的に承認された対象を用いて別途実施する。実環境のスクリーンショットはResource ID等を含むためGitへ保存していない。
+
+### 残課題
+
+- 新しい評価版で分類理由・不足属性とEvidence紐づきを再確認する。
+- 認証ロール別UI/APIと匿名アクセス拒否を確認する。
+- UAT-W-01〜10をfixtureベースで実行する。外部Issue／Project登録はSP-05の権限確認と別承認後に限定する。
+
+
+### UAT-RUN-2026-10-26-LIVE-02
+
+先行セッションでは同期要求が401となり、アプリのサインイン画面へ誘導された。資格情報や同意入力は自動化せず、再サインイン後に画面へ戻った。最初の要求は処理開始していない。再認証後、ユーザーの依頼に基づき同期を一度実行した。
+
+| 観点 | 結果 |
+|---|---|
+| 実取得 | 7通知、Azure構成2件を取得。Queue処理後、一覧の7評価すべてで新しい評価時刻を確認 |
+| 判断 | 選択した最新評価はMicrosoft-Decision-1 v1 / Abstained。人間確認と確認作業を維持 |
+| リソース分類 | 選択評価の2リソースはUnknown / NoApplicableProfile、環境は不明。Not Impactedへ誤分類していない |
+| Evidence | 選択評価で3件（Microsoft 1、Azure 2）。6説明Claim中4件がEvidence一覧IDに一致し、参照切れ0件。残る2件はUnknownかつ「なし／不明」と明示 |
+| 現行認可 | 再認証後の同期POSTは受理。後続の`/api/me`はAuthentication requiredとなり実ロール名を取得できず、別ロールの拒否も未確認 |
+| 匿名アクセス | 独立タブで画面外枠が表示されたが一覧は0件、サインイン案内あり。`/api/me`・`/api/assessments`はAuthentication requiredで拒否。Assessmentデータは取得・表示されていない |
+| 副作用 | 同期・評価データはPoCアプリ内へ保存。評価対象Azureリソース、訂正、承認、Issue／Projectには変更なし |
+
+Decision-1呼出しの実数を個別メトリックから確認していないため、7件のモデル呼出し完了とは断定しない。呼出し日次枠の上限内で同期した。選択した1評価の応答は画面上で確認した。
+
+この実施でUAT-R-03の最新分類理由、UAT-R-04のClaim→Evidence参照、UAT-R-07の同期経路を確認した。匿名アクセス・サインアウト後、Reader／Reviewer／Governance／Operator別のHTTP認可、UAT-W-01〜10のControlled write-pathは依然未実施。対象外訂正や承認は現行実データを変更するため実行していない。
