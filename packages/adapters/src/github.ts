@@ -222,6 +222,94 @@ export class GitHubClient {
       created: true,
     }
   }
+  async readProjectProgress(
+    projectId: string,
+    statusFieldId: string,
+  ): Promise<
+    Array<{
+      projectItemId: string
+      issueId: string
+      statusName: string | null
+      statusOptionId: string | null
+    }>
+  > {
+    if (!projectId || !statusFieldId)
+      throw new Error('Project progress configuration incomplete')
+    const progress: Array<{
+      projectItemId: string
+      issueId: string
+      statusName: string | null
+      statusOptionId: string | null
+    }> = []
+    let cursor: string | null = null
+    for (let page = 0; page < 50; page++) {
+      const result = z
+        .object({
+          data: z.object({
+            node: z
+              .object({
+                items: z.object({
+                  nodes: z.array(
+                    z.object({
+                      id: z.string(),
+                      content: z
+                        .object({
+                          __typename: z.string(),
+                          id: z.string().optional(),
+                        })
+                        .nullable(),
+                      fieldValues: z.object({
+                        nodes: z.array(
+                          z.object({
+                            name: z.string(),
+                            optionId: z.string(),
+                            field: z.object({ id: z.string() }),
+                          }),
+                        ),
+                      }),
+                    }),
+                  ),
+                  pageInfo: z.object({
+                    hasNextPage: z.boolean(),
+                    endCursor: z.string().nullable(),
+                  }),
+                }),
+              })
+              .nullable(),
+          }),
+          errors: z.unknown().optional(),
+        })
+        .parse(
+          await this.request('/graphql', {
+            query:
+              'query($id:ID!,$cursor:String){node(id:$id){...on ProjectV2{items(first:100,after:$cursor){nodes{id content{...on Issue{id}} fieldValues(first:100){nodes{...on ProjectV2ItemFieldSingleSelectValue{name optionId field{...on ProjectV2SingleSelectField{id}}}}}} pageInfo{hasNextPage endCursor}}}}}',
+            variables: { id: projectId, cursor },
+          }),
+        )
+      if (result.errors || !result.data.node)
+        throw new Error('Project progress read failed')
+      for (const item of result.data.node.items.nodes) {
+        if (item.content?.__typename !== 'Issue' || !item.content.id) continue
+        const statuses = item.fieldValues.nodes.filter(
+          (value) => value.field.id === statusFieldId,
+        )
+        if (statuses.length > 1)
+          throw new Error('Project status field is ambiguous')
+        progress.push({
+          projectItemId: item.id,
+          issueId: item.content.id,
+          statusName: statuses[0]?.name ?? null,
+          statusOptionId: statuses[0]?.optionId ?? null,
+        })
+      }
+      const pageInfo = result.data.node.items.pageInfo
+      if (!pageInfo.hasNextPage) return progress
+      if (!pageInfo.endCursor) throw new Error('Project pagination incomplete')
+      cursor = pageInfo.endCursor
+    }
+    throw new Error('Project progress reconciliation incomplete')
+  }
+
   async updateProjectFields(
     projectId: string,
     itemId: string,
