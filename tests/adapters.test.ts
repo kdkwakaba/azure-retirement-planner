@@ -394,6 +394,69 @@ test('managed Issue updates preserve manual text and reject edits inside the man
   )
 })
 
+test('Project progress import reads only the configured Status field', async (t) => {
+  const client = new GitHubClient(
+    'synthetic-owner',
+    'synthetic-repo',
+    'synthetic-token',
+  )
+  t.mock.method(
+    globalThis,
+    'fetch',
+    async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const payload = JSON.parse(String(init?.body)) as { query: string }
+      assert.ok(payload.query.includes('ProjectV2ItemFieldSingleSelectValue'))
+      return Response.json({
+        data: {
+          node: {
+            items: {
+              nodes: [
+                {
+                  id: 'synthetic-project-item',
+                  content: {
+                    __typename: 'Issue',
+                    id: 'synthetic-issue',
+                  },
+                  fieldValues: {
+                    nodes: [
+                      {
+                        name: 'In progress',
+                        optionId: 'in-progress',
+                        field: { id: 'status-field' },
+                      },
+                      {
+                        name: 'P2',
+                        optionId: 'p2',
+                        field: { id: 'priority-field' },
+                      },
+                    ],
+                  },
+                },
+              ],
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+        },
+      })
+    },
+  )
+  assert.deepEqual(
+    await client.readProjectProgress('synthetic-project', 'status-field'),
+    [
+      {
+        projectItemId: 'synthetic-project-item',
+        issueId: 'synthetic-issue',
+        statusName: 'In progress',
+        statusOptionId: 'in-progress',
+      },
+    ],
+  )
+  await assert.rejects(
+    client.readProjectProgress('synthetic-project', ''),
+    /configuration incomplete/,
+  )
+})
+
 test('Project field sync skips status on existing items and updates mapped values', async (t) => {
   const client = new GitHubClient(
     'synthetic-owner',
