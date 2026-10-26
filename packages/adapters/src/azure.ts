@@ -212,6 +212,20 @@ export async function explicitResourceIds(
   }
   return { resourceIds: ids, complete, failures }
 }
+export const PROFILE_RESOURCE_TYPES = [
+  'microsoft.network/loadbalancers',
+  'microsoft.storage/storageaccounts',
+  'microsoft.insights/webtests',
+] as const
+export function applicableProfileIds(event: LifecycleEvent): string[] {
+  const text = (event.title + ' ' + event.body).toLowerCase()
+  const profiles: string[] = []
+  if (/basic.{0,20}load balancer/.test(text))
+    profiles.push('basic-load-balancer')
+  if (/general.purpose.v1|gpv1/.test(text)) profiles.push('storage-gpv1')
+  if (/url ping|ping test/.test(text)) profiles.push('application-insights-url-ping')
+  return profiles
+}
 export function matchProfile(
   event: LifecycleEvent,
   resource: ResourceImpact,
