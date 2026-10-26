@@ -507,7 +507,7 @@ test('resource uncertainty produces evidence-backed verification work without re
   assert.equal(noProfile.length, 2)
   assert.ok(noProfile.every((item) => item.resourceIds.length === 1))
   assert.equal(noProfile[0]!.category, 'Impact Verification')
-  assert.ok(noProfile.evidenceIds.includes(a.event.evidence[0]!.id))
+  assert.ok(noProfile[0]!.evidenceIds.includes(a.event.evidence[0]!.id))
   assert.ok(
     resourceVerificationWorkItems({
       eventId: a.event.id,
