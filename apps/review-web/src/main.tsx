@@ -274,6 +274,14 @@ function App() {
                         'なし'}
                     </p>
                     <p>
+                      適用プロファイル:{' '}
+                      {current.discoveryScope.profileIds.join(', ') || 'なし'}
+                    </p>
+                    <p>
+                      プロファイル版:{' '}
+                      {current.discoveryScope.profileRegistryVersion}
+                    </p>
+                    <p>
                       取得リソース数: {current.discoveryScope.resourceCount}
                     </p>
                   </details>
