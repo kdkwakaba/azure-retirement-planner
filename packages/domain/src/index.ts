@@ -30,6 +30,20 @@ export function canonical(value: unknown): string {
 }
 export const hash = (value: unknown) =>
   createHash('sha256').update(canonical(value)).digest('hex')
+export type EventVersionComparison =
+  'IncomingNewer' | 'IncomingStale' | 'Same' | 'Conflict'
+export function compareEventVersion(
+  current: Pick<LifecycleEvent, 'sourceUpdatedAt' | 'contentHash'>,
+  incoming: Pick<LifecycleEvent, 'sourceUpdatedAt' | 'contentHash'>,
+): EventVersionComparison {
+  const currentTime = Date.parse(current.sourceUpdatedAt)
+  const incomingTime = Date.parse(incoming.sourceUpdatedAt)
+  if (!Number.isFinite(currentTime) || !Number.isFinite(incomingTime))
+    throw new Error('Invalid event update timestamp')
+  if (incomingTime > currentTime) return 'IncomingNewer'
+  if (incomingTime < currentTime) return 'IncomingStale'
+  return current.contentHash === incoming.contentHash ? 'Same' : 'Conflict'
+}
 export function daysBetween(asOf: string, deadline: string): number {
   dateSchema.parse(asOf)
   dateSchema.parse(deadline)

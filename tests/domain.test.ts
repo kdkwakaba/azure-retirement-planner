@@ -10,6 +10,7 @@ import {
   applyRules,
   canClose,
   classifyResource,
+  compareEventVersion,
   daysBetween,
   hash,
   normalizeNotice,
@@ -121,6 +122,27 @@ test('TST-10: changed official content changes version, not logical event ID', (
     })
   assert.equal(a.id, b.id)
   assert.notEqual(a.versionId, b.versionId)
+})
+test('TST-11: a stale official notification cannot roll back the current version', () => {
+  const current = {
+      sourceUpdatedAt: '2026-08-02T00:00:00.000Z',
+      contentHash: 'newer-content',
+    },
+    stale = {
+      sourceUpdatedAt: '2026-08-01T00:00:00.000Z',
+      contentHash: 'older-content',
+    }
+  assert.equal(compareEventVersion(current, stale), 'IncomingStale')
+  assert.equal(compareEventVersion(stale, current), 'IncomingNewer')
+})
+test('TST-12: different official content at the same update time is a conflict', () => {
+  const current = {
+      sourceUpdatedAt: '2026-08-02T00:00:00.000Z',
+      contentHash: 'content-a',
+    },
+    conflicting = { ...current, contentHash: 'content-b' }
+  assert.equal(compareEventVersion(current, conflicting), 'Conflict')
+  assert.equal(compareEventVersion(current, current), 'Same')
 })
 test('canonical hash is independent of object key order', () =>
   assert.equal(hash({ a: 1, b: 2 }), hash({ b: 2, a: 1 })))
