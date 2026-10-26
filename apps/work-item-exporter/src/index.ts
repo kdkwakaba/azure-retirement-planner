@@ -2,7 +2,12 @@ import { app } from '@azure/functions'
 import { z } from 'zod'
 import { approvalSchema, type Approval } from '@arp/contracts'
 import { verifyApproval } from '@arp/domain'
-import { AzureStore, GitHubClient, required } from '@arp/adapters'
+import {
+  AzureStore,
+  ensureIssueForExport,
+  GitHubClient,
+  required,
+} from '@arp/adapters'
 
 app.storageQueue('export', {
   queueName: 'exports',
@@ -37,31 +42,21 @@ app.storageQueue('export', {
       message.rowKey,
     )
     if (!row.partitionKey || !row.rowKey) throw new Error('Outbox key missing')
+    const partitionKey = row.partitionKey,
+      rowKey = row.rowKey
     if (row.state === 'Exported') return
     const github = new GitHubClient(
       required('GITHUB_OWNER'),
       required('GITHUB_REPOSITORY'),
       required('GITHUB_TOKEN'),
     )
-    // POST成否不明はマーカーを照合し、未発見ならSendingのまま再作成せず保留する。
-    let issueId = typeof row.issueId === 'string' ? row.issueId : null
-    if (row.state === 'Sending' && !issueId) {
-      const recovered = await github.recoverAmbiguousCreate(item.id)
-      issueId = recovered.id
-      await store.table.updateEntity(
-        {
-          partitionKey: row.partitionKey,
-          rowKey: row.rowKey,
-          state: 'IssueCreated',
-          issueId,
-        },
-        'Merge',
-      )
-    }
-    if (!issueId) {
-      const found = await github.find(item.id)
-      if (found) issueId = found.id
-      else {
+    // Project追加だけを再試行し、Issueの重複作成を避ける。
+    const issueId = await ensureIssueForExport(
+      github,
+      item,
+      typeof row.state === 'string' ? row.state : null,
+      typeof row.issueId === 'string' ? row.issueId : null,
+      async () => {
         await store.table.updateEntity(
           {
             ...row,
@@ -72,27 +67,27 @@ app.storageQueue('export', {
           'Merge',
           { etag: row.etag },
         )
-        const created = await github.create(item)
-        issueId = created.id
-      }
-      await store.table.updateEntity(
-        {
-          partitionKey: row.partitionKey,
-          rowKey: row.rowKey,
-          state: 'IssueCreated',
-          issueId,
-        },
-        'Merge',
-      )
-    }
+      },
+      async (id) => {
+        await store.table.updateEntity(
+          {
+            partitionKey,
+            rowKey,
+            state: 'IssueCreated',
+            issueId: id,
+          },
+          'Merge',
+        )
+      },
+    )
     const projectItemId = await github.addToProject(
       required('GITHUB_PROJECT_ID'),
       issueId,
     )
     await store.table.updateEntity(
       {
-        partitionKey: row.partitionKey,
-        rowKey: row.rowKey,
+        partitionKey,
+        rowKey,
         state: 'Exported',
         issueId,
         projectItemId,
