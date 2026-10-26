@@ -383,6 +383,22 @@ export function validateAssessment(input: Assessment): string[] {
     checkEvidence(milestone.evidenceIds, milestone.id)
   for (const resource of input.resources)
     checkEvidence(resource.evidenceIds, resource.id)
+  if (input.humanContext?.reviewEvidenceIds)
+    checkEvidence(input.humanContext.reviewEvidenceIds, 'Human Review')
+  if (input.humanContext?.scopeDisposition === 'OutOfScope') {
+    if (!input.humanContext.reason.trim()) errors.push('対象外判定の理由不足')
+    if (!input.humanContext.reviewEvidenceIds?.length)
+      errors.push('対象外判定の根拠不足')
+    else if (
+      !input.humanContext.reviewEvidenceIds.some(
+        (id) =>
+          input.event.evidence.find((e) => e.id === id)?.sourceType === 'Human',
+      )
+    )
+      errors.push('対象外判定はHuman Evidenceが必要')
+    if (input.workItems.length || input.effectivePriority !== null)
+      errors.push('対象外判定に作業または優先度が残っている')
+  }
   for (const claim of Object.values(input.explanation).flat()) {
     checkEvidence(claim.evidenceIds, claim.id)
     if (
@@ -494,6 +510,8 @@ export function verifyApproval(
   approval: Approval,
   itemId: string,
 ): void {
+  if (assessment.humanContext?.scopeDisposition === 'OutOfScope')
+    throw new Error('対象外案件は作業承認できない')
   if (
     assessment.packageHash !== packageHash(assessment) ||
     approval.packageHash !== assessment.packageHash ||
@@ -514,6 +532,16 @@ export function verifyApproval(
     throw new Error('未知の作業')
 }
 export function canClose(assessment: Assessment): boolean {
+  if (assessment.humanContext?.scopeDisposition === 'OutOfScope')
+    return (
+      assessment.workItems.length === 0 &&
+      assessment.effectivePriority === null &&
+      assessment.humanContext.reason.trim().length > 0 &&
+      !!assessment.humanContext.reviewEvidenceIds?.some((id) =>
+        assessment.event.evidence.some((e) => e.id === id),
+      ) &&
+      !validateAssessment(assessment).length
+    )
   return (
     assessment.scopeComplete &&
     assessment.resources.every(
@@ -531,6 +559,12 @@ export function reviseAssessment(
   now: string,
 ): Assessment {
   const result = structuredClone(original)
+  const scopeDisposition =
+    correction.scopeDisposition ??
+    original.humanContext?.scopeDisposition ??
+    (original.event.classification === 'ReviewRequired'
+      ? 'ReviewRequired'
+      : original.event.classification)
   const evidenceId = hash({ original: original.id, correction, reviewerId })
   const officialEvidence = original.event.evidence.find(
     (e) => e.sourceType === 'Microsoft',
@@ -592,26 +626,38 @@ export function reviseAssessment(
       correction.workItemUpdates.length
   )
     throw new Error('Unknown or duplicate correction item')
-  result.workItems = result.workItems.map((item) => {
-    const update = correction.workItemUpdates.find((w) => w.id === item.id)
-    return {
-      ...item,
-      ...update,
-      priority: rules.priority,
-      applicableMilestoneIds: milestone ? [milestone.id] : [],
-      status: 'Draft',
-    }
-  })
+  result.workItems =
+    scopeDisposition === 'OutOfScope'
+      ? []
+      : result.workItems.map((item) => {
+          const update = correction.workItemUpdates.find(
+            (w) => w.id === item.id,
+          )
+          return {
+            ...item,
+            ...update,
+            priority: rules.priority,
+            applicableMilestoneIds: milestone ? [milestone.id] : [],
+            status: 'Draft',
+          }
+        })
   result.id = hash({ previous: original.id, correction, reviewerId, now })
   result.createdAt = now
   result.asOf = now.slice(0, 10)
   result.criticalWorkload = correction.criticalWorkload
-  result.humanContext = { ...correction, reviewerId, reviewedAt: now }
-  result.effectivePriority = rules.priority
-  result.reviewReasons = [
-    ...rules.reviewReasons,
-    '人間による訂正後の新版。旧承認は適用されない',
-  ]
+  result.humanContext = {
+    ...correction,
+    scopeDisposition,
+    reviewerId,
+    reviewedAt: now,
+    reviewEvidenceIds: [evidenceId],
+  }
+  result.effectivePriority =
+    scopeDisposition === 'OutOfScope' ? null : rules.priority
+  result.reviewReasons =
+    scopeDisposition === 'OutOfScope'
+      ? [`人間が対象外と判定: ${correction.reason}`]
+      : [...rules.reviewReasons, '人間による訂正後の新版。旧承認は適用されない']
   // 元のモデル結果・説明は原出力として維持し、人間訂正を別欄へ記録する。
   result.validationErrors = []
   result.validationErrors = validateAssessment(result)
@@ -626,6 +672,17 @@ export function refreshAssessment(
 ): Assessment {
   const result = structuredClone(original)
   const context = result.humanContext
+  if (context?.scopeDisposition === 'OutOfScope') {
+    result.id = hash({ previous: original.id, asOf: now.slice(0, 10) })
+    result.createdAt = now
+    result.asOf = now.slice(0, 10)
+    result.effectivePriority = null
+    result.reviewReasons = [`人間が対象外と判定: ${context.reason}`]
+    result.workItems = []
+    result.validationErrors = validateAssessment(result)
+    result.packageHash = packageHash(result)
+    return assessmentSchema.parse(result)
+  }
   const milestone = result.event.milestones.find(
     (m) => m.kind === context?.applicableKind,
   )

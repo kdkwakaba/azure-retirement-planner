@@ -11,6 +11,9 @@ export function CorrectionForm({
   const [form, setForm] = useState<Correction>(
     assessment.humanContext
       ? {
+          scopeDisposition:
+            assessment.humanContext.scopeDisposition ??
+            assessment.event.classification,
           impactIfUnaddressed: assessment.humanContext.impactIfUnaddressed,
           impactDuringAndAfterChange:
             assessment.humanContext.impactDuringAndAfterChange,
@@ -31,6 +34,7 @@ export function CorrectionForm({
           })),
         }
       : {
+          scopeDisposition: assessment.event.classification,
           impactIfUnaddressed: assessment.decision.impactIfUnaddressed,
           impactDuringAndAfterChange:
             assessment.decision.impactDuringAndAfterChange,
@@ -84,6 +88,26 @@ export function CorrectionForm({
       <p>
         公式資料と業務情報を確認して入力してください。元のモデル回答は維持し、人間による訂正を別に記録します。
       </p>
+      <label className="field">
+        通知の対象判定
+        <select
+          value={form.scopeDisposition ?? 'ReviewRequired'}
+          onChange={(e) =>
+            setForm({
+              ...form,
+              scopeDisposition: e.target
+                .value as Correction['scopeDisposition'],
+            })
+          }
+        >
+          <option value="ReviewRequired">未確定・確認が必要</option>
+          <option value="InScope">対象</option>
+          <option value="OutOfScope">対象外</option>
+        </select>
+        <small>
+          対象外を選ぶ場合は、通知のライフサイクル変更が管理対象外である根拠を理由欄に記録してください。
+        </small>
+      </label>
       {(['impactIfUnaddressed', 'impactDuringAndAfterChange'] as const).map(
         (key) => (
           <label className="field" key={key}>
@@ -220,7 +244,7 @@ export function CorrectionForm({
           checked={confirmed}
           onChange={(e) => setConfirmed(e.target.checked)}
         />
-        日付・適用範囲・業務情報を確認しました
+        通知の対象・日付・適用範囲・業務情報を確認しました
       </label>
       {error && <p role="alert">{error}</p>}
       <button
