@@ -16,6 +16,8 @@ import {
   validateAssessment,
   refreshAssessment,
   resourceVerificationWorkItems,
+  impactDiscoveryOutcome,
+  canSkipAssessmentReview,
 } from '@arp/domain'
 import {
   AzureStore,
@@ -28,6 +30,8 @@ import {
   PROMPT_VERSION,
   required,
   unavailableDecision,
+  applicableProfileIds,
+  PROFILE_RESOURCE_TYPES,
 } from '@arp/adapters'
 
 export function config() {
@@ -94,6 +98,7 @@ function fallbackExplanation(
   event: LifecycleEvent,
   missing: string[],
   resources: ResourceImpact[],
+  includeGeneralReview = true,
 ): Explanation {
   const empty = {
     impact: [],
@@ -141,13 +146,17 @@ function fallbackExplanation(
           evidenceIds: r.evidenceIds,
           decisionRefs: [],
         })),
-      {
-        id: 'review',
-        text: '業務重要度・Owner・期限・移行方式を確認してください。',
-        kind: 'Recommendation' as const,
-        evidenceIds: event.evidence.map((e) => e.id),
-        decisionRefs: [],
-      },
+      ...(includeGeneralReview
+        ? [
+            {
+              id: 'review',
+              text: '業務重要度・Owner・期限・移行方式を確認してください。',
+              kind: 'Recommendation' as const,
+              evidenceIds: event.evidence.map((e) => e.id),
+              decisionRefs: [],
+            },
+          ]
+        : []),
     ],
   }
 }
@@ -197,10 +206,7 @@ export async function assessSnapshot(message: unknown): Promise<void> {
   if (event.classification === 'OutOfScope') return
   let explicit = new Set<string>(),
     complete = snapshot.scopeComplete
-  const missing = [
-    ...snapshot.failures,
-    '業務重要度・移行方式・工程期間・適用期限の人間確認が必要',
-  ]
+  const missing = [...snapshot.failures]
   try {
     const discovery = await explicitResourceIds(event, settings.subscriptions)
     explicit = discovery.resourceIds
@@ -245,6 +251,7 @@ export async function assessSnapshot(message: unknown): Promise<void> {
         properties: {},
       })
   }
+  const profiles = applicableProfileIds(event)
   const workloads = [
     ...new Set(candidates.map((r) => r.workloadId ?? 'unassigned')),
   ]
@@ -253,10 +260,22 @@ export async function assessSnapshot(message: unknown): Promise<void> {
     const resources = candidates
       .filter((r) => (r.workloadId ?? 'unassigned') === workloadId)
       .map((r) => ({ ...r, workloadId }))
-    const workloadMissing = [
-      ...missing,
-      ...resourceMissingInformation(resources),
-    ]
+    const workloadOutcome = impactDiscoveryOutcome({
+      scopeComplete: complete,
+      applicableProfile: profiles.length > 0,
+      resources,
+    })
+    const deterministicNoReview = canSkipAssessmentReview({
+      outcome: workloadOutcome,
+      scopeComplete: complete,
+    })
+    const workloadMissing = deterministicNoReview
+      ? []
+      : [
+          ...missing,
+          '業務重要度・移行方式・工程期間・適用期限の人間確認が必要',
+          ...resourceMissingInformation(resources),
+        ]
     await assessWorkload(
       store,
       event,
@@ -266,6 +285,13 @@ export async function assessSnapshot(message: unknown): Promise<void> {
       complete,
       workloadMissing,
       settings.modelCalls,
+      workloadOutcome,
+      {
+        subscriptionIds: settings.subscriptions,
+        resourceTypes: [...PROFILE_RESOURCE_TYPES],
+        resourceCount: snapshot.resources.length,
+        scopeComplete: complete,
+      },
     )
   }
 }
@@ -278,6 +304,8 @@ async function assessWorkload(
   complete: boolean,
   missing: string[],
   limit: number,
+  impactOutcome: NonNullable<Assessment['impactDiscoveryOutcome']>,
+  discoveryScope: NonNullable<Assessment['discoveryScope']>,
 ): Promise<void> {
   const asOf = new Date().toISOString().slice(0, 10)
   const id = hash({
@@ -327,12 +355,21 @@ async function assessWorkload(
       ),
     ],
   }
+  const deterministicNoReview = canSkipAssessmentReview({
+    outcome: impactOutcome,
+    scopeComplete: complete,
+  })
   let decision = unavailableDecision(),
-    explanation = fallbackExplanation(event, missing, resources)
+    explanation = fallbackExplanation(
+      event,
+      missing,
+      resources,
+      !deterministicNoReview,
+    )
   let workItems: WorkItem[] = []
   const endpoint = process.env.DECISION_ENDPOINT,
     deployment = process.env.DECISION_DEPLOYMENT
-  if (endpoint && deployment) {
+  if (!deterministicNoReview && endpoint && deployment) {
     try {
       await store.reserveModelCall(limit)
       const output = await decide(
@@ -376,6 +413,7 @@ async function assessWorkload(
     alternativeApproved: false,
   })
   if (
+    !deterministicNoReview &&
     decision.status !== 'Unavailable' &&
     process.env.EXPLANATION_ENDPOINT &&
     process.env.EXPLANATION_DEPLOYMENT
@@ -420,7 +458,7 @@ async function assessWorkload(
       missing = [...missing, '生成結果未確認。固定テンプレートで確認事項を提示']
     }
   }
-  if (!workItems.length)
+  if (!deterministicNoReview && !workItems.length)
     workItems = resourceVerificationWorkItems({
       eventId: event.id,
       workloadId,
@@ -428,7 +466,7 @@ async function assessWorkload(
       eventEvidenceIds: event.evidence.map((e) => e.id),
       resources,
     })
-  if (!workItems.length)
+  if (!deterministicNoReview && !workItems.length)
     workItems = [
       {
         id: hash({
@@ -476,11 +514,14 @@ async function assessWorkload(
     event: enriched,
     resources,
     scopeComplete: complete,
+    impactDiscoveryOutcome: impactOutcome,
+    discoveryScope,
+    humanReviewRequired: !deterministicNoReview,
     criticalWorkload: false,
     missingInformation: missing,
     decision,
-    effectivePriority: rules.priority,
-    reviewReasons: [...rules.reviewReasons, 'PoCは全件人間承認必須'],
+    effectivePriority: deterministicNoReview ? null : rules.priority,
+    reviewReasons: deterministicNoReview ? [] : rules.reviewReasons,
     explanation,
     workItems,
     validationErrors: [],
