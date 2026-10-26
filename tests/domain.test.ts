@@ -8,11 +8,14 @@ import {
 } from '@arp/contracts'
 import {
   applyRules,
+  canSkipAssessmentReview,
   canClose,
   classifyResource,
+  classifyResourceDetails,
   compareEventVersion,
   daysBetween,
   hash,
+  impactDiscoveryOutcome,
   normalizeNotice,
   packageHash,
   priorityFor,
@@ -21,6 +24,7 @@ import {
   verifyApproval,
 } from '@arp/domain'
 import {
+  applicableProfileIds,
   matchProfile,
   parseDecision,
   questions,
@@ -38,20 +42,118 @@ const classification = {
   dependencyEvidence: false,
   usageRequired: false,
 }
-test('TST-01: explicit evidence takes precedence over inferred exclusion', () =>
+test('TST-01: contradictory explicit target and exclusion requires review', () =>
   assert.equal(
     classifyResource({
       ...classification,
       explicitlyListed: true,
       explicitlyExcluded: true,
     }),
-    'Confirmed',
+    'Unknown',
   ))
+
+test('confirmed evidence remains confirmed while missing metadata requires verification', () => {
+  const result = classifyResourceDetails({
+    ...classification,
+    explicitlyListed: true,
+    requiredAttributeMissing: true,
+    requiredAttributeNames: ['sku.name'],
+  })
+  assert.equal(result.classification, 'Confirmed')
+  assert.equal(result.verificationRequired, true)
+  assert.deepEqual(result.missingAttributes, ['sku.name'])
+})
+test('missing required attributes block profile-based exclusions', () => {
+  const result = classifyResourceDetails({
+    ...classification,
+    explicitlyExcluded: true,
+    requiredAttributeMissing: true,
+    requiredAttributeNames: ['sku.name'],
+  })
+  assert.equal(result.classification, 'Verification Required')
+})
+test('assessment-level empty discovery requires complete scope and active profile', () => {
+  assert.equal(
+    impactDiscoveryOutcome({
+      scopeComplete: true,
+      applicableProfile: true,
+      resources: [],
+    }),
+    'NoResourcesDetected',
+  )
+  assert.equal(
+    impactDiscoveryOutcome({
+      scopeComplete: false,
+      applicableProfile: true,
+      resources: [],
+    }),
+    'Incomplete',
+  )
+  assert.equal(
+    impactDiscoveryOutcome({
+      scopeComplete: true,
+      applicableProfile: false,
+      resources: [],
+    }),
+    'ProfileUnavailable',
+  )
+  const excluded = {
+    ...fixture().resources[0]!,
+    classification: 'Not Impacted' as const,
+  }
+  assert.equal(
+    impactDiscoveryOutcome({
+      scopeComplete: true,
+      applicableProfile: true,
+      resources: [excluded],
+    }),
+    'NoImpactMatched',
+  )
+  assert.equal(
+    canSkipAssessmentReview({
+      outcome: 'NoResourcesDetected',
+      scopeComplete: true,
+    }),
+    true,
+  )
+  assert.equal(
+    canSkipAssessmentReview({
+      outcome: 'Incomplete',
+      scopeComplete: false,
+    }),
+    false,
+  )
+})
 test('TST-02: absent Advisor result with matching conditions is Probable', () =>
   assert.equal(
     classifyResource({ ...classification, conditionMatches: true }),
     'Probable',
   ))
+test('versioned profile registry selects only the three approved event profiles', () => {
+  const event = fixture().event
+  assert.deepEqual(
+    applicableProfileIds({
+      ...event,
+      title: 'Azure Basic Load Balancer retirement',
+    }),
+    ['basic-load-balancer'],
+  )
+  assert.deepEqual(
+    applicableProfileIds({
+      ...event,
+      title: 'General Purpose v1 (GPv1) retirement',
+    }),
+    ['storage-gpv1'],
+  )
+  assert.deepEqual(
+    applicableProfileIds({ ...event, title: 'URL ping test retirement' }),
+    ['application-insights-url-ping'],
+  )
+  assert.deepEqual(
+    applicableProfileIds({ ...event, title: 'Unrelated advisory' }),
+    [],
+  )
+})
 test('TST-03: Standard is excluded only for the Basic-specific profile', () => {
   const a = fixture()
   assert.equal(
@@ -417,7 +519,8 @@ test('resource uncertainty produces evidence-backed verification work without re
     eventEvidenceIds: a.event.evidence.map((e) => e.id),
     resources,
   })
-  assert.equal(work.length, 2)
+  assert.equal(work.length, 3)
+  assert.equal(new Set(work.map((item) => item.resourceIds[0])).size, 3)
   const missingSku = work.find((item) => item.title.includes('sku.name'))!
   assert.deepEqual(missingSku.resourceIds, [`${resourceId}-missing-sku`])
   assert.ok(missingSku.description.includes('読み取り専用'))
@@ -426,10 +529,11 @@ test('resource uncertainty produces evidence-backed verification work without re
   assert.equal(missingSku.humanApprovalRequired, true)
   assert.equal(missingSku.plannedStartDate, null)
   assert.equal(missingSku.dueDate, null)
-  const noProfile = work.find((item) => item.title.includes('プロファイル'))!
-  assert.equal(noProfile.resourceIds.length, 2)
-  assert.equal(noProfile.category, 'Impact Verification')
-  assert.ok(noProfile.evidenceIds.includes(a.event.evidence[0]!.id))
+  const noProfile = work.filter((item) => item.title.includes('プロファイル'))
+  assert.equal(noProfile.length, 2)
+  assert.ok(noProfile.every((item) => item.resourceIds.length === 1))
+  assert.equal(noProfile[0]!.category, 'Impact Verification')
+  assert.ok(noProfile[0]!.evidenceIds.includes(a.event.evidence[0]!.id))
   assert.ok(
     resourceVerificationWorkItems({
       eventId: a.event.id,
