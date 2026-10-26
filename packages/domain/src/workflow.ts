@@ -150,7 +150,9 @@ export function applyWorkflowPolicy(
   resources: ResourceImpact[],
   policy: WorkflowPolicy,
 ): { workItems: WorkItem[]; reviewReasons: string[]; errors: string[] } {
-  const resourcesById = new Map(resources.map((resource) => [resource.id, resource]))
+  const resourcesById = new Map(
+    resources.map((resource) => [resource.id, resource]),
+  )
   const roles = new Map(policy.roles.map((role) => [role.id, role]))
   const sequence = new Map(
     policy.sequence.map((rule, index) => [rule.category, { ...rule, index }]),
@@ -230,7 +232,9 @@ export function applyWorkflowPolicy(
     if (!teamRoles.length && !item.ownerTeam)
       unresolvedReasons.push('担当チーム候補が設定されていません')
     if (unresolvedReasons.length)
-      reviewReasons.push(...unresolvedReasons.map((reason) => `${item.title}: ${reason}`))
+      reviewReasons.push(
+        ...unresolvedReasons.map((reason) => `${item.title}: ${reason}`),
+      )
     const workflowRouting: WorkflowRouting = {
       policyVersion: policy.version,
       teamCandidates: teamRoles,
@@ -247,7 +251,11 @@ export function applyWorkflowPolicy(
       workflowRouting,
     }
   })
-  return { workItems: routed, reviewReasons: [...new Set(reviewReasons)], errors }
+  return {
+    workItems: routed,
+    reviewReasons: [...new Set(reviewReasons)],
+    errors,
+  }
 }
 
 function uniqueRoles<K extends Role['kind']>(
