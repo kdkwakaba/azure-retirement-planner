@@ -101,6 +101,14 @@ export const workflowPolicySchema = z
             path: ['assignmentRules', index, 'coordinationRoleIds'],
             message: `Department以外のRoleを調整候補に指定: ${roleId}`,
           })
+      for (const stage of rule.approvalStages)
+        for (const roleId of stage.roleIds)
+          if (roles.get(roleId)?.kind !== 'Approver')
+            context.addIssue({
+              code: 'custom',
+              path: ['assignmentRules', index, 'approvalStages'],
+              message: `Approver以外のRoleを承認者に指定: ${roleId}`,
+            })
     }
     const sequence = new Map<string, string[]>()
     for (const [index, item] of policy.sequence.entries()) {
@@ -182,10 +190,12 @@ export function applyWorkflowPolicy(
     const teamRoles = uniqueRoles(
       matches.flatMap((rule) => rule.teamRoleIds),
       roles,
+      'Team',
     )
     const coordinationRoles = uniqueRoles(
       matches.flatMap((rule) => rule.coordinationRoleIds),
       roles,
+      'Department',
     )
     const stages = new Map<string, WorkflowRouting['approvalStages'][number]>()
     for (const stage of matches.flatMap((rule) => rule.approvalStages)) {
@@ -195,7 +205,7 @@ export function applyWorkflowPolicy(
       stages.set(stage.id, {
         id: stage.id,
         title: stage.title,
-        approverRoles: uniqueRoles(stage.roleIds, roles),
+        approverRoles: uniqueRoles(stage.roleIds, roles, 'Approver'),
       })
     }
     const step = sequence.get(item.category)
@@ -240,9 +250,15 @@ export function applyWorkflowPolicy(
   return { workItems: routed, reviewReasons: [...new Set(reviewReasons)], errors }
 }
 
-function uniqueRoles(ids: string[], roles: Map<string, Role>): WorkflowRouting['teamCandidates'] {
+function uniqueRoles<K extends Role['kind']>(
+  ids: string[],
+  roles: Map<string, Role>,
+  kind: K,
+): { id: string; displayName: string; kind: K }[] {
   return [...new Set(ids)].flatMap((id) => {
     const role = roles.get(id)
-    return role ? [{ id: role.id, displayName: role.displayName, kind: role.kind }] : []
+    return role?.kind === kind
+      ? [{ id: role.id, displayName: role.displayName, kind }]
+      : []
   })
 }
