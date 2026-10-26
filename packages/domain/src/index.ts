@@ -149,15 +149,19 @@ export function normalizeNotice(input: {
   const retirementDateText = input.metadata?.retirementDate
   const retirementDate =
     input.metadata?.EventSubType === 'Retirement' &&
-    typeof retirementDateText === 'string' &&
-    /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\\.\d+)?Z)?$/.test(
-      retirementDateText,
-    ) &&
-    dateSchema.safeParse(retirementDateText.slice(0, 10)).success
-      ? {
-          date: retirementDateText.slice(0, 10),
-          rawDateText: retirementDateText,
-        }
+    typeof retirementDateText === 'string'
+      ? (() => {
+          const date = retirementDateText.slice(0, 10)
+          const isDateOnly = retirementDateText === date
+          const isUtcTimestamp =
+            retirementDateText.startsWith(date + 'T') &&
+            retirementDateText.endsWith('Z') &&
+            Number.isFinite(Date.parse(retirementDateText))
+          return dateSchema.safeParse(date).success &&
+            (isDateOnly || isUtcTimestamp)
+            ? { date, rawDateText: retirementDateText }
+            : null
+        })()
       : null
   const contentHash = hash({
     title: input.title,
