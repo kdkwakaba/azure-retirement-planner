@@ -6,7 +6,15 @@ import { CorrectionForm } from './CorrectionForm.tsx'
 
 import { request, syncFeedback } from './api.ts'
 
+const discoveryOutcomeLabels: Record<string, string> = {
+  CandidatesFound: '影響候補あり',
+  NoResourcesDetected: '該当リソースなし',
+  NoImpactMatched: '対象外のみ（根拠確認済み）',
+  ProfileUnavailable: '適用可能なプロファイルなし',
+  Incomplete: '調査不完全',
+}
 const classificationReasonLabels: Record<string, string> = {
+  ConflictingEvidence: '影響対象と対象外の根拠が矛盾',
   AssessmentPending: 'イベント別評価前',
   ExplicitMicrosoftImpact: 'Microsoftの明示対象',
   ExplicitExclusion: '適用条件による除外',
@@ -208,7 +216,16 @@ function App() {
                     setReason('')
                   }}
                 />
-                <h3>人間による確認が必要</h3>
+                <h3>
+                  {current.humanReviewRequired === false
+                    ? '評価レビュー省略可能（定型結果）'
+                    : '人間による確認が必要'}
+                </h3>
+                {current.humanReviewRequired === false && (
+                  <p>
+                    評価レビューの省略は業務影響なしを意味しません。作業項目の承認・外部登録は別途人間の承認が必要です。
+                  </p>
+                )}
                 <ul>
                   {[
                     ...new Set([
@@ -236,10 +253,41 @@ function App() {
                 )}
                 <h3>対象リソース</h3>
                 <p>
-                  取得範囲:{' '}
+                  調査結果:{' '}
+                  {current.impactDiscoveryOutcome
+                    ? discoveryOutcomeLabels[current.impactDiscoveryOutcome]
+                    : '旧データ／未記録'}
+                  {' · '}取得範囲:{' '}
                   {current.scopeComplete ? '取得完了' : '一部取得失敗'}
-                  。空の対象一覧は「影響なし」を意味しません。
                 </p>
+                {current.discoveryScope && (
+                  <details>
+                    <summary>調査範囲の詳細</summary>
+                    <p>
+                      Subscription:{' '}
+                      {current.discoveryScope.subscriptionIds.join(', ') ||
+                        'なし'}
+                    </p>
+                    <p>
+                      Resource Type:{' '}
+                      {current.discoveryScope.resourceTypes.join(', ') ||
+                        'なし'}
+                    </p>
+                    <p>
+                      取得リソース数: {current.discoveryScope.resourceCount}
+                    </p>
+                  </details>
+                )}
+                {current.impactDiscoveryOutcome === 'NoResourcesDetected' && (
+                  <p>
+                    該当リソースなし（調査範囲と取得完了を確認済み）。これは業務影響なしや対応不要の判定ではありません。
+                  </p>
+                )}
+                {current.impactDiscoveryOutcome === 'NoImpactMatched' && (
+                  <p>
+                    調査範囲内のリソースは、確認済み根拠により対象外と判定されています。
+                  </p>
+                )}
                 <div className="scroll">
                   <table>
                     <thead>
