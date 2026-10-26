@@ -65,6 +65,14 @@ export class GitHubClient {
     }
     throw new Error('External reconciliation incomplete')
   }
+  async recoverAmbiguousCreate(
+    itemId: string,
+  ): Promise<{ id: string; url: string }> {
+    const found = await this.find(itemId)
+    if (!found)
+      throw new Error('Ambiguous external creation; issue not yet discoverable')
+    return found
+  }
   async create(item: WorkItem): Promise<{ id: string; url: string }> {
     const result = z.object({ node_id: z.string(), html_url: z.url() }).parse(
       await this.request(`/repos/${this.owner}/${this.repo}/issues`, {

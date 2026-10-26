@@ -43,12 +43,21 @@ app.storageQueue('export', {
       required('GITHUB_REPOSITORY'),
       required('GITHUB_TOKEN'),
     )
-    // POST成否不明は再作成せず隔離。Project段階だけ失敗した場合は保存Issue IDから再開する。
-    if (row.state === 'Sending')
-      throw new Error(
-        'Ambiguous external creation; operator reconciliation required',
-      )
+    // POST成否不明はマーカーを照合し、未発見ならSendingのまま再作成せず保留する。
     let issueId = typeof row.issueId === 'string' ? row.issueId : null
+    if (row.state === 'Sending' && !issueId) {
+      const recovered = await github.recoverAmbiguousCreate(item.id)
+      issueId = recovered.id
+      await store.table.updateEntity(
+        {
+          partitionKey: row.partitionKey,
+          rowKey: row.rowKey,
+          state: 'IssueCreated',
+          issueId,
+        },
+        'Merge',
+      )
+    }
     if (!issueId) {
       const found = await github.find(item.id)
       if (found) issueId = found.id
