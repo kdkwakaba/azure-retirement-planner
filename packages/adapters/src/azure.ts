@@ -223,7 +223,8 @@ export function applicableProfileIds(event: LifecycleEvent): string[] {
   if (/basic.{0,20}load balancer/.test(text))
     profiles.push('basic-load-balancer')
   if (/general.purpose.v1|gpv1/.test(text)) profiles.push('storage-gpv1')
-  if (/url ping|ping test/.test(text)) profiles.push('application-insights-url-ping')
+  if (/url ping|ping test/.test(text))
+    profiles.push('application-insights-url-ping')
   return profiles
 }
 export function matchProfile(
