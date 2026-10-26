@@ -11,6 +11,8 @@ import {
   requireRole,
   required,
   verifyWriteRequest,
+  logProcessingFailure,
+  withProcessingFailureLog,
 } from '@arp/adapters'
 import { assessSnapshot, config, synchronize } from './service.ts'
 
@@ -161,9 +163,11 @@ app.http('api', {
         return reply(409, { error: 'Review conflict or validation failed' })
       if (/origin|content-type/.test(message))
         return reply(403, { error: 'Write origin rejected' })
+      const correlationId = randomUUID()
+      logProcessingFailure('http', error, correlationId)
       return reply(503, {
         error: 'Processing failed',
-        correlationId: randomUUID(),
+        correlationId,
       })
     }
   },
@@ -205,34 +209,38 @@ app.http('web', {
 app.storageQueue('assess', {
   queueName: 'assessments',
   connection: 'DATA_QUEUE',
-  handler: async (message) => {
-    if (
-      typeof message === 'object' &&
-      message !== null &&
-      'kind' in message &&
-      message.kind === 'sync'
-    ) {
-      await synchronize()
-    } else await assessSnapshot(message)
-  },
+  handler: async (message) =>
+    withProcessingFailureLog('assessment-queue', async () => {
+      if (
+        typeof message === 'object' &&
+        message !== null &&
+        'kind' in message &&
+        message.kind === 'sync'
+      ) {
+        await synchronize()
+      } else await assessSnapshot(message)
+    }),
 })
 app.timer('daily', {
   schedule: '0 0 0 * * *',
-  handler: async () => {
-    if (process.env.SYNC_ENABLED === 'true') await synchronize()
-  },
+  handler: async () =>
+    withProcessingFailureLog('daily-sync', async () => {
+      if (process.env.SYNC_ENABLED === 'true') await synchronize()
+    }),
 })
 app.timer('outbox', {
   schedule: '0 */5 * * * *',
-  handler: async () => {
-    if (process.env.EXPORT_ENABLED === 'true')
-      await new AzureStore(config().account).dispatchOutbox()
-  },
+  handler: async () =>
+    withProcessingFailureLog('export-outbox', async () => {
+      if (process.env.EXPORT_ENABLED === 'true')
+        await new AzureStore(config().account).dispatchOutbox()
+    }),
 })
 app.timer('receiptOutbox', {
   schedule: '0 */2 * * * *',
-  handler: async () => {
-    if (process.env.INGEST_ENABLED === 'true')
-      await new AzureStore(config().account).dispatchReceipts()
-  },
+  handler: async () =>
+    withProcessingFailureLog('receipt-outbox', async () => {
+      if (process.env.INGEST_ENABLED === 'true')
+        await new AzureStore(config().account).dispatchReceipts()
+    }),
 })
