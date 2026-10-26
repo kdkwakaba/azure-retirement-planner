@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import workflowPolicyData from '../../../config/workflow-policy.json' with { type: 'json' }
 import { randomUUID } from 'node:crypto'
 import type {
   Assessment,
@@ -18,6 +19,8 @@ import {
   resourceVerificationWorkItems,
   impactDiscoveryOutcome,
   canSkipAssessmentReview,
+  applyWorkflowPolicy,
+  workflowPolicySchema,
 } from '@arp/domain'
 import {
   AzureStore,
@@ -311,7 +314,10 @@ async function assessWorkload(
   discoveryScope: NonNullable<Assessment['discoveryScope']>,
 ): Promise<void> {
   const asOf = new Date().toISOString().slice(0, 10)
+  const policyHash = hash(workflowPolicyData)
+  const policyParsed = workflowPolicySchema.safeParse(workflowPolicyData)
   const id = hash({
+    workflowPolicyHash: policyHash,
     eventVersionId: event.versionId,
     workloadId,
     timeKey: event.milestones.some((m) => m.kind !== 'Deprecation' && m.date)
@@ -507,9 +513,25 @@ async function assessWorkload(
         },
       },
     ]
+  let routingErrors: string[] = []
+  if (policyParsed.success && !deterministicNoReview) {
+    const routing = applyWorkflowPolicy(workItems, resources, policyParsed.data)
+    workItems = routing.workItems
+    routingErrors = routing.errors
+    missing = [...missing, ...routing.reviewReasons, ...routing.errors]
+  } else if (!policyParsed.success) {
+    missing = [
+      ...missing,
+      'ワークフローポリシー設定がSchema検証に失敗。担当・順序・承認経路の確認が必要',
+    ]
+  }
   const assessment: Assessment = assessmentSchema.parse({
     id: assessmentId,
     sourceInputHash: id,
+    workflowPolicyVersion: policyParsed.success
+      ? policyParsed.data.version
+      : 'Invalid',
+    workflowPolicyHash: policyHash,
     eventVersionId: event.versionId,
     workloadId,
     createdAt: new Date().toISOString(),
@@ -519,12 +541,17 @@ async function assessWorkload(
     scopeComplete: complete,
     impactDiscoveryOutcome: impactOutcome,
     discoveryScope,
-    humanReviewRequired: !deterministicNoReview,
+    humanReviewRequired:
+      !deterministicNoReview ||
+      !policyParsed.success ||
+      routingErrors.length > 0,
     criticalWorkload: false,
     missingInformation: missing,
     decision,
     effectivePriority: deterministicNoReview ? null : rules.priority,
-    reviewReasons: deterministicNoReview ? [] : rules.reviewReasons,
+    reviewReasons: deterministicNoReview
+      ? []
+      : [...rules.reviewReasons, ...routingErrors],
     explanation,
     workItems,
     validationErrors: [],
