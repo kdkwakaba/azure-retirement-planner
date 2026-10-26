@@ -156,9 +156,41 @@ export const confidenceSchema = z
 export const workflowRoutingSchema = z
   .object({
     policyVersion: z.string(),
-    teamCandidates: z.array(z.object({ id: z.string(), displayName: z.string(), kind: z.literal('Team') }).strict()),
-    coordinationCandidates: z.array(z.object({ id: z.string(), displayName: z.string(), kind: z.literal('Department') }).strict()),
-    approvalStages: z.array(z.object({ id: z.string(), title: z.string(), approverRoles: z.array(z.object({ id: z.string(), displayName: z.string(), kind: z.literal('Approver') }).strict()) }).strict()),
+    teamCandidates: z.array(
+      z
+        .object({
+          id: z.string(),
+          displayName: z.string(),
+          kind: z.literal('Team'),
+        })
+        .strict(),
+    ),
+    coordinationCandidates: z.array(
+      z
+        .object({
+          id: z.string(),
+          displayName: z.string(),
+          kind: z.literal('Department'),
+        })
+        .strict(),
+    ),
+    approvalStages: z.array(
+      z
+        .object({
+          id: z.string(),
+          title: z.string(),
+          approverRoles: z.array(
+            z
+              .object({
+                id: z.string(),
+                displayName: z.string(),
+                kind: z.literal('Approver'),
+              })
+              .strict(),
+          ),
+        })
+        .strict(),
+    ),
     sequenceOrder: z.number().int().nonnegative().nullable(),
     dependsOnCategories: z.array(categorySchema),
     policyRuleIds: z.array(z.string()),
