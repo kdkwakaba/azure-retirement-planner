@@ -96,5 +96,5 @@ app.storageQueue('export', {
         },
         'Merge',
       )
-      }),
+    }),
 })
