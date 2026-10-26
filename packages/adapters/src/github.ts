@@ -261,9 +261,9 @@ export class GitHubClient {
                       fieldValues: z.object({
                         nodes: z.array(
                           z.object({
-                            name: z.string(),
-                            optionId: z.string(),
-                            field: z.object({ id: z.string() }),
+                            name: z.string().optional(),
+                            optionId: z.string().optional(),
+                            field: z.object({ id: z.string() }).optional(),
                           }),
                         ),
                       }),
@@ -291,7 +291,7 @@ export class GitHubClient {
       for (const item of result.data.node.items.nodes) {
         if (item.content?.__typename !== 'Issue' || !item.content.id) continue
         const statuses = item.fieldValues.nodes.filter(
-          (value) => value.field.id === statusFieldId,
+          (value) => value.field?.id === statusFieldId,
         )
         if (statuses.length > 1)
           throw new Error('Project status field is ambiguous')
