@@ -146,6 +146,23 @@ export function normalizeNotice(input: {
   if (/retir|廃止/i.test(text) || input.metadata?.EventSubType === 'Retirement')
     kinds.push('Retirement')
   // キーワードは候補選別のみ。公式日付・適用条件はこの段階で推測しない。
+  const retirementDateText = input.metadata?.retirementDate
+  const retirementDate =
+    input.metadata?.EventSubType === 'Retirement' &&
+    typeof retirementDateText === 'string'
+      ? (() => {
+          const date = retirementDateText.slice(0, 10)
+          const isDateOnly = retirementDateText === date
+          const isUtcTimestamp =
+            retirementDateText.startsWith(date + 'T') &&
+            retirementDateText.endsWith('Z') &&
+            Number.isFinite(Date.parse(retirementDateText))
+          return dateSchema.safeParse(date).success &&
+            (isDateOnly || isUtcTimestamp)
+            ? { date, rawDateText: retirementDateText }
+            : null
+        })()
+      : null
   const contentHash = hash({
     title: input.title,
     body: input.body,
@@ -156,13 +173,33 @@ export function normalizeNotice(input: {
     source: 'ServiceHealth',
     trackingId: input.trackingId,
   })
+  const evidenceId = hash({ id, contentHash })
+  const milestones: LifecycleEvent['milestones'] = retirementDate
+    ? [
+        {
+          id: hash({
+            id,
+            contentHash,
+            kind: 'Retirement',
+            date: retirementDate.date,
+          }),
+          kind: 'Retirement',
+          date: retirementDate.date,
+          rawDateText: retirementDate.rawDateText,
+          scope: 'Service Health ImpactMitigationTime',
+          evidenceIds: [evidenceId],
+        },
+      ]
+    : []
   const evidence: Evidence = {
-    id: hash({ id, contentHash }),
+    id: evidenceId,
     sourceType: 'Microsoft',
     sourceVersion: contentHash,
     observedAt: input.updatedAt,
     subjectIds: [id],
-    fact: text,
+    fact: retirementDate
+      ? `${text}\nOfficial Service Health ImpactMitigationTime: ${retirementDate.rawDateText}`
+      : text,
     officialUrl: null,
   }
   return eventSchema.parse({
@@ -178,7 +215,7 @@ export function normalizeNotice(input: {
     contentHash,
     classification: kinds.length ? 'InScope' : 'ReviewRequired',
     kinds: kinds.length ? kinds : ['Unknown'],
-    milestones: [],
+    milestones,
     evidence: [evidence],
     rawMetadata: input.metadata ?? {},
   })
