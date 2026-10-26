@@ -243,9 +243,9 @@ export const RESOURCE_PROFILES = [
 ] as const
 export function applicableProfileIds(event: LifecycleEvent): string[] {
   const text = event.title + ' ' + event.body
-  return RESOURCE_PROFILES.filter((profile) => profile.eventPattern.test(text)).map(
-    (profile) => profile.id,
-  )
+  return RESOURCE_PROFILES.filter((profile) =>
+    profile.eventPattern.test(text),
+  ).map((profile) => profile.id)
 }
 export function matchProfile(
   event: LifecycleEvent,
