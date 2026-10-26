@@ -53,7 +53,7 @@ Storage Queueの再試行は5回で`assessments-poison`／`exports-poison`へ。
 
 GitHubはIssue作成前にOutboxを`Sending`へ条件更新する。作成応答不明でSendingが残った場合は盲目的再作成しない。許可された管理者が相関マーカー`<!-- arp:<id> -->`で対象Repositoryを照合し、Issue IDを記録して`IssueCreated`からProject追加だけ再開する。見つからなくても、作成されていないことを確認してから再実行する。Project失敗は保存済Issue IDで再開する。同じ作業への再承認でIssueを増やさない。
 
-アプリ側エラーは秘密を含めない。App InsightsでQueue失敗、401/403、429、Poison、依存待ちを監視する。業務KPIのDashboardや通知、ProcessingError専用画面はまだない。APIの相関IDとFunctions invocation IDの追跡性は実接続で確認する。実PayloadはBlob/Tableのみ、CI成果物には残さない。
+API・評価Queue・日次同期・Receipt/Export outboxの処理失敗は、App InsightsへJSONの`ProcessingFailure`として`stage`、`correlationId`、`errorType`のみ記録する。例外メッセージ、スタック、要求本文、Resource IDはログへ出さない。APIは同じ相関IDを503応答に返す。背景処理は記録後に例外を再送出し、Functionsの5回再試行とPoison Queueへの移動を維持する。App Insightsで`ProcessingFailure`、401/403、429、Poison、依存待ちを監視する。Queue invocation IDとアプリ相関IDの実環境での結合、Poison再投入、業務KPIのDashboard／通知／専用画面は未検証。実PayloadはBlob/Tableのみ、CI成果物には残さない。
 
 ## 5. 費用と撤去
 
