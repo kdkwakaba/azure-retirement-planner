@@ -57,6 +57,8 @@ Immediate、Within 30 days、Within 90 days、Within 180 days、Later、No actio
 
 ## 不確実性と人間レビュー
 
+リソース分類の`Unknown`は「カテゴリに該当しない」ではなく、現在の証拠で影響を特定できない状態を表す。`classificationReason`で評価前、対応プロファイルなし、条件不一致、旧データの理由未記録を区別する。既知プロファイルが必要とするSKU／kind等が取得できない場合は`Verification Required`とし、不足属性を人間の確認項目にする。プロファイルに存在しない属性値は`Not Impacted`へ倒さずUnknownとしてレビューに残す。
+
 欠損数ではなく結論への影響で判定する。以下は強制レビュー。
 
 - 期限、重要度、対象範囲、移行期間、代替手段等の不可欠情報が未確定。

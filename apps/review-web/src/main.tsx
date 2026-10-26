@@ -6,6 +6,19 @@ import { CorrectionForm } from './CorrectionForm.tsx'
 
 import { request, syncFeedback } from './api.ts'
 
+const classificationReasonLabels: Record<string, string> = {
+  AssessmentPending: 'イベント別評価前',
+  ExplicitMicrosoftImpact: 'Microsoftの明示対象',
+  ExplicitExclusion: '適用条件による除外',
+  ProfileConditionMatched: '対応プロファイルの条件一致',
+  DependencyEvidence: '依存関係の根拠あり',
+  RequiredAttributeMissing: '必要なAzure属性が不足',
+  UsageRequiresVerification: '利用状況の確認が必要',
+  NoMatchingProfileCondition: '対応プロファイルの条件に不一致',
+  NoApplicableProfile: '対応する判定プロファイルなし',
+  LegacyUnrecorded: '旧データのため理由未記録',
+}
+
 function App() {
   const [items, setItems] = useState<Assessment[]>([]),
     [selected, setSelected] = useState<string | null>(null),
@@ -212,7 +225,20 @@ function App() {
                       {current.resources.map((r) => (
                         <tr key={r.id}>
                           <td>{r.id}</td>
-                          <td>{r.classification}</td>
+                          <td>
+                            {r.classification}
+                            <small>
+                              {classificationReasonLabels[
+                                r.classificationReason
+                              ] ?? '分類理由を確認してください'}
+                              {r.verificationRequired
+                                ? ' — 人による確認が必要'
+                                : ''}
+                              {r.missingAttributes.length
+                                ? ` — 不足: ${r.missingAttributes.join(', ')}`
+                                : ''}
+                            </small>
+                          </td>
                           <td>{r.environment ?? '不明'}</td>
                         </tr>
                       ))}
