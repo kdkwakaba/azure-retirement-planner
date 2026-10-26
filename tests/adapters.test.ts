@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   AzureStore,
+  ensureIssueForExport,
   GitHubClient,
   argRows,
   decide,
@@ -202,6 +203,75 @@ test('GitHub registration uses safe text and persists Issue separately from Proj
     '/graphql',
   ])
 })
+test('TST-22: Project retry reuses the persisted Issue instead of creating another', async (t) => {
+  const client = new GitHubClient(
+    'synthetic-owner',
+    'synthetic-repo',
+    'synthetic-token',
+  )
+  const item = fixture().workItems[0]!
+  let issueCreates = 0,
+    projectAdds = 0,
+    state = 'Pending',
+    issueId: string | null = null
+  t.mock.method(
+    globalThis,
+    'fetch',
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input))
+      if (init?.method !== 'POST') return Response.json([])
+      if (url.pathname.endsWith('/issues')) {
+        issueCreates++
+        return Response.json({
+          node_id: 'synthetic-issue',
+          html_url:
+            'https://github.com/synthetic-owner/synthetic-repo/issues/1',
+        })
+      }
+      projectAdds++
+      if (projectAdds === 1)
+        return Response.json({
+          errors: [{ message: 'synthetic-project-error' }],
+        })
+      return Response.json({
+        data: {
+          addProjectV2ItemById: { item: { id: 'synthetic-project-item' } },
+        },
+      })
+    },
+  )
+  const persistIssue = async (id: string) => {
+    state = 'IssueCreated'
+    issueId = id
+  }
+  const resolvedId = await ensureIssueForExport(
+    client,
+    item,
+    state,
+    issueId,
+    async () => {
+      state = 'Sending'
+    },
+    persistIssue,
+  )
+  await assert.rejects(client.addToProject('synthetic-project', resolvedId))
+  assert.equal(state, 'IssueCreated')
+  assert.equal(issueId, 'synthetic-issue')
+  const retryIssueId = await ensureIssueForExport(
+    client,
+    item,
+    state,
+    issueId,
+    async () => assert.fail('A saved Issue must not be created again'),
+    persistIssue,
+  )
+  assert.equal(
+    await client.addToProject('synthetic-project', retryIssueId),
+    'synthetic-project-item',
+  )
+  assert.equal(issueCreates, 1)
+  assert.equal(projectAdds, 2)
+})
 test('TST-23: ambiguous Issue creation is reconciled by marker or remains unresolved', async (t) => {
   const client = new GitHubClient(
     'synthetic-owner',
@@ -229,10 +299,19 @@ test('TST-23: ambiguous Issue creation is reconciled by marker or remains unreso
       ])
     },
   )
-  assert.equal(
-    (await client.recoverAmbiguousCreate(item.id)).id,
-    'synthetic-reconciled-issue',
+  let persisted: string | null = null
+  const recovered = await ensureIssueForExport(
+    client,
+    item,
+    'Sending',
+    null,
+    async () => assert.fail('An ambiguous POST must never be repeated'),
+    async (id) => {
+      persisted = id
+    },
   )
+  assert.equal(recovered, 'synthetic-reconciled-issue')
+  assert.equal(persisted, 'synthetic-reconciled-issue')
   assert.equal(createAttempted, false)
 })
 test('ambiguous Issue creation is not repeated when reconciliation finds no marker', async (t) => {
@@ -250,7 +329,16 @@ test('ambiguous Issue creation is not repeated when reconciliation finds no mark
       return Response.json([])
     },
   )
-  await assert.rejects(client.recoverAmbiguousCreate('synthetic-item'))
+  await assert.rejects(
+    ensureIssueForExport(
+      client,
+      fixture().workItems[0]!,
+      'Sending',
+      null,
+      async () => assert.fail('An unresolved POST must not be repeated'),
+      async () => assert.fail('No Issue ID should be persisted'),
+    ),
+  )
   assert.equal(createAttempted, false)
 })
 test('approval and stable per-item outbox are one conditional transaction', async (t) => {

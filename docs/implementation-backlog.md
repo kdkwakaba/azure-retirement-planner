@@ -18,7 +18,7 @@
 | IMP-12 | Explanation: 10区分、ID別名化、根拠参照、作業案 | 10,11 | 元応答保存、Schema・ID参照検証、失敗は手動確認 | 実装済。モデルによる意味的Groundingは実評価待ち | L / AI / No |
 | IMP-13 | Guardrails: ID・日付・DAG・根拠・Owner・承認Hash | 03,11 | 架空・旧版・不適合の登録0 | 実装済。許可URL本文の取得と後継サービスの意味検証は追加対象 | L / Security+Dev / Yes |
 | IMP-14 | Human Review: Azure配信React、訂正、部分承認・保留・差戻し | 04,11,13 | APIロール、訂正新版、承認失効、Entraログイン | Azure画面・Entra認証・Governanceロール・実通知とQueue評価結果表示を確認。業務訂正／承認を含むUATは未完了 | L / Frontend+Security / Yes |
-| IMP-15 | Integration: Issue作成→Project追加、相関ID・成否不明停止 | 13,14 | 無承認拒否、重複防止、Project失敗のみ再開 | `Sending`再試行で相関マーカーを照合し、発見時のみ`IssueCreated`へ復旧。未発見時は作成せず保留する契約実装・合成テスト済。Project更新のみ失敗時の実Queue再配送、個人Project権限SP-05、実登録は未検証 | L / Dev / Yes |
+| IMP-15 | Integration: Issue作成→Project追加、相関ID・成否不明停止 | 13,14 | 無承認拒否、重複防止、Project失敗のみ再開 | 保存済みIssue IDのProject再試行、`Sending`再試行の相関マーカー照合を共通関数と合成テストで確認。実Queue再配送、個人Project権限SP-05、実登録は未検証 | L / Dev / Yes |
 | IMP-16 | Integration: Projectフィールド、改訂Issue更新・進捗取込 | 15 | 項目対応、競合・手動編集を保持、自動Closeなし | 未実装。Project契約確定後 | L / Dev / No |
 | IMP-17 | Operations: 再評価・処理ログ・Poison・復旧Runbook | 06–15 | 日次再取得、部分失敗表示、成否不明の手動照合 | 最小実装。集計KPI・通知・管理画面は追加対象 | M / SRE / Yes |
 | IMP-18 | Cost: 日次呼出回数枠・予算確認手順 | 10,17 | PoC累計20,000円を利用者がCost Managementで確認。要求単位のToken上限は設けない | 利用者の判断で金額ハード停止は実装対象外。API呼出枠は200/日。Cost Managementの予算通知は補助情報 | M / SRE+FinOps / Yes |
@@ -35,7 +35,7 @@
 
 ## 検証の読み方
 
-`tests/`は合成データのみ。TST番号付き単体試験は30シナリオ全体の完了を意味しない。TST-22/29、実Azure権限・Queue再配送、Project更新・負荷・Shadow・モデル品質は個別に統合/UATで記録する。TST-11/12はドメイン比較関数の回帰試験、TST-23はIssueマーカー照合関数の合成試験で、実環境のQueue再配送までは証明しない。テスト件数は実行結果を正とする。
+`tests/`は合成データのみ。TST番号付き単体試験は30シナリオ全体の完了を意味しない。TST-29、実Azure権限・Queue再配送、Project権限・本番相当更新、負荷・Shadow・モデル品質は個別に統合/UATで記録する。TST-11/12はドメイン比較関数、TST-22/23はIssue／Project段階の共通登録関数を通した合成回帰試験で、実環境のQueue再配送までは証明しない。テスト件数は実行結果を正とする。
 
 ## 2026-10-25〜26 配置・実データ検証
 
