@@ -383,7 +383,10 @@ test('TST-32: official retirement date is evidence-backed', () => {
   assert.equal(e.milestones[0]?.date, '2027-04-20')
   assert.equal(e.milestones[0]?.rawDateText, '2027-04-20T00:00:00Z')
   assert.deepEqual(e.milestones[0]?.evidenceIds, [e.evidence[0]?.id])
-  assert.match(e.evidence[0]!.fact, /ImpactMitigationTime: 2027-04-20T00:00:00Z/)
+  assert.match(
+    e.evidence[0]!.fact,
+    /ImpactMitigationTime: 2027-04-20T00:00:00Z/,
+  )
 })
 test('TST-33: generic notice has no retirement milestone', () => {
   const e = normalizeNotice({
