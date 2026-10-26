@@ -7,7 +7,10 @@ import {
 } from '@arp/adapters'
 
 test('user roles follow the API access matrix', () => {
-  const cases = [
+  const cases: {
+    role: string
+    allowed: readonly (readonly string[])[]
+  }[] = [
     { role: 'Reader', allowed: [apiRolePolicy.read] },
     {
       role: 'Reviewer',
@@ -22,7 +25,7 @@ test('user roles follow the API access matrix', () => {
       ],
     },
     { role: 'Operator', allowed: [apiRolePolicy.read, apiRolePolicy.sync] },
-  ] as const
+  ]
 
   for (const { role, allowed } of cases) {
     const principal = { id: role, roles: [role], kind: 'User' as const }
