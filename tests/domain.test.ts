@@ -503,9 +503,12 @@ test('resource uncertainty produces evidence-backed verification work without re
   assert.equal(missingSku.humanApprovalRequired, true)
   assert.equal(missingSku.plannedStartDate, null)
   assert.equal(missingSku.dueDate, null)
-  const noProfile = work.find((item) => item.title.includes('プロファイル'))!
-  assert.equal(noProfile.resourceIds.length, 2)
-  assert.equal(noProfile.category, 'Impact Verification')
+  const noProfile = work.filter((item) =>
+    item.title.includes('プロファイル'),
+  )
+  assert.equal(noProfile.length, 2)
+  assert.ok(noProfile.every((item) => item.resourceIds.length === 1))
+  assert.equal(noProfile[0]!.category, 'Impact Verification')
   assert.ok(noProfile.evidenceIds.includes(a.event.evidence[0]!.id))
   assert.ok(
     resourceVerificationWorkItems({
