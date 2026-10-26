@@ -153,6 +153,17 @@ export const confidenceSchema = z
     limitations: z.array(z.string()),
   })
   .strict()
+export const workflowRoutingSchema = z
+  .object({
+    policyVersion: z.string(),
+    teamCandidates: z.array(z.object({ id: z.string(), displayName: z.string(), kind: z.literal('Team') }).strict()),
+    coordinationCandidates: z.array(z.object({ id: z.string(), displayName: z.string(), kind: z.literal('Department') }).strict()),
+    approvalStages: z.array(z.object({ id: z.string(), title: z.string(), approverRoles: z.array(z.object({ id: z.string(), displayName: z.string(), kind: z.literal('Approver') }).strict()) }).strict()),
+    sequenceOrder: z.number().int().nonnegative().nullable(),
+    dependsOnCategories: z.array(categorySchema),
+    policyRuleIds: z.array(z.string()),
+    unresolvedReasons: z.array(z.string()),
+  }).strict()
 export const workItemSchema = z
   .object({
     id: z.string(),
@@ -183,6 +194,7 @@ export const workItemSchema = z
       'Cancelled',
     ]),
     confidence: confidenceSchema,
+    workflowRouting: workflowRoutingSchema.optional(),
   })
   .strict()
 export const claimSchema = z
@@ -248,6 +260,8 @@ export const assessmentSchema = z
   .object({
     id: z.string(),
     sourceInputHash: z.string().optional(),
+    workflowPolicyVersion: z.string().optional(),
+    workflowPolicyHash: z.string().optional(),
     eventVersionId: z.string(),
     workloadId: z.string(),
     createdAt: z.iso.datetime(),
