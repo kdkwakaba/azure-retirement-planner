@@ -14,6 +14,9 @@ import {
   hash,
   refreshAssessment,
   validateAssessment,
+  canClose,
+  normalizeNotice,
+  packageHash,
 } from '@arp/domain'
 import { approvalSchema, type Correction } from '@arp/contracts'
 import { fixture, tenant, resourceId } from './fixtures.ts'
@@ -176,6 +179,7 @@ test('platform identity obtains and caches only allowed scopes', async (t) => {
 })
 function correction(): Correction {
   return {
+    scopeDisposition: 'InScope',
     impactIfUnaddressed: 'High',
     impactDuringAndAfterChange: 'Medium',
     criticalWorkload: true,
@@ -213,6 +217,73 @@ test('human correction preserves model output and invalidates prior approval', (
   assert.notEqual(revised.id, original.id)
   assert.throws(() => verifyApproval(revised, review, revised.workItems[0]!.id))
   assert.equal(original.event.milestones.length, 0)
+})
+test('TST-29: human-confirmed out-of-scope assessment has no priority or work and cannot be approved', () => {
+  const original = fixture()
+  const event = normalizeNotice({
+    tenantId: tenant,
+    trackingId: 'TEST-UNRELATED',
+    title: 'General information',
+    body: 'Synthetic advisory unrelated to lifecycle changes',
+    updatedAt: '2026-08-01T00:00:00.000Z',
+  })
+  original.event = event
+  original.eventVersionId = event.versionId
+  original.resources = original.resources.map((resource) => ({
+    ...resource,
+    classification: 'Unknown',
+    classificationReason: 'NoApplicableProfile',
+    verificationRequired: true,
+    evidenceIds: [event.evidence[0]!.id],
+  }))
+  original.workItems = original.workItems.map((item) => ({
+    ...item,
+    evidenceIds: [event.evidence[0]!.id],
+  }))
+  original.packageHash = packageHash(original)
+  const revised = reviseAssessment(
+    original,
+    {
+      ...correction(),
+      scopeDisposition: 'OutOfScope',
+      reason: 'Synthetic notice is unrelated to managed lifecycle changes',
+    },
+    'synthetic-user',
+    '2026-08-02T00:00:00.000Z',
+  )
+  assert.equal(revised.event.classification, 'ReviewRequired')
+  assert.equal(revised.humanContext?.scopeDisposition, 'OutOfScope')
+  assert.equal(revised.humanContext?.reviewEvidenceIds?.length, 1)
+  assert.equal(
+    revised.event.evidence.find(
+      (e) => e.id === revised.humanContext?.reviewEvidenceIds?.[0],
+    )?.sourceType,
+    'Human',
+  )
+  assert.equal(revised.effectivePriority, null)
+  assert.equal(revised.workItems.length, 0)
+  assert.deepEqual(revised.validationErrors, [])
+  assert.equal(canClose(revised), true)
+  assert.throws(() =>
+    verifyApproval(
+      revised,
+      approvalSchema.parse({
+        id: hash('out-of-scope-approval'),
+        assessmentId: revised.id,
+        packageHash: revised.packageHash,
+        approvedItemIds: [],
+        reviewerId: 'synthetic-user',
+        reviewedAt: '2026-08-02T00:00:00.000Z',
+        reason: 'Synthetic',
+        result: 'Approved',
+      }),
+      'unknown-item',
+    ),
+  )
+  const refreshed = refreshAssessment(revised, '2026-08-03T00:00:00.000Z')
+  assert.equal(refreshed.effectivePriority, null)
+  assert.equal(refreshed.workItems.length, 0)
+  assert.equal(refreshed.humanContext?.scopeDisposition, 'OutOfScope')
 })
 test('deprecation date cannot be used as migration deadline', () =>
   assert.throws(() =>

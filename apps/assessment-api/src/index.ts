@@ -123,6 +123,10 @@ app.http('api', {
             .strict()
             .parse(payload)
           const assessment = await store.assessment(body.assessmentId)
+          if (assessment.humanContext?.scopeDisposition === 'OutOfScope')
+            return reply(409, {
+              error: 'Out-of-scope assessment cannot approve work items',
+            })
           const approval = approvalSchema.parse({
             ...body,
             id: hash(randomUUID()),
