@@ -17,7 +17,11 @@ export function logProcessingFailure(
   correlationId = randomUUID(),
 ): string {
   const rawType =
-    error instanceof Error ? error.name : typeof error === 'string' ? 'Error' : 'UnknownError'
+    error instanceof Error
+      ? error.name
+      : typeof error === 'string'
+        ? 'Error'
+        : 'UnknownError'
   const errorType = /^[A-Za-z][A-Za-z0-9_.]{0,79}$/.test(rawType)
     ? rawType
     : 'Error'
