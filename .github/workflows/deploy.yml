@@ -42,6 +42,7 @@ jobs:
       ARP_LOCATION: ${{ vars.AZURE_LOCATION }}
       ARP_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
       ARP_DECISION_ENDPOINT: ${{ vars.DECISION_ENDPOINT }}
+      ARP_HOST_STORAGE_BLOB_ENDPOINT: ${{ vars.AZURE_HOST_STORAGE_BLOB_ENDPOINT }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
       - name: Resolve successful main CI from this workflow version

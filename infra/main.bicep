@@ -4,6 +4,7 @@ targetScope = 'resourceGroup'
 @maxLength(7)
 param prefix string = 'arp'
 param location string = resourceGroup().location
+param hostStorageBlobEndpoint string
 param tenantId string
 param entraClientId string
 param targetSubscriptionIds array
@@ -41,13 +42,13 @@ resource dataStorage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   kind: 'StorageV2'
   properties: { allowBlobPublicAccess: false, allowSharedKeyAccess: false, minimumTlsVersion: 'TLS1_2', supportsHttpsTrafficOnly: true }
 }
-resource hostBlob 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = { parent: hostStorage, name: 'default' }
-resource deployContainers 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = [for name in ['api-package','exporter-package']: { parent: hostBlob, name: name, properties: { publicAccess: 'None' } }]
-resource dataBlob 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = { parent: dataStorage, name: 'default' }
-resource records 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = { parent: dataBlob, name: 'records', properties: { publicAccess: 'None' } }
+resource hostBlob 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = { parent: hostStorage, name: 'default', properties: { cors: { corsRules: [] }, deleteRetentionPolicy: { allowPermanentDelete: false, enabled: false } } }
+resource deployContainers 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = [for name in ['api-package','exporter-package']: { parent: hostBlob, name: name, properties: { publicAccess: 'None', defaultEncryptionScope: '$account-encryption-key', denyEncryptionScopeOverride: false } }]
+resource dataBlob 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = { parent: dataStorage, name: 'default', properties: { cors: { corsRules: [] }, deleteRetentionPolicy: { allowPermanentDelete: false, enabled: false } } }
+resource records 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = { parent: dataBlob, name: 'records', properties: { publicAccess: 'None', defaultEncryptionScope: '$account-encryption-key', denyEncryptionScopeOverride: false } }
 resource tableService 'Microsoft.Storage/storageAccounts/tableServices@2023-05-01' = { parent: dataStorage, name: 'default' }
 resource state 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-05-01' = { parent: tableService, name: 'ArpState' }
-resource queueService 'Microsoft.Storage/storageAccounts/queueServices@2023-05-01' = { parent: dataStorage, name: 'default' }
+resource queueService 'Microsoft.Storage/storageAccounts/queueServices@2023-05-01' existing = { parent: dataStorage, name: 'default' }
 resource queues 'Microsoft.Storage/storageAccounts/queueServices/queues@2023-05-01' = [for name in ['assessments','assessments-poison','exports','exports-poison']: { parent: queueService, name: name }]
 resource vault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: '${prefix}-kv-${suffix}'
@@ -66,7 +67,7 @@ resource insights 'Microsoft.Insights/components@2020-02-02' = {
   location: location
   tags: tags
   kind: 'web'
-  properties: { Application_Type: 'web', WorkspaceResourceId: workspace.id, IngestionMode: 'LogAnalytics' }
+  properties: { Application_Type: 'web', WorkspaceResourceId: workspace.id, IngestionMode: 'LogAnalytics', Flow_Type: null, Request_Source: null }
 }
 resource plans 'Microsoft.Web/serverfarms@2024-11-01' = [for name in ['api','exporter']: {
   name: '${prefix}-${name}-plan-${suffix}'
@@ -88,7 +89,7 @@ resource functions 'Microsoft.Web/sites@2024-11-01' = [for (name,i) in ['api','e
     publicNetworkAccess: 'Enabled'
     functionAppConfig: {
       runtime: { name: 'node', version: '24' }
-      deployment: { storage: { type: 'blobContainer', value: '${hostStorage.properties.primaryEndpoints.blob}${name}-package', authentication: { type: 'SystemAssignedIdentity' } } }
+      deployment: { storage: { type: 'blobContainer', value: '${hostStorageBlobEndpoint}${name}-package', authentication: { type: 'SystemAssignedIdentity' } } }
       scaleAndConcurrency: { maximumInstanceCount: 40, instanceMemoryMB: 2048, triggers: { http: { perInstanceConcurrency: 4 } } }
     }
     siteConfig: {
