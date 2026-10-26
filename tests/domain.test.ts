@@ -11,6 +11,7 @@ import {
   canSkipAssessmentReview,
   canClose,
   classifyResource,
+  classifyResourceDetails,
   compareEventVersion,
   daysBetween,
   hash,
