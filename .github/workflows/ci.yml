@@ -19,7 +19,7 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci --ignore-scripts
-      - run: npm run verify
+      - run: npm run format && git diff --no-ext-diff -- tests/adapters.test.ts && npm run verify
       - name: Validate Bicep without Azure credentials
         run: |
           az bicep build --file infra/main.bicep --stdout > /dev/null
