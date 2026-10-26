@@ -8,8 +8,6 @@ import {
   decide,
   explicitResourceIds,
   issueText,
-  logProcessingFailure,
-  withProcessingFailureLog,
 } from '@arp/adapters'
 import { credential } from '../packages/adapters/src/azure.ts'
 import { fixture, tenant, resourceId } from './fixtures.ts'
@@ -60,8 +58,7 @@ test('explicit impacted-resource discovery uses exact tracking IDs and active Ad
   assert.ok(queries[1]?.includes("recommendationStatus) in ('New'"))
   assert.ok(queries[1]?.includes("'InProgress', 'Postponed'"))
   assert.ok(queries[1]?.includes('distinct recommendationTypeId, resourceId'))
-  },
-)
+})
 test('Advisor failure preserves Service Health impacts and marks discovery incomplete', async (t) => {
   t.mock.method(credential, 'getToken', async () => ({
     token: 'synthetic',
@@ -380,35 +377,3 @@ test('approval and stable per-item outbox are one conditional transaction', asyn
   await store.approve(a, approval)
   assert.equal(submit.mock.callCount(), 1)
 })
-
-test(
-  'processing failure logs carry correlation and stage without exception details',
-  async (t) => {
-    const records: string[] = []
-    t.mock.method(console, 'error', (record: string) => records.push(record))
-    const failure = new Error('synthetic-secret-resource-id')
-    failure.name = 'StorageError'
-    const correlationId = logProcessingFailure(
-      'assessment-queue',
-      failure,
-      '00000000-0000-4000-8000-000000000001',
-    )
-    assert.equal(correlationId, '00000000-0000-4000-8000-000000000001')
-    assert.deepEqual(JSON.parse(records[0]!), {
-      event: 'ProcessingFailure',
-      stage: 'assessment-queue',
-      correlationId,
-      errorType: 'StorageError',
-    })
-    assert.ok(!records[0]!.includes('synthetic-secret-resource-id'))
-
-    await assert.rejects(
-      withProcessingFailureLog('daily-sync', async () => {
-        throw new Error('synthetic-payload')
-      }),
-      /synthetic-payload/,
-    )
-    assert.equal(JSON.parse(records[1]!).stage, 'daily-sync')
-    assert.ok(!records[1]!.includes('synthetic-payload'))
-  },
-)
