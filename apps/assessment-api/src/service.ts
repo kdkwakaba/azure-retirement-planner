@@ -155,7 +155,10 @@ export async function assessSnapshot(message: unknown): Promise<void> {
     '業務重要度・移行方式・工程期間・適用期限の人間確認が必要',
   ]
   try {
-    explicit = await explicitResourceIds(event, settings.subscriptions)
+    const discovery = await explicitResourceIds(event, settings.subscriptions)
+    explicit = discovery.resourceIds
+    complete &&= discovery.complete
+    missing.push(...discovery.failures)
   } catch {
     complete = false
     missing.push('公式対象関連付けが未完了')

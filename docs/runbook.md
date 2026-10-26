@@ -34,7 +34,7 @@ az bicep build --file infra/bootstrap/permissions.bicep --stdout
 
 - モデル接続リリース後は`MAX_MODEL_CALLS_PER_DAY=200`、同期/通知/外部登録はfalse。要求単位のToken上限は設定しない。`infra/main.bicep`とパラメーターへ構成を記録し、ポータル手修正を次のCDで消さない。
 - 許可するサービスはBasic LB、GPv1、URL pingの3種。現在のARGは3リソースTypeを取得する。未知の条件の構成もUnknownとして残し、0件を影響なしにしない。Owner/Workloadのタグは`OwnerTeam`、`WorkloadId`、環境は`Environment`。データプレーンは取得しない。
-- UIの「Azure情報を取得・評価」で実取得を開始し、Queue処理後に更新する。API読取権限、ARGページング、Service Health/Advisorの実データShapeをSP-02で確認する。通知と構成の取得は部分失敗を表示する。
+- UIの「Azure情報を取得・評価」で実取得を開始し、Queue処理後に更新する。API読取権限、ARGページング、Service Health/Advisorの実データShapeをSP-02で確認する。Service HealthのTracking IDはimpacted-resource IDから完全一致で抽出し、Advisorメタデータと推奨を`recommendationTypeId`で関連付ける。Advisorの有効状態は`recommendationStatus`を用い、`platformState`や`customerState`に依存しない。いずれかの取得に失敗した場合も他方の対象結果を保持し、評価Scopeを不完全としてレビューへ送る。
 - Health Advisoryの非推奨・Retirement以外を含む入口は`infra/ingestion.bicep`。承認済み監視RGへSubscriptionごとに配置する。通知Payloadは原本保存後、ARGから正規情報を再読取する。受信本文のIDや日付を正本として使わない。配送試験を実Retirement取得と同一視しない。
 - Decision-1のDeployment、API設定、API MIへのFoundry限定推論権限を反映済み。実データ通知1件のv1応答に加え、合成3事例×3回の型・確率契約検証を完了（9/9成功、9/9 Unknownを含みAbstained相当）。これは判断精度の実証ではない。CLI利用者のCognitive Services UserはFoundryアカウント範囲に限定。説明モデルと実環境精度評価は未完了。応答契約不一致は原応答をAzureへ保存してUnavailable＋人間判断。採用契約は`packages/adapters/src/models.ts`、Prompt/Rule Versionはコードで追跡する。別モデルへの自動切替はない。
 - 説明モデルはJSON Schema対応とMIを確認。Resource/Workload/Ownerは別名化し、選別済み構成属性だけ送る。公式本文に機密が混ざらないことをSP-04で確認する。現在は外部URL本文の自動取得を行わない。
@@ -63,6 +63,7 @@ APIの日次モデル呼出枠は200件で、同時予約をETagで制御する�
 - [Functions Flex](https://learn.microsoft.com/azure/azure-functions/flex-consumption-how-to)、[MIのプラットフォームHTTP仕様](https://learn.microsoft.com/azure/app-service/overview-managed-identity)。MIは公式のローカルEndpointを使用し、CLI/環境SecretへのFallbackを持たせない。@azure/identityの依存監査に不適合があり、当該依存を採用しなかった。公開EndpointへTokenを要求しない試験を持つ。
   - [Microsoft-Decision-1](https://learn.microsoft.com/azure/foundry/foundry-models/how-to/use-foundry-models-microsoft-decision)。モデル配置・API Managed Identity推論・v1応答契約を実データで確認済み。合成3事例×3回の契約検証も合格。実環境の判断品質評価は未完了。
 - [ARG REST](https://learn.microsoft.com/rest/api/azureresourcegraph/resourcegraph/resources/resources)。APIの実契約とライブ可否はSP-02で照合する。
+- [Service Health Tracking IDとAdvisor対象のARG関連付け](https://learn.microsoft.com/azure/service-health/service-retirement-unified-impact-queries)、[Advisor recommendationStatus](https://learn.microsoft.com/azure/advisor/advisor-azure-resource-graph)。公開仕様に基づくKQL契約テストは実施済み。2026-10-26に構成SubscriptionのARG REST集計でretirement recommendationはCompleted 1件、New／InProgress／Postponed 0件、retirement metadataは0件だった。正の関連付けはないため、trackingId→recommendationTypeIdの実データShape・精度・網羅性は未検証であり、結果0件を影響なしと解釈しない。
 - 機能の詳細な残作業は[実装バックログ](implementation-backlog.md)。本Runbookを完了していない段階で登壇デモやPoC成立を宣言しない。
 
 ## Foundry Bootstrap
