@@ -138,7 +138,11 @@ test('workflow policy rejects wrong role kinds, unknown references, and dependen
 test('resource matching is case-insensitive and limited to selected resources', () => {
   const parsed = workflowPolicySchema.parse(policy)
   const assessment = fixture()
-  const result = applyWorkflowPolicy(assessment.workItems, assessment.resources, parsed)
+  const result = applyWorkflowPolicy(
+    assessment.workItems,
+    assessment.resources,
+    parsed,
+  )
   assert.deepEqual(result.workItems[0]!.resourceIds, [resourceId])
   assert.deepEqual(result.workItems[0]!.workflowRouting!.policyRuleIds, [
     'network-verification',
