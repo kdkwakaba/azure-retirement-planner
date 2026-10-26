@@ -87,7 +87,7 @@ Microsoft-Decision-1 version 1、deployment `arp-decision-1`、既存の6質問�
 | TST-26 | 非推奨開始日のみ・廃止期限未発表 | 廃止日null、必要確認は暫定P2＋レビュー。期限超過・移行必須としない |
 | TST-27 | 非推奨・作成停止・サポート終了・廃止が別日付 | 別マイルストーンと適用範囲を保持。作業別期限で検証 |
 | TST-28 | 新規作成停止、既存利用は継続可能 | 既存停止を断定せず、増設・再構築・DRの必要確認 |
-| TST-29 | ライフサイクル変更と無関係なHealth Advisory | 理由付き対象外。移行作業・暫定P2を生成しない |
+| TST-29 | ライフサイクル変更と無関係なHealth Advisory | 人間が理由・Evidence付きOutOfScopeを確定。公式分類は保持し、移行作業・暫定P2・承認を生成しない。自動キーワード除外なし |
 | TST-30 | 期限未発表の非推奨へ廃止期限が追加、Advisor対象なし | 同案件の新版・再評価・影響承認失効。ARG等へ接続し、根拠なく対象外にしない |
 
 分類理由の追加回帰では、既知プロファイルの必須属性欠損（LB SKU、Storage kind、WebTest kind）をVerification Required＋不足属性名、既知プロファイル内の未知属性値をUnknown、イベントと対応プロファイルがない場合を別理由付きUnknownとする。旧保存Assessmentは既定理由`LegacyUnrecorded`で読み取る。Unknown／Possible／Verification Requiredでは不足情報をレビュー欄へ含め、説明モデル停止時にもEvidence付きRecommended Impact Verification作業を生成する。これらはローカル契約・ルール検証であり、実Advisor対象との関連精度を証明しない。
