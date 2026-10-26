@@ -50,7 +50,9 @@ function App() {
       setProjectProgress(
         Array.isArray(progress)
           ? progress.filter(
-              (item): item is {
+              (
+                item,
+              ): item is {
                 workItemId: string
                 status: string | null
                 syncedAt: string
