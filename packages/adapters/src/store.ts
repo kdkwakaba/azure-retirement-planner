@@ -154,7 +154,7 @@ export class AzureStore {
         'create',
         {
           partitionKey: current.partitionKey,
-          rowKey: 'outbox:' + itemId,
+          rowKey: 'outbox:' + itemId + ':' + approval.id,
           entityKind: 'outbox',
           state: 'Pending',
           approvalId: approval.id,
