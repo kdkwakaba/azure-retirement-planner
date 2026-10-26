@@ -260,7 +260,8 @@ export class AzureStore {
         continue
       progress.push({
         workItemId: row.rowKey.slice('outbox:'.length),
-        status: typeof row.externalStatus === 'string' ? row.externalStatus : null,
+        status:
+          typeof row.externalStatus === 'string' ? row.externalStatus : null,
         statusOptionId:
           typeof row.externalStatusOptionId === 'string'
             ? row.externalStatusOptionId
