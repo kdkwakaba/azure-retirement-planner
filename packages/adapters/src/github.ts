@@ -99,6 +99,164 @@ export class GitHubClient {
     )
     return { id: result.node_id, url: result.html_url }
   }
+
+  async updateManagedIssue(
+    issueId: string,
+    item: WorkItem,
+    previousManagedHash: string | null,
+  ): Promise<string> {
+    const current = z
+      .object({
+        data: z.object({
+          node: z.object({ body: z.string().nullable() }).nullable(),
+        }),
+        errors: z.unknown().optional(),
+      })
+      .parse(
+        await this.request('/graphql', {
+          query: 'query($id:ID!){node(id:$id){...on Issue{body}}}',
+          variables: { id: issueId },
+        }),
+      )
+    if (current.errors) throw new Error('Issue read failed')
+    const body = current.data.node?.body
+    if (body === null || body === undefined)
+      throw new Error('Issue body unavailable')
+    const start = body.indexOf(managedStart)
+    const end = body.indexOf(managedEnd)
+    if (start < 0 || end < start || body.indexOf(managedStart, start + 1) >= 0)
+      throw new Error('Managed Issue section missing or ambiguous')
+    const contentStart = start + managedStart.length
+    const previousContent = body.slice(contentStart, end).replace(/^\\n|\\n$/g, '')
+    const nextContent = managedIssueContent(item)
+    const currentHash = hash(previousContent)
+    if (
+      previousManagedHash
+        ? currentHash !== previousManagedHash
+        : previousContent !== nextContent
+    )
+      throw new Error('Managed Issue section changed; human conflict review required')
+    if (previousContent === nextContent) return currentHash
+    const updatedBody =
+      body.slice(0, contentStart) +
+      '\\n' +
+      nextContent +
+      '\\n' +
+      body.slice(end)
+    const updated = z
+      .object({
+        data: z.object({
+          updateIssue: z.object({ issue: z.object({ id: z.string() }) }),
+        }),
+        errors: z.unknown().optional(),
+      })
+      .parse(
+        await this.request('/graphql', {
+          query: 'mutation($id:ID!,$body:String!){updateIssue(input:{id:$id,body:$body}){issue{id}}}',
+          variables: { id: issueId, body: updatedBody },
+        }),
+      )
+    if (updated.errors) throw new Error('Issue update failed')
+    return hash(nextContent)
+  }
+  async ensureProjectItem(projectId: string, contentId: string): Promise<string> {
+    let cursor: string | null = null
+    for (let page = 0; page < 50; page++) {
+      const result = z
+        .object({
+          data: z.object({
+            node: z
+              .object({
+                items: z.object({
+                  nodes: z.array(
+                    z.object({
+                      id: z.string(),
+                      content: z.object({ id: z.string() }).nullable(),
+                    }),
+                  ),
+                  pageInfo: z.object({
+                    hasNextPage: z.boolean(),
+                    endCursor: z.string().nullable(),
+                  }),
+                }),
+              })
+              .nullable(),
+          }),
+          errors: z.unknown().optional(),
+        })
+        .parse(
+          await this.request('/graphql', {
+            query: 'query($id:ID!,$cursor:String){node(id:$id){...on ProjectV2{items(first:100,after:$cursor){nodes{id content{...on Issue{id}}}pageInfo{hasNextPage endCursor}}}}}',
+            variables: { id: projectId, cursor },
+          }),
+        )
+      if (result.errors || !result.data.node)
+        throw new Error('Project read failed')
+      const matches = result.data.node.items.nodes.filter(
+        (projectItem) => projectItem.content?.id === contentId,
+      )
+      if (matches.length > 1) throw new Error('Duplicate Project item')
+      if (matches[0]) return matches[0].id
+      const pageInfo = result.data.node.items.pageInfo
+      if (!pageInfo.hasNextPage) break
+      if (!pageInfo.endCursor) throw new Error('Project pagination incomplete')
+      cursor = pageInfo.endCursor
+      if (page === 49) throw new Error('Project reconciliation incomplete')
+    }
+    return this.addToProject(projectId, contentId)
+  }
+  async updateProjectFields(
+    projectId: string,
+    itemId: string,
+    item: WorkItem,
+    config: ProjectFieldConfig,
+  ): Promise<void> {
+    if (Boolean(config.statusFieldId) !== Boolean(config.todoOptionId))
+      throw new Error('Project status field configuration incomplete')
+    if (config.statusFieldId && config.todoOptionId)
+      await this.setProjectField(projectId, itemId, config.statusFieldId, {
+        singleSelectOptionId: config.todoOptionId,
+      })
+    if (Boolean(config.priorityFieldId) !== Boolean(config.priorityOptionIds))
+      throw new Error('Project priority field configuration incomplete')
+    if (config.priorityFieldId && config.priorityOptionIds && item.priority) {
+      const optionId = config.priorityOptionIds[item.priority]
+      if (!optionId) throw new Error('Project priority option is not configured')
+      await this.setProjectField(projectId, itemId, config.priorityFieldId, {
+        singleSelectOptionId: optionId,
+      })
+    }
+    if (config.dueDateFieldId && item.dueDate)
+      await this.setProjectField(projectId, itemId, config.dueDateFieldId, {
+        date: item.dueDate,
+      })
+  }
+  async setProjectField(
+    projectId: string,
+    itemId: string,
+    fieldId: string,
+    value: { singleSelectOptionId?: string; date?: string },
+  ): Promise<void> {
+    if (!fieldId || Object.keys(value).length !== 1)
+      throw new Error('Invalid Project field update')
+    const result = z
+      .object({
+        data: z.object({
+          updateProjectV2ItemFieldValue: z.object({
+            projectV2Item: z.object({ id: z.string() }),
+          }),
+        }),
+        errors: z.unknown().optional(),
+      })
+      .parse(
+        await this.request('/graphql', {
+          query: 'mutation($project:ID!,$item:ID!,$field:ID!,$value:ProjectV2FieldValue!){updateProjectV2ItemFieldValue(input:{projectId:$project,itemId:$item,fieldId:$field,value:$value}){projectV2Item{id}}}',
+          variables: { project: projectId, item: itemId, field: fieldId, value },
+        }),
+      )
+    if (result.errors) throw new Error('Project field update failed')
+  }
+
   async addToProject(projectId: string, contentId: string): Promise<string> {
     const result = z
       .object({
