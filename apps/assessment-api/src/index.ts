@@ -113,7 +113,7 @@ app.http('api', {
           return reply(200, { assessmentId: revised.id })
         }
         if (path === 'review') {
-          requireRole(principal, ['Reviewer', 'Governance'])
+          requireUserRole(principal, apiRolePolicy.review)
           const body = z
             .object({
               assessmentId: z.string().regex(/^[a-f0-9]{64}$/),
