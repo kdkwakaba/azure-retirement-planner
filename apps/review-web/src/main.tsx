@@ -430,13 +430,18 @@ function App() {
                                 .join(' → ') || '未設定'}
                             </p>
                             <p>
-                              作業順序: {w.workflowRouting.sequenceOrder ?? '未設定'}
-                              {' '}／ 前提カテゴリ:{' '}
-                              {w.workflowRouting.dependsOnCategories.join('、') || 'なし'}
+                              作業順序:{' '}
+                              {w.workflowRouting.sequenceOrder ?? '未設定'} ／
+                              前提カテゴリ:{' '}
+                              {w.workflowRouting.dependsOnCategories.join(
+                                '、',
+                              ) || 'なし'}
                             </p>
-                            {w.workflowRouting.unresolvedReasons.map((reason) => (
-                              <p key={reason}>人間確認: {reason}</p>
-                            ))}
+                            {w.workflowRouting.unresolvedReasons.map(
+                              (reason) => (
+                                <p key={reason}>人間確認: {reason}</p>
+                              ),
+                            )}
                           </div>
                         )}
                         <ul>
