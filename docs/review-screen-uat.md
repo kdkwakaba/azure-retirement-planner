@@ -102,7 +102,7 @@ Fixture-only lower-layer evidence: existing CI case TST-29 verifies that a human
 | UAT-R-05 | Pass | 「評価結果を更新」を実行。7件の一覧と選択中の詳細が維持された |
 | UAT-R-06 | Pass（未送信） | 訂正欄を展開。理由を空欄のまま対象判定を一時的にOutOfScopeへ切り替えても保存ボタンは無効。InScopeへ戻し、未送信を確認 |
 | UAT-R-07 | Pass（明示依頼後の実行） | 再認証後に1回同期。7通知・構成2件の取得とQueue受付を確認し、一覧の7評価すべてに新しい評価時刻を確認。最初の401要求は未認証で処理開始せず |
-| UAT-R-08 | Partial | 別タブから未認証GETで`/api/me`と`/api/assessments`を開き、いずれもAuthentication requiredを確認。認証済みセッションからのサインアウト後確認は未実施 |
+| UAT-R-08 | Partial | 未認証別タブでは画面外枠とサインイン案内のみ表示、一覧0件。未認証GET `/api/me`・`/api/assessments`はAuthentication required。サインアウト後の挙動は未実施 |
 
 UAT-R-05の更新は画面の読取更新で、訂正POST、評価同期、承認、外部Work Item登録は実行していない。UAT-R-06で変更したのはブラウザー上の未保存フォーム値のみで、保存前に元の選択へ戻した。Assessment版・Evidence・Work Itemに書込みはない。
 
@@ -125,8 +125,8 @@ Controlled write-path UAT-W-01〜10、ロール別API拒否、匿名アクセス
 | 判断 | 選択した最新評価はMicrosoft-Decision-1 v1 / Abstained。人間確認と確認作業を維持 |
 | リソース分類 | 選択評価の2リソースはUnknown / NoApplicableProfile、環境は不明。Not Impactedへ誤分類していない |
 | Evidence | 選択評価で3件（Microsoft 1、Azure 2）。6説明Claim中4件がEvidence一覧IDに一致し、参照切れ0件。残る2件はUnknownかつ「なし／不明」と明示 |
-| 現行認可 | 再認証後の同期POSTは受理。現セッションに同期可能なロールがあることを確認したが、実ロール名・別ロールの拒否は未確認 |
-| 匿名API | 独立タブから`/api/me`・`/api/assessments`を読み取り、両方でAuthentication requiredを確認。Response body以外のAssessmentデータは取得・表示していない |
+| 現行認可 | 再認証後の同期POSTは受理。後続の`/api/me`はAuthentication requiredとなり実ロール名を取得できず、別ロールの拒否も未確認 |
+| 匿名アクセス | 独立タブで画面外枠が表示されたが一覧は0件、サインイン案内あり。`/api/me`・`/api/assessments`はAuthentication requiredで拒否。Assessmentデータは取得・表示されていない |
 | 副作用 | 同期・評価データはPoCアプリ内へ保存。評価対象Azureリソース、訂正、承認、Issue／Projectには変更なし |
 
 Decision-1呼出しの実数を個別メトリックから確認していないため、7件のモデル呼出し完了とは断定しない。呼出し日次枠の上限内で同期した。選択した1評価の応答は画面上で確認した。
