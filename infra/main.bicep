@@ -19,6 +19,14 @@ param maxModelCallsPerDay int = 0
 param githubOwner string = ''
 param githubRepository string = ''
 param githubProjectId string = ''
+param githubProjectStatusFieldId string = ''
+param githubProjectStatusTodoOptionId string = ''
+param githubProjectPriorityFieldId string = ''
+param githubProjectPriorityP1OptionId string = ''
+param githubProjectPriorityP2OptionId string = ''
+param githubProjectPriorityP3OptionId string = ''
+param githubProjectPriorityP4OptionId string = ''
+param githubProjectDueDateFieldId string = ''
 param syncEnabled bool = false
 param ingestEnabled bool = false
 param exportEnabled bool = false
@@ -119,6 +127,14 @@ resource functions 'Microsoft.Web/sites@2024-11-01' = [for (name,i) in ['api','e
         { name: 'GITHUB_OWNER', value: githubOwner }
         { name: 'GITHUB_REPOSITORY', value: githubRepository }
         { name: 'GITHUB_PROJECT_ID', value: githubProjectId }
+        { name: 'GITHUB_PROJECT_STATUS_FIELD_ID', value: githubProjectStatusFieldId }
+        { name: 'GITHUB_PROJECT_STATUS_TODO_OPTION_ID', value: githubProjectStatusTodoOptionId }
+        { name: 'GITHUB_PROJECT_PRIORITY_FIELD_ID', value: githubProjectPriorityFieldId }
+        { name: 'GITHUB_PROJECT_PRIORITY_P1_OPTION_ID', value: githubProjectPriorityP1OptionId }
+        { name: 'GITHUB_PROJECT_PRIORITY_P2_OPTION_ID', value: githubProjectPriorityP2OptionId }
+        { name: 'GITHUB_PROJECT_PRIORITY_P3_OPTION_ID', value: githubProjectPriorityP3OptionId }
+        { name: 'GITHUB_PROJECT_PRIORITY_P4_OPTION_ID', value: githubProjectPriorityP4OptionId }
+        { name: 'GITHUB_PROJECT_DUE_DATE_FIELD_ID', value: githubProjectDueDateFieldId }
         { name: 'GITHUB_TOKEN', value: '@Microsoft.KeyVault(VaultName=${vault.name};SecretName=github-token)' }
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: insights.properties.ConnectionString }
       ]
