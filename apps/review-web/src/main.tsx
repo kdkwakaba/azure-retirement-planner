@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { assessmentSchema, type Assessment } from '@arp/contracts'
 import './styles.css'
 import { CorrectionForm } from './CorrectionForm.tsx'
+import { summarizeAssessments } from './summary.ts'
 
 import { request, syncFeedback } from './api.ts'
 
@@ -39,6 +40,7 @@ function App() {
       Array<{ workItemId: string; status: string | null; syncedAt: string }>
     >([])
   const current = items.find((a) => a.id === selected)
+  const summary = summarizeAssessments(items)
   async function refresh() {
     setError('')
     try {
@@ -132,6 +134,30 @@ function App() {
           </button>
           <span>評価対象は読み取り専用</span>
         </div>
+        <section className="operations-summary" aria-labelledby="summary-title">
+          <h2 id="summary-title">評価状況</h2>
+          <p>
+            現在取得済みの評価レコード単位の集計です。業務システム単位の件数ではありません。
+          </p>
+          <div className="metrics">
+            <article>
+              <small>評価レコード</small>
+              <strong>{summary.totalRecords}</strong>
+            </article>
+            <article>
+              <small>人間確認が必要</small>
+              <strong>{summary.humanReviewRequired}</strong>
+            </article>
+            <article>
+              <small>P1・P2</small>
+              <strong>{summary.highPriority}</strong>
+            </article>
+            <article>
+              <small>調査不完全・未確認</small>
+              <strong>{summary.incompleteDiscovery}</strong>
+            </article>
+          </div>
+        </section>
         {error && (
           <div role="alert" className="error">
             {error} <a href="/.auth/login/aad">サインイン</a>
