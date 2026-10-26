@@ -175,12 +175,74 @@ export function classifyResource(input: {
   dependencyEvidence: boolean
   usageRequired: boolean
 }): ResourceImpact['classification'] {
-  if (input.explicitlyListed) return 'Confirmed'
-  if (input.explicitlyExcluded) return 'Not Impacted'
-  if (input.usageRequired) return 'Verification Required'
-  if (input.conditionMatches === true) return 'Probable'
-  if (input.dependencyEvidence) return 'Possible'
-  return 'Unknown'
+  return classifyResourceDetails(input).classification
+}
+export function classifyResourceDetails(input: {
+  explicitlyListed: boolean
+  conditionMatches: boolean | null
+  explicitlyExcluded: boolean
+  dependencyEvidence: boolean
+  usageRequired: boolean
+  requiredAttributeMissing?: boolean
+  requiredAttributeNames?: string[]
+  applicableProfile?: boolean
+}): Pick<
+  ResourceImpact,
+  | 'classification'
+  | 'classificationReason'
+  | 'missingAttributes'
+  | 'verificationRequired'
+> {
+  if (input.explicitlyListed)
+    return {
+      classification: 'Confirmed',
+      classificationReason: 'ExplicitMicrosoftImpact',
+      missingAttributes: [],
+      verificationRequired: false,
+    }
+  if (input.explicitlyExcluded)
+    return {
+      classification: 'Not Impacted',
+      classificationReason: 'ExplicitExclusion',
+      missingAttributes: [],
+      verificationRequired: false,
+    }
+  if (input.usageRequired)
+    return {
+      classification: 'Verification Required',
+      classificationReason: 'UsageRequiresVerification',
+      missingAttributes: [],
+      verificationRequired: true,
+    }
+  if (input.conditionMatches === true)
+    return {
+      classification: 'Probable',
+      classificationReason: 'ProfileConditionMatched',
+      missingAttributes: [],
+      verificationRequired: false,
+    }
+  if (input.dependencyEvidence)
+    return {
+      classification: 'Possible',
+      classificationReason: 'DependencyEvidence',
+      missingAttributes: [],
+      verificationRequired: false,
+    }
+  if (input.requiredAttributeMissing)
+    return {
+      classification: 'Verification Required',
+      classificationReason: 'RequiredAttributeMissing',
+      missingAttributes: input.requiredAttributeNames ?? [],
+      verificationRequired: true,
+    }
+  return {
+    classification: 'Unknown',
+    classificationReason: input.applicableProfile
+      ? 'NoMatchingProfileCondition'
+      : 'NoApplicableProfile',
+    missingAttributes: [],
+    verificationRequired: false,
+  }
 }
 export function packageHash(assessment: Assessment): string {
   const { packageHash: _ignored, ...content } = assessment

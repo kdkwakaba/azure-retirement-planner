@@ -272,7 +272,7 @@ Draft 2020-12を基本とする。ここでは実装コードでなく型契約�
 |---|---|
 | EventVersion | eventId:ref、source:string、sourceMetadata:object、feature:string、lifecycleKinds:enum[]、classificationStatus:enum、milestones:LifecycleMilestone[]、retirementDate:dateまたはnull、datePrecision:enum、deadlineStatus:enum、referenceIds:ref[]、contentHash:string |
 | LifecycleMilestone | milestoneId:string、kind:enum、date:dateまたはnull、rawDateText:stringまたはnull、datePrecision:enum、scope:string、evidenceIds:ref[] |
-| ResourceImpact | runId:ref、snapshotId:ref、impactClass:6分類enum、verificationStatus:enum、evidenceIds:ref[]、discoveryMethod:string、confidence:Confidence |
+| ResourceImpact | runId:ref、snapshotId:ref、impactClass:6分類enum、classificationReason:reason enum、missingAttributes:string[]、verificationStatus:enum、evidenceIds:ref[]、discoveryMethod:string、confidence:Confidence |
 | DecisionAnswer | questionId:string、selectedOption:stringまたはnull、optionProbabilities:object、abstained:boolean |
 | DecisionResult | inputId:ref、decisionStatus:enum、answers:DecisionAnswer[]、effectiveResult:object、ruleOverrides:array、versionManifest:object |
 | Claim | claimId:string、text:string、claimType:enum、evidenceIds:ref[]、decisionRefs:ref[]、validationStatus:enum |
@@ -313,6 +313,8 @@ Deterministicは構成・件数・日数・所属等、Human-maintainedは重要
 | Verification Required | 制御プレーンだけでは利用実態を判別不可 |
 | Not Impacted | 明示除外条件や確認構成から対象外を説明可能 |
 | Unknown | 条件・範囲・属性が不足 |
+
+Unknownには理由を保持する。対応プロファイルなし、プロファイル不一致、必要属性不足、評価前、旧データで未記録を区別する。必要属性不足はVerification Requiredとし、不足属性・人間が確認する内容を画面に示す。未知のSKUや条件不一致を除外と推定しない。既存保存データのreason欠損はLegacyUnrecordedへ読み替え、別分類へ推測移行しない。Resourceのreason／不足属性はAssessment Hashへ含み、旧版の承認Hashは新Schemaで一致しなくなるため、旧承認を引き継がず再レビューする。
 
 別にverificationStatusを持つ。空の公式対象一覧は対象外の証拠にしない。公式対象情報は遅延・変更し得る。対象削除、権限不足、反映遅延を区別。ARG apiVersionをアプリ使用APIの証拠にしない。任意LLM生成KQLは実行せず、公式根拠とレビュー付き探索プロファイルを使う。
 

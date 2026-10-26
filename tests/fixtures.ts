@@ -57,6 +57,8 @@ export function fixture(): Assessment {
         environment: 'Development',
         ownerTeam: null,
         classification: 'Probable',
+        classificationReason: 'ProfileConditionMatched',
+        missingAttributes: [],
         verificationRequired: false,
         evidenceIds: [event.evidence[0]!.id],
         properties: {},
