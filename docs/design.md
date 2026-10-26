@@ -316,7 +316,7 @@ Deterministicは構成・件数・日数・所属等、Human-maintainedは重要
 
 Unknownには理由を保持する。対応プロファイルなし、プロファイル不一致、必要属性不足、評価前、旧データで未記録を区別する。必要属性不足はVerification Requiredとし、不足属性・人間が確認する内容を画面に示す。未知のSKUや条件不一致を除外と推定しない。既存保存データのreason欠損はLegacyUnrecordedへ読み替え、別分類へ推測移行しない。Resourceのreason／不足属性はAssessment Hashへ含み、旧版の承認Hashは新Schemaで一致しなくなるため、旧承認を引き継がず再レビューする。
 
-別にverificationStatusを持つ。空の公式対象一覧は対象外の証拠にしない。公式対象情報は遅延・変更し得る。対象削除、権限不足、反映遅延を区別。ARG apiVersionをアプリ使用APIの証拠にしない。任意LLM生成KQLは実行せず、公式根拠とレビュー付き探索プロファイルを使う。
+別にverificationStatusを持つ。空の公式対象一覧は対象外の証拠にしない。公式対象情報は遅延・変更し得る。対象削除、権限不足、反映遅延を区別。ARG apiVersionをアプリ使用APIの証拠にしない。Service Health impacted-resource IDからTracking IDを完全一致で抽出し、部分文字列一致による誤関連を避ける。Retirementに限るAdvisor関連付けは公式メタデータのTracking ID→recommendationTypeIdを結び、recommendationStatusがNew／InProgress／Postponedの推奨だけを明示対象候補とする。platformState等のシステム状態フィールドに依存しない。どちらかの取得に失敗しても他方の成功結果を保持し、Scopeを不完全として人間レビューへ送る。任意LLM生成KQLは実行せず、公式根拠とレビュー付き探索プロファイルを使う。
 
 ## 19. Work Item Generation
 
@@ -494,6 +494,7 @@ AC-001: 100回再送でも版・作業・Issueが増殖しない。AC-002: 通�
 - [Service Healthの種別・サブタイプ・タグ](https://learn.microsoft.com/en-us/azure/service-health/service-health-event-tags)
 - [Service Health通知のデータ項目](https://learn.microsoft.com/en-us/azure/service-health/service-health-event-properties)
 - [Service HealthとAdvisorの関連付け](https://learn.microsoft.com/en-us/azure/service-health/service-retirement-unified-impact-queries)
+- [Advisor ARG推奨状態](https://learn.microsoft.com/en-us/azure/advisor/advisor-azure-resource-graph)
 - [Health Advisory影響対象・反映遅延](https://learn.microsoft.com/en-us/azure/service-health/impacted-resources-retirements)
 - [Advisor Workbook](https://learn.microsoft.com/en-us/azure/advisor/advisor-workbook-service-retirement)
 - [Decision-1](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/use-foundry-models-microsoft-decision)
