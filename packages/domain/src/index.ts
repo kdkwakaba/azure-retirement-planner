@@ -769,3 +769,6 @@ export function refreshAssessment(
   result.packageHash = packageHash(result)
   return assessmentSchema.parse(result)
 }
+
+export { applyWorkflowPolicy, workflowPolicySchema } from './workflow.js'
+export type { WorkflowPolicy } from './workflow.js'
