@@ -208,12 +208,38 @@ export function classifyResourceDetails(input: {
   | 'missingAttributes'
   | 'verificationRequired'
 > {
+  const missingAttributes = input.requiredAttributeNames ?? []
+  if (
+    input.explicitlyExcluded &&
+    (input.explicitlyListed || input.conditionMatches === true)
+  )
+    return {
+      classification: 'Unknown',
+      classificationReason: 'ConflictingEvidence',
+      missingAttributes,
+      verificationRequired: true,
+    }
   if (input.explicitlyListed)
     return {
       classification: 'Confirmed',
       classificationReason: 'ExplicitMicrosoftImpact',
-      missingAttributes: [],
-      verificationRequired: false,
+      missingAttributes,
+      verificationRequired:
+        Boolean(input.requiredAttributeMissing) || input.usageRequired,
+    }
+  if (input.requiredAttributeMissing)
+    return {
+      classification: 'Verification Required',
+      classificationReason: 'RequiredAttributeMissing',
+      missingAttributes,
+      verificationRequired: true,
+    }
+  if (input.usageRequired)
+    return {
+      classification: 'Verification Required',
+      classificationReason: 'UsageRequiresVerification',
+      missingAttributes,
+      verificationRequired: true,
     }
   if (input.explicitlyExcluded)
     return {
@@ -221,13 +247,6 @@ export function classifyResourceDetails(input: {
       classificationReason: 'ExplicitExclusion',
       missingAttributes: [],
       verificationRequired: false,
-    }
-  if (input.usageRequired)
-    return {
-      classification: 'Verification Required',
-      classificationReason: 'UsageRequiresVerification',
-      missingAttributes: [],
-      verificationRequired: true,
     }
   if (input.conditionMatches === true)
     return {
@@ -243,13 +262,6 @@ export function classifyResourceDetails(input: {
       missingAttributes: [],
       verificationRequired: false,
     }
-  if (input.requiredAttributeMissing)
-    return {
-      classification: 'Verification Required',
-      classificationReason: 'RequiredAttributeMissing',
-      missingAttributes: input.requiredAttributeNames ?? [],
-      verificationRequired: true,
-    }
   return {
     classification: 'Unknown',
     classificationReason: input.applicableProfile
@@ -258,6 +270,38 @@ export function classifyResourceDetails(input: {
     missingAttributes: [],
     verificationRequired: false,
   }
+}
+export function impactDiscoveryOutcome(input: {
+  scopeComplete: boolean
+  applicableProfile: boolean
+  resources: ResourceImpact[]
+}):
+  | 'CandidatesFound'
+  | 'NoResourcesDetected'
+  | 'NoImpactMatched'
+  | 'ProfileUnavailable'
+  | 'Incomplete' {
+  if (!input.scopeComplete) return 'Incomplete'
+  if (!input.resources.length)
+    return input.applicableProfile ? 'NoResourcesDetected' : 'ProfileUnavailable'
+  if (input.resources.every((r) => r.classification === 'Not Impacted'))
+    return 'NoImpactMatched'
+  return 'CandidatesFound'
+}
+export function canSkipAssessmentReview(input: {
+  outcome:
+    | 'CandidatesFound'
+    | 'NoResourcesDetected'
+    | 'NoImpactMatched'
+    | 'ProfileUnavailable'
+    | 'Incomplete'
+  scopeComplete: boolean
+}): boolean {
+  return (
+    input.scopeComplete &&
+    (input.outcome === 'NoResourcesDetected' ||
+      input.outcome === 'NoImpactMatched')
+  )
 }
 export function resourceVerificationWorkItems(input: {
   eventId: string
@@ -277,12 +321,11 @@ export function resourceVerificationWorkItems(input: {
       continue
     const missingAttributes = [...resource.missingAttributes].sort()
     const key = hash({
-      type:
-        resource.classificationReason === 'NoApplicableProfile'
-          ? 'all-resource-types'
-          : resource.type,
+      type: resource.type.toLowerCase(),
+      ownerTeam: resource.ownerTeam,
       classification: resource.classification,
       reason: resource.classificationReason,
+      verificationMethod: resource.classificationReason,
       missingAttributes,
     })
     groups.set(key, [...(groups.get(key) ?? []), resource])
