@@ -212,12 +212,47 @@ export async function explicitResourceIds(
   }
   return { resourceIds: ids, complete, failures }
 }
+export const PROFILE_REGISTRY_VERSION = '2026-10-26.1'
+export const PROFILE_RESOURCE_TYPES = [
+  'microsoft.network/loadbalancers',
+  'microsoft.storage/storageaccounts',
+  'microsoft.insights/webtests',
+] as const
+export const RESOURCE_PROFILES = [
+  {
+    id: 'basic-load-balancer',
+    resourceType: 'microsoft.network/loadbalancers',
+    officialReferenceUrl:
+      'https://learn.microsoft.com/azure/load-balancer/load-balancer-basic-upgrade-guidance',
+    eventPattern: /basic.{0,20}load balancer/i,
+  },
+  {
+    id: 'storage-gpv1',
+    resourceType: 'microsoft.storage/storageaccounts',
+    officialReferenceUrl:
+      'https://learn.microsoft.com/azure/storage/common/general-purpose-version-1-account-migration-overview',
+    eventPattern: /general.purpose.v1|gpv1/i,
+  },
+  {
+    id: 'application-insights-url-ping',
+    resourceType: 'microsoft.insights/webtests',
+    officialReferenceUrl:
+      'https://learn.microsoft.com/azure/azure-monitor/app/availability',
+    eventPattern: /url ping|ping test/i,
+  },
+] as const
+export function applicableProfileIds(event: LifecycleEvent): string[] {
+  const text = event.title + ' ' + event.body
+  return RESOURCE_PROFILES.filter((profile) =>
+    profile.eventPattern.test(text),
+  ).map((profile) => profile.id)
+}
 export function matchProfile(
   event: LifecycleEvent,
   resource: ResourceImpact,
   explicit: Set<string>,
 ): ResourceImpact {
-  const text = (event.title + ' ' + event.body).toLowerCase()
+  const profileIds = applicableProfileIds(event)
   let conditionMatches: boolean | null = null,
     excluded = false,
     requiredAttributeMissing = false,
@@ -225,7 +260,7 @@ export function matchProfile(
     requiredAttributeNames: string[] = []
   // 保守する3つの公式条件だけを適用。別機能や未知の条件をLLMで補完しない。
   if (
-    /basic.{0,20}load balancer/.test(text) &&
+    profileIds.includes('basic-load-balancer') &&
     resource.type.toLowerCase() === 'microsoft.network/loadbalancers'
   ) {
     applicableProfile = true
@@ -235,7 +270,7 @@ export function matchProfile(
     if (requiredAttributeMissing) requiredAttributeNames = ['sku.name']
   }
   if (
-    /general.purpose.v1|gpv1/.test(text) &&
+    profileIds.includes('storage-gpv1') &&
     resource.type.toLowerCase() === 'microsoft.storage/storageaccounts'
   ) {
     applicableProfile = true
@@ -247,7 +282,7 @@ export function matchProfile(
     if (requiredAttributeMissing) requiredAttributeNames = ['kind']
   }
   if (
-    /url ping|ping test/.test(text) &&
+    profileIds.includes('application-insights-url-ping') &&
     resource.type.toLowerCase() === 'microsoft.insights/webtests'
   ) {
     applicableProfile = true

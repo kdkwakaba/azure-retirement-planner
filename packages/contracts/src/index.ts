@@ -28,6 +28,7 @@ export const resourceClassificationReasonSchema = z.enum([
   'NoMatchingProfileCondition',
   'NoApplicableProfile',
   'LegacyUnrecorded',
+  'ConflictingEvidence',
 ])
 export const categorySchema = z.enum([
   'Impact Verification',
@@ -90,6 +91,13 @@ export const eventSchema = z
     rawMetadata: z.record(z.string(), z.unknown()),
   })
   .strict()
+export const impactDiscoveryOutcomeSchema = z.enum([
+  'CandidatesFound',
+  'NoResourcesDetected',
+  'NoImpactMatched',
+  'ProfileUnavailable',
+  'Incomplete',
+])
 export const resourceSchema = z
   .object({
     id: z.string().regex(/^\/subscriptions\//i),
@@ -247,6 +255,19 @@ export const assessmentSchema = z
     event: eventSchema,
     resources: z.array(resourceSchema),
     scopeComplete: z.boolean(),
+    impactDiscoveryOutcome: impactDiscoveryOutcomeSchema.optional(),
+    discoveryScope: z
+      .object({
+        subscriptionIds: z.array(z.uuid()),
+        resourceTypes: z.array(z.string()),
+        profileIds: z.array(z.string()),
+        profileRegistryVersion: z.string(),
+        resourceCount: z.number().int().nonnegative(),
+        scopeComplete: z.boolean(),
+      })
+      .strict()
+      .optional(),
+    humanReviewRequired: z.boolean().optional(),
     criticalWorkload: z.boolean(),
     missingInformation: z.array(z.string()),
     decision: decisionSchema,
