@@ -5,12 +5,103 @@ import {
   GitHubClient,
   argRows,
   decide,
+  explicitResourceIds,
   issueText,
 } from '@arp/adapters'
 import { credential } from '../packages/adapters/src/azure.ts'
 import { fixture, tenant, resourceId } from './fixtures.ts'
 import { hash } from '@arp/domain'
 import type { Approval } from '@arp/contracts'
+
+test('explicit impacted-resource discovery uses exact tracking IDs and active Advisor recommendations', async (t) => {
+  t.mock.method(credential, 'getToken', async () => ({
+    token: 'synthetic',
+    expiresOnTimestamp: Date.now() + 3600000,
+  }))
+  const queries: string[] = []
+  const subscriptionScopedId = `/subscriptions/${tenant}/providers/Microsoft.Authorization/policyAssignments/synthetic`
+  let calls = 0
+  t.mock.method(
+    globalThis,
+    'fetch',
+    async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body))
+      queries.push(body.query)
+      if (calls++ === 0)
+        return Response.json({
+          data: [
+            { resourceId: resourceId.toUpperCase() },
+            { resourceId: 'untrusted-value' },
+          ],
+          resultTruncated: false,
+        })
+      return Response.json({
+        data: [
+          { resourceId: resourceId.toUpperCase() },
+          { resourceId: subscriptionScopedId },
+          { resourceId: '/subscriptions/not-a-uuid/resource' },
+        ],
+        resultTruncated: false,
+      })
+    },
+  )
+  const result = await explicitResourceIds(fixture().event, [tenant])
+  assert.deepEqual(
+    [...result.resourceIds],
+    [resourceId.toLowerCase(), subscriptionScopedId.toLowerCase()],
+  )
+  assert.equal(result.complete, true)
+  assert.deepEqual(result.failures, [])
+  assert.ok(queries[0]?.includes("tostring(trackingId) == 'TEST-001'"))
+  assert.ok(!queries[0]?.includes('id contains'))
+  assert.ok(queries[1]?.includes("recommendationStatus) in ('New'"))
+  assert.ok(queries[1]?.includes("'InProgress', 'Postponed'"))
+  assert.ok(queries[1]?.includes('distinct recommendationTypeId, resourceId'))
+})
+test('Advisor failure preserves Service Health impacts and marks discovery incomplete', async (t) => {
+  t.mock.method(credential, 'getToken', async () => ({
+    token: 'synthetic',
+    expiresOnTimestamp: Date.now() + 3600000,
+  }))
+  let calls = 0
+  t.mock.method(globalThis, 'fetch', async () => {
+    if (calls++ === 0)
+      return Response.json({
+        data: [{ resourceId }],
+        resultTruncated: false,
+      })
+    return Response.json(
+      { error: { code: 'SyntheticForbidden' } },
+      { status: 403 },
+    )
+  })
+  const result = await explicitResourceIds(fixture().event, [tenant])
+  assert.deepEqual([...result.resourceIds], [resourceId.toLowerCase()])
+  assert.equal(result.complete, false)
+  assert.deepEqual(result.failures, ['Advisor明示対象の取得に失敗'])
+})
+test('Advisor impacts are retained when Service Health discovery fails', async (t) => {
+  t.mock.method(credential, 'getToken', async () => ({
+    token: 'synthetic',
+    expiresOnTimestamp: Date.now() + 3600000,
+  }))
+  let calls = 0
+  t.mock.method(globalThis, 'fetch', async () => {
+    if (calls++ === 0)
+      return Response.json(
+        { error: { code: 'SyntheticForbidden' } },
+        { status: 403 },
+      )
+    return Response.json({
+      data: [{ resourceId }],
+      resultTruncated: false,
+    })
+  })
+  const result = await explicitResourceIds(fixture().event, [tenant])
+  assert.deepEqual([...result.resourceIds], [resourceId.toLowerCase()])
+  assert.equal(result.complete, false)
+  assert.deepEqual(result.failures, ['Service Health明示対象の取得に失敗'])
+})
 
 test('ARG follows the REST $skipToken and preserves all pages', async (t) => {
   t.mock.method(credential, 'getToken', async () => ({

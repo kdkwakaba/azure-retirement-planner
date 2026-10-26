@@ -5,6 +5,14 @@ import { classifyResourceDetails, hash, normalizeNotice } from '@arp/domain'
 import { jsonRequest, RemoteError } from './http.ts'
 
 export const credential = new PlatformIdentity()
+function subscriptionResourceId(value: unknown): string | null {
+  const id = String(value).toLowerCase()
+  return /^\/subscriptions\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/(?:resourcegroups\/[^/]+\/)?providers\/[^/]+\/[^/]+\/[^/]+(?:\/.*)?$/.test(
+    id,
+  )
+    ? id
+    : null
+}
 export async function arm(path: string, body?: unknown): Promise<unknown> {
   if (!path.startsWith('/') || path.includes('://'))
     throw new Error('Invalid ARM path')
@@ -162,31 +170,47 @@ export async function discover(subscriptionIds: string[], tenantId: string) {
 export async function explicitResourceIds(
   event: LifecycleEvent,
   subscriptions: string[],
-): Promise<Set<string>> {
+): Promise<{
+  resourceIds: Set<string>
+  complete: boolean
+  failures: string[]
+}> {
   // Tracking IDは公式通知から取得した英数記号だけを許可しKQLリテラル注入を避ける。
   if (!/^[A-Za-z0-9_-]+$/.test(event.trackingId))
     throw new Error('Unsupported tracking ID')
   const tracking = event.trackingId
-  const direct = await argRows(
-    subscriptions,
-    `servicehealthresources | where type =~ 'microsoft.resourcehealth/events/impactedresources' | where id contains '${tracking}' | project resourceId=tostring(properties.targetResourceId)`,
-  )
-  const ids = new Set(
-    direct
-      .map((r) => String(r.resourceId).toLowerCase())
-      .filter((id) => id.startsWith('/subscriptions/')),
-  )
-  if (event.kinds.includes('Retirement')) {
-    const advisor = await argRows(
+  const ids = new Set<string>(),
+    failures: string[] = []
+  let complete = true
+  try {
+    const direct = await argRows(
       subscriptions,
-      `advisorresources | where type =~ 'microsoft.advisor/metadata' | mv-expand trackingId=properties.sourceProperties.serviceRetirement.serviceHealth.trackingIds | where tostring(trackingId) == '${tracking}' | extend recommendationTypeId=tostring(properties.recommendationTypeId) | project recommendationTypeId | join kind=inner (advisorresources | where type =~ 'microsoft.advisor/recommendations' | extend recommendationTypeId=tostring(properties.recommendationTypeId) | project recommendationTypeId, resourceId=tostring(properties.resourceMetadata.resourceId)) on recommendationTypeId | project resourceId`,
+      `servicehealthresources | where type =~ 'microsoft.resourcehealth/events/impactedresources' | extend trackingId=split(split(id, '/events/', 1)[0], '/impactedResources', 0)[0] | where tostring(trackingId) == '${tracking}' | project resourceId=tolower(tostring(properties.targetResourceId))`,
     )
-    advisor.forEach((r) => {
-      const id = String(r.resourceId).toLowerCase()
-      if (id.startsWith('/subscriptions/')) ids.add(id)
+    direct.forEach((row) => {
+      const id = subscriptionResourceId(row.resourceId)
+      if (id) ids.add(id)
     })
+  } catch {
+    complete = false
+    failures.push('Service Health明示対象の取得に失敗')
   }
-  return ids
+  if (event.kinds.includes('Retirement')) {
+    try {
+      const advisor = await argRows(
+        subscriptions,
+        `advisorresources | where type =~ 'microsoft.advisor/metadata' | where tostring(properties.recommendationSubCategory) == 'ServiceUpgradeAndRetirement' | mv-expand trackingId=properties.sourceProperties.serviceRetirement.serviceHealth.trackingIds | where tostring(trackingId) == '${tracking}' | extend recommendationTypeId=tostring(properties.recommendationTypeId) | project recommendationTypeId | distinct recommendationTypeId | join kind=inner (advisorresources | where type =~ 'microsoft.advisor/recommendations' | where tostring(properties.extendedProperties.recommendationSubCategory) == 'ServiceUpgradeAndRetirement' | where tostring(properties.recommendationStatus) in ('New', 'InProgress', 'Postponed') | extend recommendationTypeId=tostring(properties.recommendationTypeId), resourceId=tolower(tostring(properties.resourceMetadata.resourceId)) | where isnotempty(resourceId) | distinct recommendationTypeId, resourceId) on recommendationTypeId | project resourceId`,
+      )
+      advisor.forEach((row) => {
+        const id = subscriptionResourceId(row.resourceId)
+        if (id) ids.add(id)
+      })
+    } catch {
+      complete = false
+      failures.push('Advisor明示対象の取得に失敗')
+    }
+  }
+  return { resourceIds: ids, complete, failures }
 }
 export function matchProfile(
   event: LifecycleEvent,
