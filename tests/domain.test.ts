@@ -15,6 +15,7 @@ import {
   normalizeNotice,
   packageHash,
   priorityFor,
+  resourceVerificationWorkItems,
   validateAssessment,
   verifyApproval,
 } from '@arp/domain'
@@ -355,6 +356,66 @@ test('legacy resource records parse with an explicit unrecorded reason', () => {
   assert.equal(
     resourceSchema.parse(resource).classificationReason,
     'LegacyUnrecorded',
+  )
+})
+test('resource uncertainty produces evidence-backed verification work without requiring migration', () => {
+  const a = fixture()
+  const base = a.resources[0]!
+  const resources = [
+    {
+      ...base,
+      id: `${resourceId}-missing-sku`,
+      classification: 'Verification Required' as const,
+      classificationReason: 'RequiredAttributeMissing' as const,
+      missingAttributes: ['sku.name'],
+      verificationRequired: true,
+    },
+    {
+      ...base,
+      id: `${resourceId}-unmapped-lb`,
+      type: 'Microsoft.Network/loadBalancers',
+      classification: 'Unknown' as const,
+      classificationReason: 'NoApplicableProfile' as const,
+      missingAttributes: [],
+    },
+    {
+      ...base,
+      id: `${resourceId}-unmapped-storage`,
+      type: 'Microsoft.Storage/storageAccounts',
+      classification: 'Unknown' as const,
+      classificationReason: 'NoApplicableProfile' as const,
+      missingAttributes: [],
+    },
+    { ...base, id: `${resourceId}-probable` },
+  ]
+  const work = resourceVerificationWorkItems({
+    eventId: a.event.id,
+    workloadId: a.workloadId,
+    priority: 'P2',
+    eventEvidenceIds: a.event.evidence.map((e) => e.id),
+    resources,
+  })
+  assert.equal(work.length, 2)
+  const missingSku = work.find((item) => item.title.includes('sku.name'))!
+  assert.deepEqual(missingSku.resourceIds, [`${resourceId}-missing-sku`])
+  assert.ok(missingSku.description.includes('読み取り専用'))
+  assert.ok(missingSku.description.includes('移行必須'))
+  assert.equal(missingSku.necessity, 'Recommended')
+  assert.equal(missingSku.humanApprovalRequired, true)
+  assert.equal(missingSku.plannedStartDate, null)
+  assert.equal(missingSku.dueDate, null)
+  const noProfile = work.find((item) => item.title.includes('プロファイル'))!
+  assert.equal(noProfile.resourceIds.length, 2)
+  assert.equal(noProfile.category, 'Impact Verification')
+  assert.ok(noProfile.evidenceIds.includes(a.event.evidence[0]!.id))
+  assert.ok(
+    resourceVerificationWorkItems({
+      eventId: a.event.id,
+      workloadId: a.workloadId,
+      priority: 'P2',
+      eventEvidenceIds: a.event.evidence.map((e) => e.id),
+      resources: [base],
+    }).length === 0,
   )
 })
 test('cyclic work dependencies are rejected', () => {

@@ -90,7 +90,7 @@ Microsoft-Decision-1 version 1、deployment `arp-decision-1`、既存の6質問�
 | TST-29 | ライフサイクル変更と無関係なHealth Advisory | 理由付き対象外。移行作業・暫定P2を生成しない |
 | TST-30 | 期限未発表の非推奨へ廃止期限が追加、Advisor対象なし | 同案件の新版・再評価・影響承認失効。ARG等へ接続し、根拠なく対象外にしない |
 
-分類理由の追加回帰では、既知プロファイルの必須属性欠損（LB SKU、Storage kind、WebTest kind）をVerification Required＋不足属性名、既知プロファイル内の未知属性値をUnknown、イベントと対応プロファイルがない場合を別理由付きUnknownとする。旧保存Assessmentは既定理由`LegacyUnrecorded`で読み取る。これらはローカル契約・ルール検証であり、実Advisor対象との関連精度を証明しない。
+分類理由の追加回帰では、既知プロファイルの必須属性欠損（LB SKU、Storage kind、WebTest kind）をVerification Required＋不足属性名、既知プロファイル内の未知属性値をUnknown、イベントと対応プロファイルがない場合を別理由付きUnknownとする。旧保存Assessmentは既定理由`LegacyUnrecorded`で読み取る。Unknown／Possible／Verification Requiredでは不足情報をレビュー欄へ含め、説明モデル停止時にもEvidence付きRecommended Impact Verification作業を生成する。これらはローカル契約・ルール検証であり、実Advisor対象との関連精度を証明しない。
 
 Advisor関連付けの合成契約テストでは、Service Healthのimpacted-resource IDからTracking IDを完全一致抽出し、Advisor metadataのTracking ID→recommendationTypeId→recommendationを結ぶ。recommendationStatusはNew／InProgress／Postponedに限定し、完了・dismissed・未知状態を明示対象として採用しない。ARG実環境のAdvisorデータで返却Schema・網羅性・状態遷移を確認するまでは、関連対象なしを影響なしと解釈しない。
 

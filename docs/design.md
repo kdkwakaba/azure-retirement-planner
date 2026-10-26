@@ -326,6 +326,8 @@ Unknownには理由を保持する。対応プロファイルなし、プロフ�
 
 カテゴリ：Impact Verification、Owner Confirmation、Migration Assessment、Architecture Design、Proof of Concept、Application Change、Infrastructure Change、Network Change、Security Review、Test、Change Management、Production Migration、Validation、Rollback Preparation、Legacy Resource Removal、Documentation Update、CMDB Update、Policy and IaC Update。
 
+Unknown／Possible／Verification Requiredと確認フラグ付きConfirmedは、分類理由・不足属性・Evidenceから決定的なImpact Verification作業へ変換する。生成LLMの利用不可時も確認対象を失わない。作業はRecommendedかつ人間承認必須であり、移行必須・本番変更を意味しない。根拠なしにUnknownを対象外へ変更しない。
+
 作業は実行せず提案のみ。不確実な対象には確認作業を作る。論理作業IDを維持し再評価で版更新する。
 
 ## 20. Validation and Guardrails
