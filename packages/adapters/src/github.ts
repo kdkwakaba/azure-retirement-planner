@@ -103,3 +103,25 @@ export class GitHubClient {
     return result.data.addProjectV2ItemById.item.id
   }
 }
+export async function ensureIssueForExport(
+  github: GitHubClient,
+  item: WorkItem,
+  state: string | null,
+  existingIssueId: string | null,
+  markSending: () => Promise<void>,
+  persistIssue: (issueId: string) => Promise<void>,
+): Promise<string> {
+  let issueId = existingIssueId
+  if (!issueId && state === 'Sending')
+    issueId = (await github.recoverAmbiguousCreate(item.id)).id
+  if (!issueId) {
+    const found = await github.find(item.id)
+    if (found) issueId = found.id
+    else {
+      await markSending()
+      issueId = (await github.create(item)).id
+    }
+  }
+  await persistIssue(issueId)
+  return issueId
+}
