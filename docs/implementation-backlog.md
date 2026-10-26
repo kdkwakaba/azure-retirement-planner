@@ -13,7 +13,7 @@
 | IMP-07 | Discovery: ARG Health Advisory、Advisor関連、3サービス構成 | 03 | 全ページ、部分失敗、公式明示対象・不明を区別 | Service Health実データでHealth Advisory 7件、構成2件、数値LastUpdateTime変換を確認。Advisor明示対象・全ページ網羅・3サービス影響精度は別途未評価 | L / Dev / Yes |
 | IMP-08 | Normalization: 非推奨ほか4種、版・旧通知・不明日付 | 07 | 非推奨開始日を廃止日にせず旧版巻戻し拒否 | 実装済。無関係通知の人間による対象外確定UIは追加対象 | M / Dev / No |
 | IMP-09 | Context: タグ集約、未設定Owner・業務情報の確認 | 07 | 構成は実値、業務値は推測しない | 最小実装。CMDB、依存探索、業務情報全項目の入力は追加対象 | M / Dev+Architect / Yes |
-| IMP-10 | Spike: Decision-1と説明モデルの利用条件・MI・応答契約 | 04,05 | SP-01/04。3事例×3回、確率・版・費用の実測 | Decision-1 v1 DataZoneStandard capacity 500を配置済。API設定・API MIのFoundry限定ロールをCDで反映後、ライブ契約試験を実施 | L / AI+Cloud / Yes |
+| IMP-10 | Spike: Decision-1と説明モデルの利用条件・MI・応答契約 | 04,05 | SP-01/04。3事例×3回、確率・版・費用の実測 | Decision-1 v1 DataZoneStandard capacity 500、API設定、Foundry限定MIロールを反映済。実データ1件でv1有効応答（Abstained）を確認。3事例×3回と説明モデルは未完了 | L / AI+Cloud / Yes |
 | IMP-11 | Decision: 影響2軸、P1〜P4、余裕、低確率・欠損レビュー | 03 | 境界日、未確定、移行強制なしを単体試験 | 実装済 | M / Architect+Dev / Yes |
 | IMP-12 | Explanation: 10区分、ID別名化、根拠参照、作業案 | 10,11 | 元応答保存、Schema・ID参照検証、失敗は手動確認 | 実装済。モデルによる意味的Groundingは実評価待ち | L / AI / No |
 | IMP-13 | Guardrails: ID・日付・DAG・根拠・Owner・承認Hash | 03,11 | 架空・旧版・不適合の登録0 | 実装済。許可URL本文の取得と後継サービスの意味検証は追加対象 | L / Security+Dev / Yes |
@@ -30,8 +30,8 @@
 
 - Azure配置情報は確定しGitHub Variablesへ設定済。FoundryとEntra Appを新規作成。秘密値はKey Vaultへ保存し、Git・チャットへ記録しない。
 - 現在のGitHub CLI Tokenはread:projectスコープがなくProject列挙を拒否された。個人ProjectのToken種別・権限とProject IDはSP-05で実証する。本番Org＋GitHub Appの実装は別ゲート。
-- Decision-1の型・選択肢・確率は公式文書にあるが、対象リージョンのカタログ・利用枠は確認済。モデル配置・応答の詳細フィールド・MIによる推論はライブ未確認。互換に見える別APIへ自動切替しない。
-- Decision-1は2026-10-26に既存Foundryへ配置済み。モデルはアプリから呼び出し可能にする。要求単位のToken上限は設定しない。累計20,000円は利用者がCost Managementで確認する。自動停止は実装しない。外部登録・定期同期・通知は引き続き無効。
+- Decision-1の型・選択肢・確率は公式文書にある。モデル配置・API Managed Identity推論・v1応答は実データ1件で確認済み。3事例×3回の判断品質と説明LLMは未確認。互換に見える別APIへ自動切替しない。
+- Decision-1は2026-10-26に既存Foundryへ配置し、API Managed Identityでの実呼出しを確認済み。要求単位のToken上限は設定しない。累計20,000円は利用者がCost Managementで確認する。自動停止は実装しない。外部登録・定期同期・通知は引き続き無効。
 
 ## 検証の読み方
 
@@ -43,9 +43,9 @@
 - 匿名アクセスの401、Entra初回同意後の画面表示、API内JWT検証によるGovernanceロール、評価一覧の空配列を実確認。初回認証コールバックで500が発生したが再アクセスで成功。原因未確定のため、再現診断用の認証ログを専用Workspaceへ有効化。
 - 取得ボタンのPOST、Service Healthの数値LastUpdateTime変換、部分取得エラー表示を修正。PR [#7](https://github.com/kdkwakaba/azure-retirement-planner/pull/7) と [#8](https://github.com/kdkwakaba/azure-retirement-planner/pull/8) をmainへ反映。PR #8 の [main CI](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/40196490817) と [再配置](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/40196936388) は成功。
 - 2026-10-26、Entra認証済み画面から実同期し、Service Health通知7件・Resource Graph構成2件を取得。7件の評価をQueue経由で生成し、一覧・詳細表示を確認。全件scopeComplete=true、validationErrorsは空。Resource IDや実通知本文はこの記録へ複製しない。
-- 実データ7件の当初評価はモデルUnavailableで作成され、後続リリースによりモデルRevisionを含む新しいAssessmentへ再評価する。Advisor関連付け、明示対象Resource判定、3サービスの精度、GitHub Project登録、Poison再処理は未検証。
+- 実データ7件の当初評価はモデルUnavailableで作成され、後続リリースにより再同期した。1件の詳細でDecision-1 v1のAbstainedを確認し、不確実性レビューを維持した。全件の応答集計、Advisor関連付け、明示対象Resource判定、3サービスの精度、GitHub Project登録、Poison再処理は未検証。
 - Decision-1のモデル呼出回数は200/日、要求Token上限なし。定期同期・通知受付・外部登録は無効。Entra資格情報は2027-01-23に期限切れ。PoC継続時は期限前に更新し、終了時は失効する。
 
 ## 2026-10-26 Decision-1配置
 
-Foundry `arp-foundry-0e2e4716` に `arp-decision-1`（Microsoft-Decision-1 v1、DataZoneStandard、capacity 500）を配置し、provisioningState Succeeded・deploymentState Runningを確認。現在のカタログクォータ内であり、デプロイメントのレート制限は500 requests/minute・500,000 tokens/minute。これは要求ごとの生成トークン上限ではなくサービスのスループット上限。利用量を要求ごとに切る設定はしていない。DECISION_ENDPOINT／DEPLOYMENT／MODEL_VERSIONをアプリへ設定し、API Managed IdentityにFoundry限定の推論ロールを付与する。モデル呼出枠は200/日、要求Token上限は設定しない。PoC累計20,000円は利用者がCost Managementで確認し、自動停止は実装しない。Cost Managementの予算通知は補助情報で、反映は遅延する。
+Foundry `arp-foundry-0e2e4716` に `arp-decision-1`（Microsoft-Decision-1 v1、DataZoneStandard、capacity 500）を配置し、provisioningState Succeeded・deploymentState Runningを確認。現在のカタログクォータ内であり、デプロイメントのレート制限は500 requests/minute・500,000 tokens/minute。これは要求ごとの生成トークン上限ではなくサービスのスループット上限。利用量を要求ごとに切る設定はしていない。DECISION_ENDPOINT／DEPLOYMENT／MODEL_VERSIONをアプリへ設定し、API Managed IdentityにFoundry限定の推論ロールを付与した。実データ1件でv1のAbstained応答を確認し、人間レビューを維持する。3事例×3回と説明LLMは未完了。モデル呼出枠は200/日、要求Token上限は設定しない。PoC累計20,000円は利用者がCost Managementで確認し、自動停止は実装しない。Cost Managementの予算通知は補助情報で、反映は遅延する。
