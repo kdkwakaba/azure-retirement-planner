@@ -367,6 +367,49 @@ test('TST-26: unpublished retirement date is not manufactured', () =>
     }).milestones.length,
     0,
   ))
+test('TST-32: official Service Health retirement date is grounded by evidence', () => {
+  const e = normalizeNotice({
+    tenantId: tenant,
+    trackingId: 'TEST-RETIREMENT-DATE',
+    title: 'Synthetic retirement',
+    body: 'Synthetic official notice',
+    updatedAt: '2026-08-01T00:00:00.000Z',
+    metadata: {
+      EventSubType: 'Retirement',
+      retirementDate: '2027-04-20T00:00:00Z',
+    },
+  })
+  assert.equal(e.milestones[0]?.kind, 'Retirement')
+  assert.equal(e.milestones[0]?.date, '2027-04-20')
+  assert.equal(e.milestones[0]?.rawDateText, '2027-04-20T00:00:00Z')
+  assert.deepEqual(e.milestones[0]?.evidenceIds, [e.evidence[0]?.id])
+  assert.match(e.evidence[0]!.fact, /ImpactMitigationTime: 2027-04-20T00:00:00Z/)
+})
+test('TST-33: non-Retirement notices do not use mitigation time as a retirement date', () => {
+  const e = normalizeNotice({
+    tenantId: tenant,
+    trackingId: 'TEST-GENERIC-DATE',
+    title: 'General advisory',
+    body: 'Synthetic notice',
+    updatedAt: '2026-08-01T00:00:00.000Z',
+    metadata: {
+      EventSubType: 'Informational',
+      retirementDate: '2027-04-20T00:00:00Z',
+    },
+  })
+  assert.equal(e.milestones.length, 0)
+})
+test('TST-34: invalid official retirement date is not persisted as a milestone', () => {
+  const e = normalizeNotice({
+    tenantId: tenant,
+    trackingId: 'TEST-BAD-DATE',
+    title: 'Synthetic retirement',
+    body: 'Synthetic official notice',
+    updatedAt: '2026-08-01T00:00:00.000Z',
+    metadata: { EventSubType: 'Retirement', retirementDate: '2027-02-30' },
+  })
+  assert.equal(e.milestones.length, 0)
+})
 test('TST-27: completion is checked against the applicable milestone', () => {
   const a = fixture(),
     eid = a.event.evidence[0]!.id
