@@ -2,7 +2,7 @@
 
 版: 0.3 / 更新日: 2026-10-24 / 状態: 設計・開発用指示整備、アプリ実装前
 
-会話で採用された方針をまとめる。数値閾値はPoC用であり、企業一般の標準や実測値ではない。詳細な基準は[判断・承認基準](decision-policy.md)、検証条件は[Spike・テスト計画](spike-and-testing.md)、最新の開発・CI/CD・認証・撤去方針は[開発・運用基準](engineering.md)を参照する。
+会話で採用された方針をまとめる。数値閾値はPoC用であり、企業一般の標準や実測値ではない。詳細な基準は[判断・承認基準](decision-policy.md)、企業別フロー設定は[ワークフロー設定基準](workflow-configuration.md)、検証条件は[Spike・テスト計画](spike-and-testing.md)、最新の開発・CI/CD・認証・撤去方針は[開発・運用基準](engineering.md)を参照する。
 
 ## 1. Executive Summary
 
@@ -109,6 +109,10 @@ Advisor Workbookと重複する公式情報のみの画面を中心にせず、�
 | FR-014 | Health Advisoryから非推奨を含むライフサイクル変更を選別し、原分類・関連性・除外理由を保存する |
 | FR-015 | 期限未発表・複数期限・作成制限を区別し、適用可能な作業期限だけで計画余裕を算定する |
 | FR-016 | 非推奨から廃止期限発表への更新を再評価し、変更影響のある承認のみ失効させる |
+| FR-017 | 調査結果「該当リソースなし」「対象外のみ」「調査不完全」「判定不能」を調査範囲・取得完了とともに区別する |
+| FR-018 | 6分類ごとに理由、不足属性、Evidenceを保持し、リソース単位の結果を表示する |
+| FR-019 | 作業候補の生成・集約・担当・順序・承認条件を設定可能にし、根拠と設定版を記録する |
+| FR-020 | 評価レビューと作業確定・外部登録の承認を別々に管理し、定型結果だけ評価レビューを省略可能にする |
 
 ## 11. Non-Functional Requirements
 
@@ -261,6 +265,7 @@ H1＝PoC実施中に保持し終了時に削除、H2＝現行状態と終了時�
 | ResourceSnapshot／構成版 | snapshotId、resourceKey、存在、type、SKU、region、許可属性 | 読取 | H1／ARG・ARM |
 | ScopeSnapshot／範囲 | scopeId、MG、期待・取得済Subscription、ページ完了 | 探索 | H1／Azure・設定 |
 | PolicyProfile／基準 | policyVersionId、条件・閾値、承認、有効期間 | 方針更新 | H1／責任者 |
+| WorkflowPolicy／企業別手順 | workflowPolicyVersionId、チーム規則、部署調整、作業依存、承認規則、適用条件、検証結果 | PR承認・適用 | H1／管理者・責任者 |
 | ApprovalPackage／承認対象 | packageId、評価・作業版、Hash、検証結果 | レビュー準備 | H1／検証 |
 | ExternalBinding／外部対応 | bindingId、logicalWorkItemId、Issue・Project Item ID、同期状態 | 登録・照合 | H2／GitHub |
 
