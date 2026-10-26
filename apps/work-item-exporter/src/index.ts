@@ -111,12 +111,14 @@ app.storageQueue('export', {
           statusFieldId: process.env.GITHUB_PROJECT_STATUS_FIELD_ID,
           todoOptionId: process.env.GITHUB_PROJECT_STATUS_TODO_OPTION_ID,
           priorityFieldId: process.env.GITHUB_PROJECT_PRIORITY_FIELD_ID,
-          priorityOptionIds: {
-            P1: process.env.GITHUB_PROJECT_PRIORITY_P1_OPTION_ID,
-            P2: process.env.GITHUB_PROJECT_PRIORITY_P2_OPTION_ID,
-            P3: process.env.GITHUB_PROJECT_PRIORITY_P3_OPTION_ID,
-            P4: process.env.GITHUB_PROJECT_PRIORITY_P4_OPTION_ID,
-          },
+          priorityOptionIds: process.env.GITHUB_PROJECT_PRIORITY_FIELD_ID
+            ? {
+                P1: process.env.GITHUB_PROJECT_PRIORITY_P1_OPTION_ID,
+                P2: process.env.GITHUB_PROJECT_PRIORITY_P2_OPTION_ID,
+                P3: process.env.GITHUB_PROJECT_PRIORITY_P3_OPTION_ID,
+                P4: process.env.GITHUB_PROJECT_PRIORITY_P4_OPTION_ID,
+              }
+            : undefined,
           dueDateFieldId: process.env.GITHUB_PROJECT_DUE_DATE_FIELD_ID,
         },
         projectItem.created,
