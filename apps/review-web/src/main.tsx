@@ -405,6 +405,16 @@ function App() {
                           {w.dueDate ?? '未確定'} ／ Owner{' '}
                           {w.ownerTeam ?? '未確定'}
                         </p>
+                        {w.workflowRouting && (
+                          <div className="notice">
+                            <b>企業ワークフロー候補（設定 {w.workflowRouting.policyVersion}）</b>
+                            <p>担当チーム候補: {w.workflowRouting.teamCandidates.map((r) => r.displayName).join('、') || '未設定'}</p>
+                            <p>調整部署: {w.workflowRouting.coordinationCandidates.map((r) => r.displayName).join('、') || '未設定'}</p>
+                            <p>設定上の承認段階: {w.workflowRouting.approvalStages.map((s) => s.title).join(' → ') || '未設定'}</p>
+                            <p>作業順序: {w.workflowRouting.sequenceOrder ?? '未設定'} ／ 前提カテゴリ: {w.workflowRouting.dependsOnCategories.join('、') || 'なし'}</p>
+                            {w.workflowRouting.unresolvedReasons.map((reason) => <p key={reason}>人間確認: {reason}</p>)}
+                          </div>
+                        )}
                         <ul>
                           {w.completionCriteria.map((c) => (
                             <li key={c}>{c}</li>
