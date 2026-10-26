@@ -92,7 +92,6 @@ async function exportWorkItem(raw: unknown): Promise<void> {
     },
     'Merge',
   )
-
 }
 
 function handleExport(raw: unknown): Promise<void> {
