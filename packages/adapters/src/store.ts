@@ -162,7 +162,7 @@ export class AzureStore {
       }
       outboxActions.push(
         existing
-          ? ['update', entity, 'Replace', { etag: existing.etag as string } ]
+          ? ['update', entity, 'Replace', { etag: existing.etag as string }]
           : ['create', entity],
       )
     }
