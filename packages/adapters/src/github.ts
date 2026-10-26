@@ -3,10 +3,11 @@ import { hash } from '@arp/domain'
 import { z } from 'zod'
 import { jsonRequest } from './http.ts'
 
-export function issueText(item: WorkItem): string {
-  // 実Resource ID、Workload名、自由文のEvidenceや内部URLは外部へ複製しない。
+const managedStart = '<!-- arp:managed:start -->'
+const managedEnd = '<!-- arp:managed:end -->'
+export function managedIssueContent(item: WorkItem): string {
+  // 外部には最小限の管理属性のみ送信し、本文の手編集領域と分離する。
   return [
-    `<!-- arp:${item.id} -->`,
     `Category: ${item.category}`,
     `Workload alias: ${hash(item.workloadId).slice(0, 12)}`,
     `Priority: ${item.priority ?? 'Unconfirmed'}`,
@@ -16,6 +17,22 @@ export function issueText(item: WorkItem): string {
     `Approved work item: ${item.id}`,
     'Detailed description and completion criteria are available in the authenticated review application.',
   ].join('\n\n')
+}
+export function issueText(item: WorkItem): string {
+  return [
+    `<!-- arp:${item.id} -->`,
+    '',
+    managedStart,
+    managedIssueContent(item),
+    managedEnd,
+  ].join('\n')
+}
+export type ProjectFieldConfig = {
+  statusFieldId?: string
+  todoOptionId?: string
+  priorityFieldId?: string
+  priorityOptionIds?: Partial<Record<'P1' | 'P2' | 'P3' | 'P4', string>>
+  dueDateFieldId?: string
 }
 export class GitHubClient {
   owner: string
