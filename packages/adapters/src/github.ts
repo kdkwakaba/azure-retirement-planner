@@ -127,7 +127,9 @@ export class GitHubClient {
     if (start < 0 || end < start || body.indexOf(managedStart, start + 1) >= 0)
       throw new Error('Managed Issue section missing or ambiguous')
     const contentStart = start + managedStart.length
-    const previousContent = body.slice(contentStart, end).replace(/^\\n|\\n$/g, '')
+    const previousContent = body
+      .slice(contentStart, end)
+      .replace(/^\\n|\\n$/g, '')
     const nextContent = managedIssueContent(item)
     const currentHash = hash(previousContent)
     if (
