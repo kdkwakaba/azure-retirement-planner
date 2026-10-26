@@ -24,6 +24,7 @@ import {
   verifyApproval,
 } from '@arp/domain'
 import {
+  applicableProfileIds,
   matchProfile,
   parseDecision,
   questions,
@@ -128,6 +129,25 @@ test('TST-02: absent Advisor result with matching conditions is Probable', () =>
     classifyResource({ ...classification, conditionMatches: true }),
     'Probable',
   ))
+test('versioned profile registry selects only the three approved event profiles', () => {
+  const event = fixture().event
+  assert.deepEqual(
+    applicableProfileIds({ ...event, title: 'Azure Basic Load Balancer retirement' }),
+    ['basic-load-balancer'],
+  )
+  assert.deepEqual(
+    applicableProfileIds({ ...event, title: 'General Purpose v1 (GPv1) retirement' }),
+    ['storage-gpv1'],
+  )
+  assert.deepEqual(
+    applicableProfileIds({ ...event, title: 'URL ping test retirement' }),
+    ['application-insights-url-ping'],
+  )
+  assert.deepEqual(
+    applicableProfileIds({ ...event, title: 'Unrelated advisory' }),
+    [],
+  )
+})
 test('TST-03: Standard is excluded only for the Basic-specific profile', () => {
   const a = fixture()
   assert.equal(
