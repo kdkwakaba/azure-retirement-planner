@@ -528,6 +528,52 @@ test('Project item reconciliation reuses existing item instead of creating dupli
   assert.equal(mutations, 0)
 })
 
+test('reapproval reuses external sync state for the stable work item', async (t) => {
+  const store = new AzureStore('syntheticaccount')
+  const assessment = fixture()
+  const approval: Approval = {
+    id: hash('reapproval'),
+    assessmentId: assessment.id,
+    packageHash: assessment.packageHash,
+    approvedItemIds: [assessment.workItems[0]!.id],
+    reviewerId: 'synthetic-user',
+    reviewedAt: '2026-08-02T00:00:00.000Z',
+    reason: 'Synthetic revised approval',
+    result: 'Approved',
+  }
+  t.mock.method(store, 'head', async () => ({
+    partitionKey: 'assessment:synthetic',
+    rowKey: 'head',
+    assessmentId: assessment.id,
+    packageHash: assessment.packageHash,
+    entityKind: 'head',
+    etag: 'head-etag',
+  }))
+  t.mock.method(store, 'put', async () => {})
+  t.mock.method(store.table, 'getEntity', async () => ({
+    partitionKey: 'assessment:synthetic',
+    rowKey: 'outbox:' + assessment.workItems[0]!.id,
+    issueId: 'synthetic-issue',
+    projectItemId: 'synthetic-project-item',
+    managedContentHash: 'synthetic-managed-hash',
+    etag: 'outbox-etag',
+  }))
+  const submit = t.mock.method(
+    store.table,
+    'submitTransaction',
+    async (actions: unknown) => {
+      const transaction = JSON.stringify(actions)
+      assert.ok(transaction.includes('synthetic-issue'))
+      assert.ok(transaction.includes('synthetic-project-item'))
+      assert.ok(transaction.includes('synthetic-managed-hash'))
+      assert.ok(transaction.includes('outbox-etag'))
+      return { status: 202, subResponses: [] }
+    },
+  )
+  await store.approve(assessment, approval)
+  assert.equal(submit.mock.callCount(), 1)
+})
+
 test('approval and stable per-item outbox are one conditional transaction', async (t) => {
   const store = new AzureStore('syntheticaccount')
   const a = fixture()
