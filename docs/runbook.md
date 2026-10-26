@@ -38,6 +38,7 @@ az bicep build --file infra/bootstrap/permissions.bicep --stdout
 - Health Advisoryの非推奨・Retirement以外を含む入口は`infra/ingestion.bicep`。承認済み監視RGへSubscriptionごとに配置する。通知Payloadは原本保存後、ARGから正規情報を再読取する。受信本文のIDや日付を正本として使わない。配送試験を実Retirement取得と同一視しない。
 - Decision-1のDeployment、API設定、API MIへのFoundry限定推論権限を反映済み。実データ通知1件のv1応答に加え、合成3事例×3回の型・確率契約検証を完了（9/9成功、9/9 Unknownを含みAbstained相当）。これは判断精度の実証ではない。CLI利用者のCognitive Services UserはFoundryアカウント範囲に限定。説明モデルと実環境精度評価は未完了。応答契約不一致は原応答をAzureへ保存してUnavailable＋人間判断。採用契約は`packages/adapters/src/models.ts`、Prompt/Rule Versionはコードで追跡する。別モデルへの自動切替はない。
 - Unknown／Possible／Verification Requiredまたは確認フラグ付きConfirmedは分類理由・不足属性をレビュー欄に示す。説明モデル未設定・利用不可の場合は、未確定理由とEvidenceから確認タスクを決定的に生成する。いずれもRecommendedの確認であり、移行必須やAzure変更ではない。
+- 無関係なHealth Advisoryを自動的に対象外へ分類しない。Reviewerが訂正欄で対象外を選ぶ場合、公式分類は保持し、理由をHuman Evidenceとして記録する。対象外の新版は優先度・作業案を空にし、承認・外部登録を拒否する。誤判定を訂正するときは根拠を確認して対象／未確定へ再評価し、以前の承認を再利用しない。
 - 説明モデルはJSON Schema対応とMIを確認。Resource/Workload/Ownerは別名化し、選別済み構成属性だけ送る。公式本文に機密が混ざらないことをSP-04で確認する。現在は外部URL本文の自動取得を行わない。
 - 外部Issue作成の成否が不明でOutboxが`Sending`の場合、Queue再試行で`<!-- arp:<Work Item ID> -->`をIssue一覧から照合する。見つかった場合のみ既存Issue IDを保存してProject追加へ進み、見つからない／一覧検索が不完全な場合は状態を`Sending`のまま保留し、新規Issueを作成しない。検索可能範囲・権限エラーを確認し、安易にOutboxを`Pending`へ戻さない。Issueが`IssueCreated`でProject追加だけ失敗した場合は保存済みIDからProject追加を再試行する。
 - 日付は人間が公式情報を確認して訂正画面へ入力。4マイルストーンを分離し、適用期限・必要日数で余裕と優先度を再計算する。訂正は新版になり旧承認は使えない。原モデル判断・説明は原出力として別欄に残る。

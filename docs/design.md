@@ -254,7 +254,7 @@ H1＝PoC実施中に保持し終了時に削除、H2＝現行状態と終了時�
 | Explanation／主張群 | explanationId、decisionId、claims、10項目 | 生成・訂正 | H1／LLM・人間 |
 | Evidence／根拠 | evidenceId、sourceVersionId、対象、位置、種別、Hash、時刻 | 取得・導出 | H1／各出典 |
 | WorkItem／作業版 | workItemVersionId、logicalId、runId、属性・根拠・状態 | 生成・修正 | H1／公式・社内・AI |
-| HumanReview／承認 | reviewId、packageHash、対象版、主体、結果、理由 | レビュー | H1／人間 |
+| HumanReview／承認 | reviewId、packageHash、対象版、主体、結果、理由、scopeDisposition、reviewEvidenceIds | レビュー | H1／人間 |
 | Feedback／訂正 | feedbackId、対象、旧新値、理由、根拠、有効期間 | 訂正・評価 | H1／人間 |
 | AssessmentRun／実行 | runId、eventVersionId、scopeId、各版、状態、coverage | 実行・段階完了 | H1／基盤 |
 | ProcessingError／失敗 | errorId、runId、stage、分類、試行、マスク詳細 | 失敗・復旧 | H1／基盤 |
@@ -280,6 +280,8 @@ Draft 2020-12を基本とする。ここでは実装コードでなく型契約�
 | HumanReview | packageId:ref、packageHash:string、reviewerId:string、result:enum、reason:string、reviewedAt:date-time |
 
 既存のRetirementEventという名称は非推奨等も含む共通ライフサイクルイベントの論理名として維持する。現状はSchema案のみで、既存データ移行はない。lifecycleKindsとmilestone.kindの内部候補はDeprecation／NewCreationBlocked／SupportEnded／Retirement／Unknown。これは本システムの分類であり、Microsoft公式APIのenumを新設・仮定するものではない。classificationStatusはInScope／OutOfScope／ReviewRequired。sourceMetadataには受信した種別・サブタイプ・タグ・incidentType等の原値を保持する。
+
+Health Advisoryのソース分類と、人間の対象判定は分離する。`humanContext.scopeDisposition`はInScope／OutOfScope／ReviewRequiredとし、訂正理由をHuman Evidenceとして`reviewEvidenceIds`で参照する。OutOfScopeは人間が根拠を記録した場合だけ成立し、公式イベント分類は変更しない。対象外の新版はworkItemsを空、effectivePriorityをnullにし、レビュー画面・API・Exporterで承認／登録を拒否する。定期再評価でも対象外を保持するが、公式イベントの新しい版は別途再評価する。キーワードだけで自動除外しない。
 
 非推奨開始日、新規作成停止日、サポート終了日、廃止日を個別に保持し、対象SKU・Region・利用条件とEvidenceを結び付ける。月単位の公式日付はrawDateTextと精度を保存し、架空の日を補わない。retirementDateは公式廃止日が日単位で確認できるときだけ設定する。
 

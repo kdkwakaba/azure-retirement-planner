@@ -209,6 +209,10 @@ export const explanationSchema = z
   .strict()
 export const correctionSchema = z
   .object({
+    // Human disposition is separate from the source event's official classification.
+    scopeDisposition: z
+      .enum(['InScope', 'OutOfScope', 'ReviewRequired'])
+      .optional(),
     impactIfUnaddressed: impactSchema.nullable(),
     impactDuringAndAfterChange: impactSchema.nullable(),
     criticalWorkload: z.boolean(),
@@ -247,7 +251,11 @@ export const assessmentSchema = z
     missingInformation: z.array(z.string()),
     decision: decisionSchema,
     humanContext: correctionSchema
-      .extend({ reviewerId: z.string(), reviewedAt: z.iso.datetime() })
+      .extend({
+        reviewerId: z.string(),
+        reviewedAt: z.iso.datetime(),
+        reviewEvidenceIds: z.array(z.string()).optional(),
+      })
       .optional(),
     effectivePriority: prioritySchema.nullable(),
     reviewReasons: z.array(z.string()),

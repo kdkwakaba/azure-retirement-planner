@@ -130,7 +130,11 @@ function App() {
                 <small>
                   {item.workloadId} · {item.effectivePriority ?? '未確定'}
                 </small>
-                <small>{item.createdAt} · 暫定／人間確認待ち</small>
+                <small>
+                  {item.humanContext?.scopeDisposition === 'OutOfScope'
+                    ? '人間確認済み・対象外'
+                    : `${item.createdAt} · 暫定／人間確認待ち`}
+                </small>
               </button>
             ))}
           </aside>
@@ -143,33 +147,57 @@ function App() {
                 <p>
                   Workload: {current.workloadId} ／ 評価基準日: {current.asOf}
                 </p>
-                <div className="metrics">
-                  <article>
-                    <small>未対応時</small>
-                    <strong>
-                      {(current.humanContext
-                        ? current.humanContext.impactIfUnaddressed
-                        : current.decision.impactIfUnaddressed) ?? '判断保留'}
-                    </strong>
-                  </article>
-                  <article>
-                    <small>対応時・対応後</small>
-                    <strong>
-                      {(current.humanContext
-                        ? current.humanContext.impactDuringAndAfterChange
-                        : current.decision.impactDuringAndAfterChange) ??
-                        '判断保留'}
-                    </strong>
-                  </article>
-                  <article>
-                    <small>暫定優先度</small>
-                    <strong>{current.effectivePriority ?? '未確定'}</strong>
-                  </article>
-                </div>
-                <p>
-                  Model: {current.decision.model} /{' '}
-                  {current.decision.modelVersion} · {current.decision.status}
-                </p>
+                {current.humanContext?.scopeDisposition === 'OutOfScope' && (
+                  <div role="status" className="notice">
+                    <b>人間確認済み・対象外</b>
+                    <p>{current.humanContext.reason}</p>
+                    <small>
+                      Evidence:{' '}
+                      {current.humanContext.reviewEvidenceIds?.join(', ') ??
+                        '根拠IDなし'}
+                    </small>
+                    <p>
+                      この案件には優先度・移行作業がありません。判定を変更する場合は上の訂正欄から再評価してください。
+                    </p>
+                  </div>
+                )}
+                {current.humanContext?.scopeDisposition === 'OutOfScope' ? (
+                  <p>
+                    対象外判定前のモデル判断は監査用に保持されています。現在の対応影響・優先度としては扱いません。
+                  </p>
+                ) : (
+                  <>
+                    <div className="metrics">
+                      <article>
+                        <small>未対応時</small>
+                        <strong>
+                          {(current.humanContext
+                            ? current.humanContext.impactIfUnaddressed
+                            : current.decision.impactIfUnaddressed) ??
+                            '判断保留'}
+                        </strong>
+                      </article>
+                      <article>
+                        <small>対応時・対応後</small>
+                        <strong>
+                          {(current.humanContext
+                            ? current.humanContext.impactDuringAndAfterChange
+                            : current.decision.impactDuringAndAfterChange) ??
+                            '判断保留'}
+                        </strong>
+                      </article>
+                      <article>
+                        <small>暫定優先度</small>
+                        <strong>{current.effectivePriority ?? '未確定'}</strong>
+                      </article>
+                    </div>
+                    <p>
+                      Model: {current.decision.model} /{' '}
+                      {current.decision.modelVersion} ·{' '}
+                      {current.decision.status}
+                    </p>
+                  </>
+                )}
                 <CorrectionForm
                   key={current.id}
                   assessment={current}
@@ -245,7 +273,11 @@ function App() {
                     </tbody>
                   </table>
                 </div>
-                <h3>説明と根拠</h3>
+                <h3>
+                  {current.humanContext?.scopeDisposition === 'OutOfScope'
+                    ? '対象外判定前の原評価・根拠'
+                    : '説明と根拠'}
+                </h3>
                 {Object.entries(current.explanation).map(([name, claims]) => (
                   <details key={name}>
                     <summary>
@@ -274,90 +306,100 @@ function App() {
                     </article>
                   ))}
                 </details>
-                <h3>作業案・部分承認</h3>
-                {current.validationErrors.length > 0 && (
-                  <div className="error">
-                    検証不適合のため承認できません。
-                    <ul>
-                      {current.validationErrors.map((e) => (
-                        <li key={e}>{e}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {current.workItems.map((w) => (
-                  <article className="work" key={w.id}>
+                {current.humanContext?.scopeDisposition === 'OutOfScope' ? (
+                  <p>
+                    対象外判定により作業案は取り下げられ、承認・登録できません。
+                  </p>
+                ) : (
+                  <>
+                    <h3>作業案・部分承認</h3>
+                    {current.validationErrors.length > 0 && (
+                      <div className="error">
+                        検証不適合のため承認できません。
+                        <ul>
+                          {current.validationErrors.map((e) => (
+                            <li key={e}>{e}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {current.workItems.map((w) => (
+                      <article className="work" key={w.id}>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={checked.includes(w.id)}
+                            onChange={(e) =>
+                              setChecked((v) =>
+                                e.target.checked
+                                  ? [...v, w.id]
+                                  : v.filter((id) => id !== w.id),
+                              )
+                            }
+                          />
+                          <b>{w.title}</b>
+                        </label>
+                        <p>
+                          {w.category} · {w.necessity} ·{' '}
+                          {w.priority ?? '未確定'}
+                        </p>
+                        <p>{w.description}</p>
+                        <p>
+                          開始 {w.plannedStartDate ?? '未確定'} ／ 完了{' '}
+                          {w.dueDate ?? '未確定'} ／ Owner{' '}
+                          {w.ownerTeam ?? '未確定'}
+                        </p>
+                        <ul>
+                          {w.completionCriteria.map((c) => (
+                            <li key={c}>{c}</li>
+                          ))}
+                        </ul>
+                      </article>
+                    ))}
                     <label>
-                      <input
-                        type="checkbox"
-                        checked={checked.includes(w.id)}
-                        onChange={(e) =>
-                          setChecked((v) =>
-                            e.target.checked
-                              ? [...v, w.id]
-                              : v.filter((id) => id !== w.id),
+                      判断理由
+                      <textarea
+                        value={reason}
+                        onChange={(e) => setReason(e.target.value)}
+                        maxLength={2000}
+                      />
+                    </label>
+                    <div className="toolbar">
+                      <button
+                        disabled={
+                          busy ||
+                          !reason.trim() ||
+                          !checked.length ||
+                          !!current.validationErrors.length
+                        }
+                        onClick={() =>
+                          void review(
+                            checked.length === current.workItems.length
+                              ? 'Approved'
+                              : 'Partial',
                           )
                         }
-                      />
-                      <b>{w.title}</b>
-                    </label>
+                      >
+                        選択した作業を承認
+                      </button>
+                      <button
+                        disabled={busy || !reason.trim()}
+                        onClick={() => void review('Returned')}
+                      >
+                        差し戻し
+                      </button>
+                      <button
+                        disabled={busy || !reason.trim()}
+                        onClick={() => void review('Held')}
+                      >
+                        保留
+                      </button>
+                    </div>
                     <p>
-                      {w.category} · {w.necessity} · {w.priority ?? '未確定'}
+                      本番変更の実行承認ではありません。承認対象の版とHashを記録します。
                     </p>
-                    <p>{w.description}</p>
-                    <p>
-                      開始 {w.plannedStartDate ?? '未確定'} ／ 完了{' '}
-                      {w.dueDate ?? '未確定'} ／ Owner {w.ownerTeam ?? '未確定'}
-                    </p>
-                    <ul>
-                      {w.completionCriteria.map((c) => (
-                        <li key={c}>{c}</li>
-                      ))}
-                    </ul>
-                  </article>
-                ))}
-                <label>
-                  判断理由
-                  <textarea
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                    maxLength={2000}
-                  />
-                </label>
-                <div className="toolbar">
-                  <button
-                    disabled={
-                      busy ||
-                      !reason.trim() ||
-                      !checked.length ||
-                      !!current.validationErrors.length
-                    }
-                    onClick={() =>
-                      void review(
-                        checked.length === current.workItems.length
-                          ? 'Approved'
-                          : 'Partial',
-                      )
-                    }
-                  >
-                    選択した作業を承認
-                  </button>
-                  <button
-                    disabled={busy || !reason.trim()}
-                    onClick={() => void review('Returned')}
-                  >
-                    差し戻し
-                  </button>
-                  <button
-                    disabled={busy || !reason.trim()}
-                    onClick={() => void review('Held')}
-                  >
-                    保留
-                  </button>
-                </div>
-                <p>
-                  本番変更の実行承認ではありません。承認対象の版とHashを記録します。
-                </p>
+                  </>
+                )}
               </>
             )}
           </section>
