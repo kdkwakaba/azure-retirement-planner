@@ -132,11 +132,17 @@ test('TST-02: absent Advisor result with matching conditions is Probable', () =>
 test('versioned profile registry selects only the three approved event profiles', () => {
   const event = fixture().event
   assert.deepEqual(
-    applicableProfileIds({ ...event, title: 'Azure Basic Load Balancer retirement' }),
+    applicableProfileIds({
+      ...event,
+      title: 'Azure Basic Load Balancer retirement',
+    }),
     ['basic-load-balancer'],
   )
   assert.deepEqual(
-    applicableProfileIds({ ...event, title: 'General Purpose v1 (GPv1) retirement' }),
+    applicableProfileIds({
+      ...event,
+      title: 'General Purpose v1 (GPv1) retirement',
+    }),
     ['storage-gpv1'],
   )
   assert.deepEqual(
