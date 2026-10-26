@@ -19,6 +19,10 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci --ignore-scripts
+      - name: Temporary formatter diagnostic
+        run: |
+          npx --no-install prettier --write apps/work-item-exporter/src/index.ts
+          cat apps/work-item-exporter/src/index.ts
       - run: npm run verify
       - name: Validate Bicep without Azure credentials
         run: |
