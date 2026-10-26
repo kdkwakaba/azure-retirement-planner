@@ -43,7 +43,8 @@ app.storageQueue('export', {
         message.partitionKey,
         message.rowKey,
       )
-      if (!row.partitionKey || !row.rowKey) throw new Error('Outbox key missing')
+      if (!row.partitionKey || !row.rowKey)
+        throw new Error('Outbox key missing')
       const partitionKey = row.partitionKey,
         rowKey = row.rowKey
       if (row.state === 'Exported') return
