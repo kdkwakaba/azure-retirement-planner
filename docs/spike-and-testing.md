@@ -92,6 +92,8 @@ Microsoft-Decision-1 version 1、deployment `arp-decision-1`、既存の6質問�
 
 分類理由の追加回帰では、既知プロファイルの必須属性欠損（LB SKU、Storage kind、WebTest kind）をVerification Required＋不足属性名、既知プロファイル内の未知属性値をUnknown、イベントと対応プロファイルがない場合を別理由付きUnknownとする。旧保存Assessmentは既定理由`LegacyUnrecorded`で読み取る。これらはローカル契約・ルール検証であり、実Advisor対象との関連精度を証明しない。
 
+Advisor関連付けの合成契約テストでは、Service Healthのimpacted-resource IDからTracking IDを完全一致抽出し、Advisor metadataのTracking ID→recommendationTypeId→recommendationを結ぶ。recommendationStatusはNew／InProgress／Postponedに限定し、完了・dismissed・未知状態を明示対象として採用しない。ARG実環境のAdvisorデータで返却Schema・網羅性・状態遷移を確認するまでは、関連対象なしを影響なしと解釈しない。
+
 単体、統合、API契約、Schema、Rule、Model、Grounding、Security、障害注入、冪等性、負荷、UAT、Shadowへ割り当てる。期限0/1/30/31/90/91日、P1〜P4、部分承認、仮定で結論が変わる条件も各ケースの変種として確認する。
 
 ## 品質評価

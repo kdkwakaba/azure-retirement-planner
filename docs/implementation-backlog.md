@@ -10,7 +10,7 @@
 | IMP-04 | IaC: Flex2アプリ、Storage、Key Vault、監視、MI、Entra設定 | 01 | 静的コンパイル＋対象RGで疎通 | 専用Azure環境へ配置・再配置済。Entra認証、実通知・構成取得、Queue評価、永続化を確認 | L / Cloud / Yes |
 | IMP-05 | Release: OIDC Bootstrap、CI成果物Hash、What-if手動CD | 02,04 | main CI成果物のみ、差分Hash一致、権限分離 | main CI→OIDC→What-if/Hash→手動CDを実行・成功 | L / Cloud / Yes |
 | IMP-06 | Ingestion: Secure Webhook、原本受付、Queue/Outbox | 03,04 | アプリ権限検証、重複・停止・再開・Poison確認 | 受付経路は実装済。Service Health実通知7件をARG取得しQueue評価を確認。Action Groupの実配送は未検証 | L / Dev+Cloud / Yes |
-| IMP-07 | Discovery: ARG Health Advisory、Advisor関連、3サービス構成 | 03 | 全ページ、部分失敗、公式明示対象・不明を区別 | Service Health実データ7件・構成2件を確認。分類理由と必要属性不足を表示し、対応条件不明をUnknown、既知条件の必要属性不足をVerification Requiredとする実装を追加。Advisor明示対象・全ページ網羅・実環境精度は未評価 | L / Dev / Yes |
+| IMP-07 | Discovery: ARG Health Advisory、Advisor関連、3サービス構成 | 03 | 全ページ、部分失敗、公式明示対象・不明を区別 | Service Health実データ7件・構成2件を確認。AdvisorのTracking ID→recommendationTypeId→New／InProgress／Postponed推奨を関連付け、両ソースの部分失敗時に他方の結果を保持する契約試験を追加。2026-10-26の実ARG集計はAdvisor retirement recommendation Completed 1件、active 0件、metadata 0件で正の相関未検証。全ページ網羅・実環境精度も未評価 | L / Dev / Yes |
 | IMP-08 | Normalization: 非推奨ほか4種、版・旧通知・不明日付 | 07 | 非推奨開始日を廃止日にせず旧版巻戻し拒否 | 実装済。無関係通知の人間による対象外確定UIは追加対象 | M / Dev / No |
 | IMP-09 | Context: タグ集約、未設定Owner・業務情報の確認 | 07 | 構成は実値、業務値は推測しない | 最小実装。CMDB、依存探索、業務情報全項目の入力は追加対象 | M / Dev+Architect / Yes |
 | IMP-10 | Spike: Decision-1と説明モデルの利用条件・MI・応答契約 | 04,05 | SP-01/04。3事例×3回、確率・版・費用の実測 | Decision-1 v1 DataZoneStandard capacity 500、API設定、Foundry限定MIロールを反映済。実データ1件の応答に加え、合成3事例×3回で契約・確率検証合格。判断品質・説明モデルは未完了 | L / AI+Cloud / Yes |
