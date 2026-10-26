@@ -28,6 +28,7 @@ param githubProjectPriorityP3OptionId string = ''
 param githubProjectPriorityP4OptionId string = ''
 param githubProjectDueDateFieldId string = ''
 param syncEnabled bool = false
+param projectProgressSyncEnabled bool = false
 param ingestEnabled bool = false
 param exportEnabled bool = false
 
@@ -123,6 +124,7 @@ resource functions 'Microsoft.Web/sites@2024-11-01' = [for (name,i) in ['api','e
         { name: 'MAX_MODEL_CALLS_PER_DAY', value: string(maxModelCallsPerDay) }
         { name: 'EXPORT_ENABLED', value: toLower(string(exportEnabled)) }
         { name: 'SYNC_ENABLED', value: toLower(string(syncEnabled)) }
+        { name: 'PROJECT_PROGRESS_SYNC_ENABLED', value: toLower(string(projectProgressSyncEnabled)) }
         { name: 'INGEST_ENABLED', value: toLower(string(ingestEnabled)) }
         { name: 'GITHUB_OWNER', value: githubOwner }
         { name: 'GITHUB_REPOSITORY', value: githubRepository }
