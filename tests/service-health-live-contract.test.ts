@@ -20,6 +20,10 @@ test('Service Health uses ARG-converted ticks and retains ISO timestamps', async
           query,
           /lastUpdateTime=tostring\(todatetime\(tolong\(properties.LastUpdateTime\)\)\)/,
         )
+        assert.match(
+          query,
+          /retirementDate=tostring\(todatetime\(tolong\(properties.ImpactMitigationTime\)\)\)/,
+        )
         return Response.json({
           data: [
             {
@@ -33,6 +37,7 @@ test('Service Health uses ARG-converted ticks and retains ISO timestamps', async
                 Summary: 'Synthetic notice',
                 LastUpdateTime: 639211392000000000,
               },
+              retirementDate: '2027-04-20T00:00:00Z',
             },
             {
               id: 'synthetic-event-2',
@@ -44,6 +49,7 @@ test('Service Health uses ARG-converted ticks and retains ISO timestamps', async
                 Summary: 'Synthetic notice',
                 LastUpdateTime: '2026-08-02T00:00:00Z',
               },
+              retirementDate: '2026-08-02T00:00:00Z',
             },
             {
               id: 'synthetic-event-3',
@@ -63,6 +69,8 @@ test('Service Health uses ARG-converted ticks and retains ISO timestamps', async
   assert.equal(result.failures.length, 1)
   assert.equal(result.events[0]?.sourceUpdatedAt, '2026-08-01T00:00:00.000Z')
   assert.equal(result.events[1]?.sourceUpdatedAt, '2026-08-02T00:00:00.000Z')
+  assert.equal(result.events[0]?.milestones[0]?.date, '2027-04-20')
+  assert.equal(result.events[1]?.milestones.length, 0)
 })
 
 test('zero events with incomplete discovery is visibly a partial failure', () => {

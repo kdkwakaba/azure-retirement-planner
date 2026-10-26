@@ -93,7 +93,7 @@ export async function discover(subscriptionIds: string[], tenantId: string) {
     try {
       const notices = await argRows(
         [subscription],
-        "servicehealthresources | where type =~ 'microsoft.resourcehealth/events' | where tostring(properties.EventType) =~ 'HealthAdvisory' | project id, properties, lastUpdateTime=tostring(todatetime(tolong(properties.LastUpdateTime)))",
+        "servicehealthresources | where type =~ 'microsoft.resourcehealth/events' | where tostring(properties.EventType) =~ 'HealthAdvisory' | project id, properties, lastUpdateTime=tostring(todatetime(tolong(properties.LastUpdateTime))), retirementDate=tostring(todatetime(tolong(properties.ImpactMitigationTime)))",
       )
       for (const notice of notices) {
         const p = z.record(z.string(), z.unknown()).parse(notice.properties)
@@ -115,6 +115,7 @@ export async function discover(subscriptionIds: string[], tenantId: string) {
               EventSubType: p.EventSubType,
               incidentType: p.incidentType,
               EventTags: p.EventTags,
+              retirementDate: notice.retirementDate,
             },
           }),
         )
