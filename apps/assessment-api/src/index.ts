@@ -154,7 +154,10 @@ app.http('api', {
       return reply(404, { error: 'Not found' })
     } catch (error) {
       const message = error instanceof Error ? error.message : ''
-      if (message === 'Forbidden' || message === 'Application identity required')
+      if (
+        message === 'Forbidden' ||
+        message === 'Application identity required'
+      )
         return reply(403, { error: 'Forbidden' })
       if (error instanceof z.ZodError)
         return reply(400, { error: 'Invalid request' })
