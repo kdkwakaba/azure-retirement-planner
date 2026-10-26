@@ -195,7 +195,8 @@ export const workflowRoutingSchema = z
     dependsOnCategories: z.array(categorySchema),
     policyRuleIds: z.array(z.string()),
     unresolvedReasons: z.array(z.string()),
-  }).strict()
+  })
+  .strict()
 export const workItemSchema = z
   .object({
     id: z.string(),
