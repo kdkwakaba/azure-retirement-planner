@@ -83,9 +83,43 @@ app.storageQueue('export', {
           )
         },
       )
-      const projectItemId = await github.addToProject(
+      const managedContentHash = await github.updateManagedIssue(
+        issueId,
+        item,
+        typeof row.managedContentHash === 'string'
+          ? row.managedContentHash
+          : null,
+      )
+      await store.table.updateEntity(
+        {
+          partitionKey,
+          rowKey,
+          state: 'IssueCreated',
+          managedContentHash,
+        },
+        'Merge',
+      )
+      const projectItem = await github.ensureProjectItem(
         required('GITHUB_PROJECT_ID'),
         issueId,
+      )
+      await github.updateProjectFields(
+        required('GITHUB_PROJECT_ID'),
+        projectItem.id,
+        item,
+        {
+          statusFieldId: process.env.GITHUB_PROJECT_STATUS_FIELD_ID,
+          todoOptionId: process.env.GITHUB_PROJECT_STATUS_TODO_OPTION_ID,
+          priorityFieldId: process.env.GITHUB_PROJECT_PRIORITY_FIELD_ID,
+          priorityOptionIds: {
+            P1: process.env.GITHUB_PROJECT_PRIORITY_P1_OPTION_ID,
+            P2: process.env.GITHUB_PROJECT_PRIORITY_P2_OPTION_ID,
+            P3: process.env.GITHUB_PROJECT_PRIORITY_P3_OPTION_ID,
+            P4: process.env.GITHUB_PROJECT_PRIORITY_P4_OPTION_ID,
+          },
+          dueDateFieldId: process.env.GITHUB_PROJECT_DUE_DATE_FIELD_ID,
+        },
+        projectItem.created,
       )
       await store.table.updateEntity(
         {
@@ -93,7 +127,8 @@ app.storageQueue('export', {
           rowKey,
           state: 'Exported',
           issueId,
-          projectItemId,
+          projectItemId: projectItem.id,
+          managedContentHash,
         },
         'Merge',
       )
