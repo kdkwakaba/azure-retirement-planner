@@ -1,12 +1,12 @@
 # Spike・テスト・費用計画
 
-状態: 計画。接続、デプロイ、実測、評価は未実施。
+状態: Decision-1の接続・デプロイと合成3事例×3回の型契約評価は完了。実環境の影響判定精度、説明LLM、他のSpike項目は未完了。
 
 ## 実現性Spike
 
 | ID | 最小検証 | 成功条件 |
 |---|---|---|
-| SP-01 | Decision-1提供・認証・3事例呼出 | 型付き回答、選択肢分布、モデル情報を取得 |
+| SP-01 | Decision-1提供・認証・3事例呼出 | **完了（条件付き）**。Foundry account scopeのCLI推論権限でMicrosoft-Decision-1 v1に接続し、型付き回答と確率分布を取得。合成3事例×3回すべてSchema・確率検証に合格。判断品質の代表性は未評価 |
 | SP-02 | Service Health、Advisor、ARG実読取 | 非Retirementの非推奨を含む実Payload・分類・関連範囲・欠損を確認 |
 | SP-03 | Action Groupから認証済受付 | Health Advisoryの非推奨候補を排除しない配送条件、認証・原本保存を確認。実通知とテストを区別 |
 | SP-04 | 判断＋Evidenceから説明・作業案 | 必須Schema、根拠、架空ID等の拒否 |
@@ -40,6 +40,20 @@ Jev／Decisions APIは自動Fallbackではない。提供元公式URL、契約�
 A: 公式・保存・合成Snapshotで分類・判断・更新・異常を再現。B: 現Azureで認証・実Schema・取得・推論を確認。C: 保存／実結果を用いレビュー・承認・GitHubを確認。実通知がなければ配送疎通とRetirement再生を別判定にする。
 
 全ケースにID、目的、実取得／公式／合成／再構成区分、参照版・取得日時、評価基準日時、Scope、構成、業務情報、期待・禁止結果、確認者、Model/Prompt/Rule版を保存。合成Advisor対象によるConfirmedは分類試験でありMicrosoftの実対象証明ではない。
+
+## 2026-10-26 Decision-1合成推論評価
+
+Microsoft-Decision-1 version 1、deployment `arp-decision-1`、既存の6質問契約で9回実行。実リソースではなく合成Resource ID・業務コンテキストを送信した。Storage GPv1の期限は評価のための合成日付であり、公式Retirement Dateとして扱わない。CLI利用者にはFoundryアカウント単位でCognitive Services Userを付与し、Subscription/Resource Group全体の推論権限は付与していない。評価出力はSDKのDecision契約相当の全選択肢・確率を返し、9/9で確率合計許容差および選択肢検証を通過。全9回が少なくとも1項目Unknownを含み、Abstained扱いとなった。平均応答時間は約766 ms（687–898 ms）。各ケース3回で判断ラベルは安定したが、Basic LBの未対応影響はCritical 1/3・High 2/3。型・確率の機能成立は確認したが、判断品質・閾値校正を示す標本ではない。
+
+| Synthetic case | 3回の主な選択 | Unknown項目/回 | 入力Token/回 | 判定上の注意 |
+|---|---|---:|---:|---|
+| Basic Load Balancer（期限超過、Critical Production） | 未対応影響 Critical 1回・High 2回、対応中影響 Unknown、Priority P2、Start Immediate | 3/6 | 613 | 期限超過でもルールによる強制P1はこの直接モデル呼出しには適用していない。アプリ統合時のルール適用を別途検証 |
+| Storage GPv1（期限5日という合成入力） | 未対応影響 Unknown、対応中影響 Unknown、Priority P1、Start Immediate | 4/6 | 620 | GPv1の日付は合成。P1/Immediateは作業開始判断であり、自動移行や移行必須の根拠ではない |
+| URL ping tests（期限704日） | 未対応影響 Unknown、対応中影響 Unknown、Priority P2、Start Later | 4/6 | 610 | 監視機能廃止と業務停止を同一視しない。アプリ・監視構成の確認を人間に残す |
+
+3ケースともProject RequiredはUnknown、難易度もUnknownとなり、全9回で人間レビュー相当となった。出力Tokenは各6。9回合計入力5,529、出力54 Token（最初の契約疎通1回522/6を含めると入力6,051、出力60）。Model API応答は `microsoft-decision-1` としたが、deployment versionは構成値1を記録し、呼出し応答自体にバージョン値がない点を区別する。費用は従量単価と実際の請求反映で確認する。
+
+制約: 同一入力の反復は再現性確認であり、3独立事例の評価ではない。合成データなのでPrecision/Recall、AdvisorによるConfirmed、実Azureの影響、期限の事実性は証明しない。Basic LBではモデル単体のPriorityがP2だったが、アプリの決定的`priorityFor`は期限当日・超過（slack <= 0）をP1にする。今回の直接モデル呼出しは統合後のeffectivePriorityを評価していないため、次にDecision adapter／評価パイプライン経由で合成し、ルール適用後にP1となることを確認する。現契約にUnknownが含まれれば選択値にかかわらずAbstainedとなるため、人間レビューが適切。次は公式期限Snapshotを用いた非合成回帰、難易度／移行必須の曖昧ケースの評価も行う。
 
 ## 必須30ケース（非推奨の追加6件を含む）
 
