@@ -188,6 +188,8 @@ export async function assessSnapshot(message: unknown): Promise<void> {
         ownerTeam: null,
         environment: null,
         classification: 'Confirmed',
+        classificationReason: 'ExplicitMicrosoftImpact',
+        missingAttributes: ['Azure inventory metadata'],
         verificationRequired: true,
         evidenceIds: [eid],
         properties: {},

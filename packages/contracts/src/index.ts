@@ -17,6 +17,18 @@ export const resourceClassSchema = z.enum([
   'Not Impacted',
   'Unknown',
 ])
+export const resourceClassificationReasonSchema = z.enum([
+  'AssessmentPending',
+  'ExplicitMicrosoftImpact',
+  'ExplicitExclusion',
+  'ProfileConditionMatched',
+  'DependencyEvidence',
+  'RequiredAttributeMissing',
+  'UsageRequiresVerification',
+  'NoMatchingProfileCondition',
+  'NoApplicableProfile',
+  'LegacyUnrecorded',
+])
 export const categorySchema = z.enum([
   'Impact Verification',
   'Owner Confirmation',
@@ -88,6 +100,9 @@ export const resourceSchema = z
     environment: z.string().nullable(),
     ownerTeam: z.string().nullable(),
     classification: resourceClassSchema,
+    classificationReason:
+      resourceClassificationReasonSchema.default('LegacyUnrecorded'),
+    missingAttributes: z.array(z.string()).default([]),
     verificationRequired: z.boolean(),
     evidenceIds: z.array(z.string()),
     properties: z.record(z.string(), z.unknown()),

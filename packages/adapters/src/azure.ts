@@ -1,7 +1,7 @@
 import { PlatformIdentity } from './identity.ts'
 import { z } from 'zod'
 import type { Evidence, LifecycleEvent, ResourceImpact } from '@arp/contracts'
-import { classifyResource, hash, normalizeNotice } from '@arp/domain'
+import { classifyResourceDetails, hash, normalizeNotice } from '@arp/domain'
 import { jsonRequest, RemoteError } from './http.ts'
 
 export const credential = new PlatformIdentity()
@@ -137,6 +137,8 @@ export async function discover(subscriptionIds: string[], tenantId: string) {
           environment: row.environment ? String(row.environment) : null,
           ownerTeam: row.ownerTeam ? String(row.ownerTeam) : null,
           classification: 'Unknown',
+          classificationReason: 'AssessmentPending',
+          missingAttributes: [],
           verificationRequired: false,
           evidenceIds: [eid],
           properties: {
@@ -193,37 +195,57 @@ export function matchProfile(
 ): ResourceImpact {
   const text = (event.title + ' ' + event.body).toLowerCase()
   let conditionMatches: boolean | null = null,
-    excluded = false
+    excluded = false,
+    requiredAttributeMissing = false,
+    applicableProfile = false,
+    requiredAttributeNames: string[] = []
   // 保守する3つの公式条件だけを適用。別機能や未知の条件をLLMで補完しない。
   if (
     /basic.{0,20}load balancer/.test(text) &&
     resource.type.toLowerCase() === 'microsoft.network/loadbalancers'
   ) {
+    applicableProfile = true
     conditionMatches = resource.sku?.toLowerCase() === 'basic'
     excluded = resource.sku?.toLowerCase() === 'standard'
+    requiredAttributeMissing = !resource.sku
+    if (requiredAttributeMissing) requiredAttributeNames = ['sku.name']
   }
   if (
     /general.purpose.v1|gpv1/.test(text) &&
     resource.type.toLowerCase() === 'microsoft.storage/storageaccounts'
   ) {
+    applicableProfile = true
     conditionMatches = resource.properties.kind === 'Storage'
     excluded = resource.properties.kind === 'StorageV2'
+    requiredAttributeMissing =
+      typeof resource.properties.kind !== 'string' ||
+      resource.properties.kind.length === 0
+    if (requiredAttributeMissing) requiredAttributeNames = ['kind']
   }
   if (
     /url ping|ping test/.test(text) &&
     resource.type.toLowerCase() === 'microsoft.insights/webtests'
   ) {
+    applicableProfile = true
     conditionMatches = resource.properties.webTestKind === 'ping'
     excluded = resource.properties.webTestKind === 'standard'
+    requiredAttributeMissing =
+      typeof resource.properties.webTestKind !== 'string' ||
+      resource.properties.webTestKind.length === 0
+    if (requiredAttributeMissing) requiredAttributeNames = ['properties.Kind']
   }
+  const result = classifyResourceDetails({
+    explicitlyListed: explicit.has(resource.id.toLowerCase()),
+    conditionMatches,
+    explicitlyExcluded: excluded,
+    dependencyEvidence: false,
+    usageRequired: false,
+    requiredAttributeMissing,
+    requiredAttributeNames,
+    applicableProfile,
+  })
   return {
     ...resource,
-    classification: classifyResource({
-      explicitlyListed: explicit.has(resource.id.toLowerCase()),
-      conditionMatches,
-      explicitlyExcluded: excluded,
-      dependencyEvidence: false,
-      usageRequired: false,
-    }),
+    ...result,
   }
 }
