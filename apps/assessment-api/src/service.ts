@@ -32,6 +32,7 @@ import {
   unavailableDecision,
   applicableProfileIds,
   PROFILE_RESOURCE_TYPES,
+  PROFILE_REGISTRY_VERSION,
 } from '@arp/adapters'
 
 export function config() {
@@ -289,6 +290,8 @@ export async function assessSnapshot(message: unknown): Promise<void> {
       {
         subscriptionIds: settings.subscriptions,
         resourceTypes: [...PROFILE_RESOURCE_TYPES],
+        profileIds: profiles,
+        profileRegistryVersion: PROFILE_REGISTRY_VERSION,
         resourceCount: snapshot.resources.length,
         scopeComplete: complete,
       },
