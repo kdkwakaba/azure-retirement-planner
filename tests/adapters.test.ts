@@ -365,17 +365,18 @@ test('managed Issue updates preserve manual text and reject edits inside the man
     globalThis,
     'fetch',
     async (_input: RequestInfo | URL, init?: RequestInit) => {
-    const payload = JSON.parse(String(init?.body)) as {
-      query: string
-      variables: { body?: string }
-    }
-    if (payload.query.startsWith('query('))
-      return Response.json({ data: { node: { body } } })
-    mutationBody = payload.variables.body ?? ''
-    return Response.json({
-      data: { updateIssue: { issue: { id: 'synthetic-issue' } } },
-    })
-  })
+      const payload = JSON.parse(String(init?.body)) as {
+        query: string
+        variables: { body?: string }
+      }
+      if (payload.query.startsWith('query('))
+        return Response.json({ data: { node: { body } } })
+      mutationBody = payload.variables.body ?? ''
+      return Response.json({
+        data: { updateIssue: { issue: { id: 'synthetic-issue' } } },
+      })
+    },
+  )
   const updatedHash = await client.updateManagedIssue(
     'synthetic-issue',
     revised,
