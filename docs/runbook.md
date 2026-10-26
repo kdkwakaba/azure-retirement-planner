@@ -21,7 +21,7 @@ az bicep build --file infra/bootstrap/permissions.bicep --stdout
 ## 2. 管理者によるBootstrap
 
 1. 既存Subscriptionに専用RGを作る前にID・リージョン・Tenantを確定。Azure Policy、Flex Node24の提供、課金枠、既存資源との区別を確認する。
-2. Entraの単一テナントApp登録を作成し、`Reader`、`Reviewer`、`Governance`、`Operator`（User）と`NotificationSender`（Application）のApp rolesを定義する。割当必須としユーザーを割り当てる。WebリダイレクトURIは`https://<api>.azurewebsites.net/.auth/login/aad/callback`。ID Tokenを使用するUIと、aud/issuer/tid/rolesを検証するAPIの両方を試験する。
+2. Entraの単一テナントApp登録を作成し、`Reader`、`Reviewer`、`Governance`、`Operator`（User）と`NotificationSender`（Application）のApp rolesを定義する。割当必須としユーザーを割り当てる。APIの許可表はReader=読取、Reviewer=読取＋訂正／レビュー、Operator=読取＋同期、Governance=読取＋同期＋訂正／レビュー、NotificationSender=Application限定の通知受付。ユーザー用APIは`kind=User`、通知受付は`kind=Application`も検証する。WebリダイレクトURIは`https://<api>.azurewebsites.net/.auth/login/aad/callback`。ID Tokenを使用するUIと、aud/issuer/tid/rolesを検証するAPIの両方を試験する。
 3. Secure Webhookは専用サービスプリンシパルのアプリ権限に限定。Access Token v2と`idtyp=app`のoptional claim、audienceを合わせる。Action Groupsの実際の送信主体へのApp role割当をSP-03で確認する。未設定のまま匿名受付へ緩和しない。
 4. `infra/bootstrap/oidc.bicep`でGitHub main branch subjectのUAMI/Federationを作成。GitHub APIから取得した`githubOwnerId`と`githubRepositoryId`も渡す。新規Repositoryのsubjectは`repo:OWNER@OWNER_ID/REPOSITORY@REPOSITORY_ID:ref:refs/heads/main`であり、azure/loginが記録する実際のsubjectと完全一致させる。旧形式を使うRepositoryは実際の形式を確認してテンプレートを調整し、ワイルドカードへ緩和しない。通常CDのIdentityへ専用RGの必要なデプロイ権限を別途付与。Owner／権限付与権限は通常CDへ付けない。
 5. Repository Variablesに`AZURE_CLIENT_ID`、`AZURE_TENANT_ID`、`AZURE_SUBSCRIPTION_ID`、`AZURE_RESOURCE_GROUP`、`AZURE_LOCATION`、`AZURE_HOST_STORAGE_BLOB_ENDPOINT`、`ENTRA_CLIENT_ID`、`TARGET_SUBSCRIPTION_IDS`（カンマ区切り）、`DECISION_ENDPOINT`を設定。いずれも非機密設定で、秘密はVariablesへ入れない。

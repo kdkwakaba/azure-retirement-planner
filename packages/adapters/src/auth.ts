@@ -35,9 +35,34 @@ export function createVerifier(
     }
   }
 }
-export function requireRole(principal: Principal, allowed: string[]): void {
+export const apiRolePolicy = {
+  read: ['Reader', 'Reviewer', 'Governance', 'Operator'],
+  sync: ['Operator', 'Governance'],
+  review: ['Reviewer', 'Governance'],
+  notification: ['NotificationSender'],
+} as const
+
+export function requireRole(
+  principal: Principal,
+  allowed: readonly string[],
+): void {
   if (!principal.roles.some((r) => allowed.includes(r)))
     throw new Error('Forbidden')
+}
+export function requireUserRole(
+  principal: Principal,
+  allowed: readonly string[],
+): void {
+  if (principal.kind !== 'User') throw new Error('Forbidden')
+  requireRole(principal, allowed)
+}
+export function requireApplicationRole(
+  principal: Principal,
+  allowed: readonly string[],
+): void {
+  if (principal.kind !== 'Application')
+    throw new Error('Application identity required')
+  requireRole(principal, allowed)
 }
 export function verifyWriteRequest(
   origin: string | null,
