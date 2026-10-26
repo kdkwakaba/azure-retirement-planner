@@ -435,6 +435,99 @@ test('Project item reconciliation reuses existing item instead of creating dupli
   assert.equal(mutations, 0)
 })
 
+test('managed Issue updates preserve manual text and reject edits inside the managed section', async (t) => {
+  const client = new GitHubClient('synthetic-owner', 'synthetic-repo', 'synthetic-token')
+  const item = fixture().workItems[0]!
+  const revised = { ...item, priority: 'P1' as const }
+  const oldContent = managedIssueContent(item)
+  const manualPrefix = 'Human note before managed section'
+  const manualSuffix = 'Human note after managed section'
+  let body = [
+    manualPrefix,
+    '<!-- arp:managed:start -->',
+    oldContent,
+    '<!-- arp:managed:end -->',
+    manualSuffix,
+  ].join('\\n')
+  let mutationBody = ''
+  t.mock.method(globalThis, 'fetch', async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const payload = JSON.parse(String(init?.body)) as { query: string; variables: { body?: string } }
+    if (payload.query.startsWith('query('))
+      return Response.json({ data: { node: { body } } })
+    mutationBody = payload.variables.body ?? ''
+    return Response.json({ data: { updateIssue: { issue: { id: 'synthetic-issue' } } } })
+  })
+  const updatedHash = await client.updateManagedIssue(
+    'synthetic-issue',
+    revised,
+    hash(oldContent),
+  )
+  assert.equal(updatedHash, hash(managedIssueContent(revised)))
+  assert.ok(mutationBody.includes(manualPrefix))
+  assert.ok(mutationBody.includes(manualSuffix))
+  assert.ok(mutationBody.includes('Priority: P1'))
+
+  body = mutationBody.replace('Priority: P1', 'Priority: human edit')
+  await assert.rejects(
+    client.updateManagedIssue('synthetic-issue', item, updatedHash),
+    /human conflict review required/,
+  )
+})
+
+test('Project field sync skips status on existing items and updates mapped values', async (t) => {
+  const client = new GitHubClient('synthetic-owner', 'synthetic-repo', 'synthetic-token')
+  const item = { ...fixture().workItems[0]!, priority: 'P2' as const, dueDate: '2026-08-20' }
+  const updates: unknown[] = []
+  t.mock.method(globalThis, 'fetch', async (_input: RequestInfo | URL, init?: RequestInit) => {
+    updates.push(JSON.parse(String(init?.body)))
+    return Response.json({
+      data: {
+        updateProjectV2ItemFieldValue: { projectV2Item: { id: 'synthetic-project-item' } },
+      },
+    })
+  })
+  const config = {
+    statusFieldId: 'status-field',
+    todoOptionId: 'todo-option',
+    priorityFieldId: 'priority-field',
+    priorityOptionIds: { P1: 'p1', P2: 'p2', P3: 'p3', P4: 'p4' },
+    dueDateFieldId: 'due-field',
+  }
+  await client.updateProjectFields('project', 'item', item, config, false)
+  assert.equal(updates.length, 2)
+  await client.updateProjectFields('project', 'item', item, config, true)
+  assert.equal(updates.length, 5)
+  const variables = updates.map((update) => (update as { variables: { value: unknown } }).variables.value)
+  assert.ok(variables.some((value) => JSON.stringify(value) === JSON.stringify({ date: '2026-08-20' })))
+  assert.ok(variables.some((value) => JSON.stringify(value) === JSON.stringify({ singleSelectOptionId: 'todo-option' })))
+})
+
+test('Project item reconciliation reuses existing item instead of creating duplicates', async (t) => {
+  const client = new GitHubClient('synthetic-owner', 'synthetic-repo', 'synthetic-token')
+  let mutations = 0
+  t.mock.method(globalThis, 'fetch', async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const payload = JSON.parse(String(init?.body)) as { query: string }
+    if (payload.query.startsWith('query('))
+      return Response.json({
+        data: {
+          node: {
+            items: {
+              nodes: [{ id: 'synthetic-project-item', content: { __typename: 'Issue', id: 'synthetic-issue' } }],
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+        },
+      })
+    mutations++
+    return Response.json({ data: { addProjectV2ItemById: { item: { id: 'unexpected' } } } })
+  })
+  assert.deepEqual(
+    await client.ensureProjectItem('synthetic-project', 'synthetic-issue'),
+    { id: 'synthetic-project-item', created: false },
+  )
+  assert.equal(mutations, 0)
+})
+
 test('approval and stable per-item outbox are one conditional transaction', async (t) => {
   const store = new AzureStore('syntheticaccount')
   const a = fixture()
