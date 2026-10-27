@@ -171,6 +171,20 @@ test('Advisor failure preserves Service Health impacts and marks discovery incom
   assert.deepEqual([...result.resourceIds], [resourceId.toLowerCase()])
   assert.equal(result.complete, false)
   assert.deepEqual(result.failures, ['Advisor明示対象の取得に失敗'])
+  assert.deepEqual(
+    result.failureDetails.map((failure) => ({
+      source: failure.source,
+      category: failure.category,
+      httpStatus: failure.httpStatus,
+    })),
+    [
+      {
+        source: 'AdvisorRetirementRecommendations',
+        category: 'Forbidden',
+        httpStatus: 403,
+      },
+    ],
+  )
 })
 test('Advisor impacts are retained when Service Health discovery fails', async (t) => {
   t.mock.method(credential, 'getToken', async () => ({
@@ -193,6 +207,11 @@ test('Advisor impacts are retained when Service Health discovery fails', async (
   assert.deepEqual([...result.resourceIds], [resourceId.toLowerCase()])
   assert.equal(result.complete, false)
   assert.deepEqual(result.failures, ['Service Health明示対象の取得に失敗'])
+  assert.equal(
+    result.failureDetails[0]?.source,
+    'ServiceHealthImpactedResources',
+  )
+  assert.equal(result.failureDetails[0]?.httpStatus, 403)
 })
 
 test('ARG follows the REST $skipToken and preserves all pages', async (t) => {
