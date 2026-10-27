@@ -308,6 +308,8 @@ Deterministicは構成・件数・日数・所属等、Human-maintainedは重要
 
 主張をConfirmed Fact、Derived Fact、Model Decision、Assumption、Unknown、Recommendationへ分類する。FactはEvidence、Derivedは入力と導出Rule、Decisionは回答参照、Assumptionは仮定ID、Unknownは不足と影響、Recommendationは提案根拠を付ける。
 
+評価プロファイルに固定登録されたMicrosoft Learn参照のみ、HTTPSで本文を取得しEvidenceへ保存する。任意の通知URLやユーザー入力URLは取得しない。許可ドメインは`learn.microsoft.com`、リダイレクトは禁止し、HTML 2 MB・抽出本文9,000文字を上限とする。プロセス内キャッシュは1時間で失効し、本文HashをEvidenceのsourceVersionとして保持する。文書本文は非信頼データとしてLLMへ渡す。取得失敗は調査範囲不完全として人間レビューに送る。本文Hashが変われば評価IDを更新し、再評価する。後継サービスが公式文書で明示されているかの意味検証は未実装である。
+
 引用の存在検証と、引用が主張を支持する意味検証を分離する。LLMの自己申告だけで合格にしない。説明はモデル内部の思考再現ではない。訂正は旧版・理由・出典を保持し、自動学習へ直結しない。
 
 ## 18. Resource Impact Discovery
