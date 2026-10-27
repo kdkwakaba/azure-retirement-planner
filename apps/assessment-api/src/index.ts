@@ -353,4 +353,3 @@ app.timer('projectProgress', {
       await new AzureStore(config().account).recordProjectProgress(progress)
     }),
 })
-
