@@ -52,8 +52,17 @@ jobs:
           set -euo pipefail
           [[ "$CI_RUN_ID" =~ ^[0-9]+$ ]]
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID" > /tmp/ci-run.json
-          CI_WORKFLOW_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml" --jq .id)
-          jq -e --argjson workflow "$CI_WORKFLOW_ID" '.conclusion == "success" and .head_branch == "main" and .event == "push" and .workflow_id == $workflow and .head_repository.full_name == .repository.full_name' /tmp/ci-run.json
+          jq -e --arg repository "$GITHUB_REPOSITORY" '
+            .conclusion == "success" and
+            .head_branch == "main" and
+            .event == "push" and
+            .path == ".github/workflows/ci.yml" and
+            .head_repository.full_name == $repository and
+            .repository.full_name == $repository
+          ' /tmp/ci-run.json > /dev/null || {
+            echo "CI run must be a successful push from .github/workflows/ci.yml on main in this repository." >&2
+            exit 1
+          }
           SOURCE_SHA=$(jq -r .head_sha /tmp/ci-run.json)
           [[ "$SOURCE_SHA" == "$GITHUB_SHA" ]]
           echo "sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
