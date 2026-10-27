@@ -5,7 +5,6 @@
   "type": "module",
   "dependencies": {
     "@arp/contracts": "*",
-    "@arp/domain": "*",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   }
