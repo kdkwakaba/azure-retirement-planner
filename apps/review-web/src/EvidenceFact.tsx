@@ -198,4 +198,3 @@ export function EvidenceCard({
 export function safeOfficialEvidenceUrl(value: string | null): string | null {
   return safeEvidenceUrl(value)
 }
-
