@@ -418,3 +418,55 @@ export type Approval = z.infer<typeof approvalSchema>
 export type Impact = z.infer<typeof impactSchema>
 export type Priority = z.infer<typeof prioritySchema>
 export type Correction = z.infer<typeof correctionSchema>
+
+
+const microsoftEvidenceHosts = ['aka.ms', 'azure.com', 'microsoft.com']
+function isTrustedMicrosoftEvidenceUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return (
+      url.protocol === 'https:' &&
+      !url.username &&
+      !url.password &&
+      !url.port &&
+      microsoftEvidenceHosts.some(
+        (host) => url.hostname === host || url.hostname.endsWith(`.${host}`),
+      )
+    )
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Validates that translation is limited to persisted Microsoft evidence.
+ * Service Health has no page-specific URL, so bind it to the normalized event
+ * and evidence lineage instead of inventing a URL.
+ */
+export function isTranslatableOfficialEvidence(
+  event: LifecycleEvent,
+  evidence: Evidence,
+): boolean {
+  const stored = event.evidence.find((item) => item.id === evidence.id)
+  if (
+    !stored ||
+    stored.sourceType !== 'Microsoft' ||
+    evidence.sourceType !== stored.sourceType ||
+    evidence.fact !== stored.fact ||
+    evidence.sourceVersion !== stored.sourceVersion ||
+    evidence.officialUrl !== stored.officialUrl ||
+    evidence.observedAt !== stored.observedAt ||
+    JSON.stringify(evidence.subjectIds) !== JSON.stringify(stored.subjectIds)
+  )
+    return false
+
+  if (stored.officialUrl !== null)
+    return isTrustedMicrosoftEvidenceUrl(stored.officialUrl)
+
+  return (
+    event.source === 'ServiceHealth' &&
+    stored.sourceVersion === event.contentHash &&
+    stored.subjectIds.length === 1 &&
+    stored.subjectIds[0] === event.id
+  )
+}
