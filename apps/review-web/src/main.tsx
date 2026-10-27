@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { assessmentSchema, type Assessment } from '@arp/contracts'
 import './styles.css'
 import { CorrectionForm } from './CorrectionForm.tsx'
-import { EvidenceFact, safeOfficialEvidenceUrl } from './EvidenceFact.tsx'
+import { EvidenceCard, safeOfficialEvidenceUrl } from './EvidenceFact.tsx'
 import { summarizeAssessments } from './summary.ts'
 
 import { request, syncFeedback } from './api.ts'
@@ -502,7 +502,7 @@ function App() {
                         </b>
                         <small>{e.observedAt}</small>
                       </div>
-                      <EvidenceFact value={e.fact} />
+                      <EvidenceCard evidence={e} assessmentId={current.id} />
                       {safeOfficialEvidenceUrl(e.officialUrl) && (
                         <p className="evidence-source-link">
                           <a
@@ -668,3 +668,4 @@ function App() {
   )
 }
 createRoot(document.getElementById('root')!).render(<App />)
+
