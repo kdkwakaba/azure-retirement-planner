@@ -1,10 +1,74 @@
 import { randomUUID } from 'node:crypto'
+import type {
+  DiscoveryFailure,
+  DiscoveryFailureSource,
+  ModelInvocation,
+} from '@arp/contracts'
+import { RemoteError } from './http.ts'
 
 export interface ProcessingFailureRecord {
   event: 'ProcessingFailure'
   stage: string
   correlationId: string
   errorType: string
+}
+
+export function failureFacts(error: unknown): {
+  category: DiscoveryFailure['category']
+  httpStatus: number | null
+} {
+  if (error instanceof RemoteError) {
+    const status = error.status
+    return {
+      category:
+        status === 401
+          ? 'Unauthorized'
+          : status === 403
+            ? 'Forbidden'
+            : status === 429
+              ? 'Throttled'
+              : status === 408
+                ? 'Timeout'
+                : status >= 500
+                  ? 'UpstreamUnavailable'
+                  : 'InvalidResponse',
+      httpStatus: status,
+    }
+  }
+  const name = error instanceof Error ? error.name : ''
+  return {
+    category:
+      name === 'TimeoutError' || name === 'AbortError'
+        ? 'Timeout'
+        : name === 'SyntaxError' || name === 'ZodError'
+          ? 'InvalidResponse'
+          : name === 'TypeError'
+            ? 'NetworkError'
+            : 'Unknown',
+    httpStatus: null,
+  }
+}
+
+/** Emit only safe source, category, status and correlation metadata. */
+export function recordDependencyFailure(
+  source: DiscoveryFailureSource,
+  error: unknown,
+): DiscoveryFailure {
+  const details = failureFacts(error)
+  const result: DiscoveryFailure = {
+    source,
+    ...details,
+    correlationId: randomUUID(),
+  }
+  console.error(
+    JSON.stringify({ event: 'ExternalDependencyFailure', ...result }),
+  )
+  return result
+}
+
+/** Model telemetry deliberately excludes prompts, inputs and model outputs. */
+export function recordModelInvocation(invocation: ModelInvocation): void {
+  console.info(JSON.stringify({ event: 'ModelInvocation', ...invocation }))
 }
 
 /**

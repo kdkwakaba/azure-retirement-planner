@@ -51,6 +51,63 @@ export const categorySchema = z.enum([
   'Policy and IaC Update',
 ])
 export const dateSchema = z.iso.date()
+export const discoveryFailureSchema = z
+  .object({
+    source: z.enum([
+      'ServiceHealthAdvisory',
+      'ResourceGraphInventory',
+      'ServiceHealthImpactedResources',
+      'AdvisorRetirementRecommendations',
+      'OfficialReference',
+    ]),
+    category: z.enum([
+      'Unauthorized',
+      'Forbidden',
+      'Throttled',
+      'UpstreamUnavailable',
+      'Timeout',
+      'InvalidResponse',
+      'NetworkError',
+      'Unknown',
+    ]),
+    httpStatus: z.number().int().min(100).max(599).nullable(),
+    correlationId: z.string().uuid(),
+  })
+  .strict()
+export const modelInvocationSchema = z
+  .object({
+    stage: z.enum(['Decision', 'Explanation']),
+    provider: z.literal('Microsoft Foundry'),
+    deployment: z.string().min(1).max(80),
+    modelVersion: z.string().max(80).nullable(),
+    promptVersion: z.string().max(80).nullable(),
+    status: z.enum([
+      'NotRequired',
+      'NotConfigured',
+      'NotStarted',
+      'Succeeded',
+      'SucceededWithFallback',
+      'Failed',
+    ]),
+    correlationId: z.string().min(1).max(64),
+    durationMs: z.number().int().nonnegative().nullable(),
+    failureCategory: z
+      .enum([
+        'Unauthorized',
+        'Forbidden',
+        'Throttled',
+        'UpstreamUnavailable',
+        'Timeout',
+        'InvalidResponse',
+        'NetworkError',
+        'DailyLimit',
+        'StorageFailure',
+        'Unknown',
+      ])
+      .nullable(),
+    httpStatus: z.number().int().min(100).max(599).nullable(),
+  })
+  .strict()
 export const evidenceSchema = z
   .object({
     id: z.string().min(1),
@@ -302,6 +359,7 @@ export const assessmentSchema = z
     event: eventSchema,
     resources: z.array(resourceSchema),
     scopeComplete: z.boolean(),
+    modelInvocations: z.array(modelInvocationSchema).optional(),
     impactDiscoveryOutcome: impactDiscoveryOutcomeSchema.optional(),
     discoveryScope: z
       .object({
@@ -311,6 +369,7 @@ export const assessmentSchema = z
         profileRegistryVersion: z.string(),
         resourceCount: z.number().int().nonnegative(),
         scopeComplete: z.boolean(),
+        failureDetails: z.array(discoveryFailureSchema).optional(),
       })
       .strict()
       .optional(),
@@ -348,6 +407,9 @@ export const approvalSchema = z
 export type LifecycleEvent = z.infer<typeof eventSchema>
 export type ResourceImpact = z.infer<typeof resourceSchema>
 export type Evidence = z.infer<typeof evidenceSchema>
+export type DiscoveryFailure = z.infer<typeof discoveryFailureSchema>
+export type DiscoveryFailureSource = DiscoveryFailure['source']
+export type ModelInvocation = z.infer<typeof modelInvocationSchema>
 export type Decision = z.infer<typeof decisionSchema>
 export type Explanation = z.infer<typeof explanationSchema>
 export type WorkItem = z.infer<typeof workItemSchema>

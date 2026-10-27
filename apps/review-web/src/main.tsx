@@ -27,6 +27,37 @@ const classificationReasonLabels: Record<string, string> = {
   NoApplicableProfile: '対応する判定プロファイルなし',
   LegacyUnrecorded: '旧データのため理由未記録',
 }
+const modelStageLabels: Record<string, string> = {
+  Decision: '影響判断',
+  Explanation: '説明・作業案生成',
+}
+const modelStatusLabels: Record<string, string> = {
+  NotRequired: '実行対象外',
+  NotConfigured: '未設定',
+  NotStarted: '実行開始前に停止',
+  Succeeded: '完了',
+  SucceededWithFallback: '完了（必須説明を固定テンプレートで補完）',
+  Failed: '失敗',
+}
+const operationSourceLabels: Record<string, string> = {
+  ServiceHealthAdvisory: 'Service Health通知',
+  ResourceGraphInventory: 'Resource Graphインベントリ',
+  ServiceHealthImpactedResources: 'Service Health影響リソース',
+  AdvisorRetirementRecommendations: 'Azure Advisor推奨',
+  OfficialReference: '公式参照',
+}
+const failureCategoryLabels: Record<string, string> = {
+  Unauthorized: '認証エラー',
+  Forbidden: '権限エラー',
+  Throttled: 'スロットリング',
+  UpstreamUnavailable: '上流サービス障害',
+  Timeout: 'タイムアウト',
+  InvalidResponse: '応答形式不正',
+  NetworkError: 'ネットワークエラー',
+  Unknown: '原因未分類',
+  DailyLimit: '日次呼出上限',
+  StorageFailure: '監査保存失敗',
+}
 
 function App() {
   const [items, setItems] = useState<Assessment[]>([]),
@@ -252,6 +283,39 @@ function App() {
                       {current.decision.modelVersion} ·{' '}
                       {current.decision.status}
                     </p>
+                    <details>
+                      <summary>モデル呼び出しの監査記録</summary>
+                      {!current.modelInvocations?.length ? (
+                        <p>
+                          旧評価レコードのため、モデル実行記録はありません。
+                        </p>
+                      ) : (
+                        <ul>
+                          {current.modelInvocations.map((invocation) => (
+                            <li key={invocation.correlationId}>
+                              {modelStageLabels[invocation.stage]} —{' '}
+                              {modelStatusLabels[invocation.status]} —{' '}
+                              {invocation.provider} / {invocation.deployment}
+                              {invocation.modelVersion
+                                ? ` / ${invocation.modelVersion}`
+                                : ''}
+                              {invocation.durationMs !== null
+                                ? ` / ${invocation.durationMs} ms`
+                                : ''}
+                              {invocation.failureCategory
+                                ? ` / ${failureCategoryLabels[invocation.failureCategory]}${invocation.httpStatus ? ` HTTP ${invocation.httpStatus}` : ''}`
+                                : ''}
+                              {' / 照会ID '}
+                              {invocation.correlationId}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <p>
+                        入力・プロンプト・モデル応答はこの画面やApplication
+                        Insightsのトレースには含めません。
+                      </p>
+                    </details>
                   </>
                 )}
                 <CorrectionForm
@@ -332,6 +396,31 @@ function App() {
                     <p>
                       取得リソース数: {current.discoveryScope.resourceCount}
                     </p>
+                    {current.discoveryScope.failureDetails?.length ? (
+                      <>
+                        <h4>取得失敗の内訳</h4>
+                        <ul>
+                          {current.discoveryScope.failureDetails.map(
+                            (failure) => (
+                              <li key={failure.correlationId}>
+                                {operationSourceLabels[failure.source]} —{' '}
+                                {failureCategoryLabels[failure.category]}
+                                {failure.httpStatus
+                                  ? ` (HTTP ${failure.httpStatus})`
+                                  : ''}
+                                {' / 照会ID '}
+                                {failure.correlationId}
+                              </li>
+                            ),
+                          )}
+                        </ul>
+                        <p>
+                          照会IDでApplication
+                          InsightsのExternalDependencyFailureまたはModelInvocation記録を検索できます。入力内容・Resource
+                          IDは監査トレースへ記録しません。
+                        </p>
+                      </>
+                    ) : null}
                   </details>
                 )}
                 {current.impactDiscoveryOutcome === 'NoResourcesDetected' && (
