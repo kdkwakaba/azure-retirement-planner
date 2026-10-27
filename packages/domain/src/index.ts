@@ -48,6 +48,8 @@ export function canonical(value: unknown): string {
 }
 export const hash = (value: unknown) =>
   createHash('sha256').update(canonical(value)).digest('hex')
+
+export { isTranslatableOfficialEvidence } from '@arp/contracts'
 export type EventVersionComparison =
   'IncomingNewer' | 'IncomingStale' | 'Same' | 'Conflict'
 export function compareEventVersion(

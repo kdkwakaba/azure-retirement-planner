@@ -25,7 +25,7 @@
 | IMP-19 | Evaluation: 30ケース、108回、精度・Recall・Override | 07–16 | 当時版・独立正解集合、指標・未評価の記録 | `evaluateCases`の純粋micro指標計算と、Observation IDに結び付けた全件採点・split別集計の`evaluateManifest`を追加し、反復Observation数と独立scenario数を区別して表示。`validateEvaluationManifest`でsource区分・参照・asOf・Hash・Model/Prompt/Rule/Contract版・実行・レビュー状態を記録し、同じRetirement familyのSplit漏れ、反復観測のinputHash不一致、raw payloadフィールドを拒否。合成テスト済。独立正解集合、正解ラベル作成、30／108回のモデル品質評価、閾値合意は未実装 | L / QA+Architect / Yes |
 | IMP-20 | Demo/UAT: 同一実環境で3分ライブ | 10,14–19 | 事前サインイン、実通知、判断→根拠→承認→登録 | リハーサル待ち。合成をライブ取得と偽らない | M / Presenter+QA / No |
 | IMP-21 | Cleanup: 作成台帳と専用資源・Project・秘密の撤去 | 04,15 | 削除対象照合、残存保持・残費用報告 | 専用Azure資源・Entra App・資格情報を作成済。撤去はPoC終了時に別途実行 | M / Cloud+Owner / No |
-| IMP-22 | UI: Microsoft公式Evidenceの日本語参考訳 | 03,13 | 原文保持、公式Source限定、MI、翻訳と判断根拠の分離、版付きCache | Translator F0/S1の任意設定、Entra MI翻訳API、Blob cache、画面の遅延翻訳を実装中。ビルド・合成検証・Azure配置・日本語表示は未確認。PoC Translator費用・F0可用性の確認が必要 | M / Dev+Cloud / Yes |
+| IMP-22 | UI: Microsoft公式Evidenceの日本語参考訳 | 03,13 | 原文保持、公式Source限定、MI、翻訳と判断根拠の分離、版付きCache | Service Health通知Evidenceも正規化イベント・Content Hash・Evidence/Subject IDで出所検証して翻訳対象にする変更を実装。PR CI・配置・実通知での日本語表示確認待ち。PoC Translator SKU/費用確認が必要 | M / Dev+Cloud / Yes |
 
 ## 未確定情報と次のゲート
 
