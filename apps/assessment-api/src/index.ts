@@ -16,6 +16,7 @@ import {
   verifyWriteRequest,
   logProcessingFailure,
   withProcessingFailureLog,
+  translateOfficialHtmlToJapanese,
 } from '@arp/adapters'
 import { assessSnapshot, config, synchronize } from './service.ts'
 
@@ -83,6 +84,73 @@ app.http('api', {
         if (Buffer.byteLength(content) > 200000)
           return reply(413, { error: 'Request too large' })
         const payload: unknown = JSON.parse(content)
+        if (path === 'translate-evidence') {
+          const body = z
+            .object({
+              assessmentId: z.string().regex(/^[a-f0-9]{64}$/),
+              evidenceId: z.string().min(1).max(200),
+            })
+            .strict()
+            .parse(payload)
+          const resourceId = process.env.TRANSLATOR_RESOURCE_ID
+          if (!resourceId)
+            return reply(503, {
+              error: 'Japanese translation is not configured',
+            })
+          const assessment = await store.assessment(body.assessmentId)
+          const evidence = assessment.event.evidence.find(
+            (item) => item.id === body.evidenceId,
+          )
+          if (
+            !evidence ||
+            evidence.sourceType !== 'Microsoft' ||
+            !evidence.officialUrl ||
+            !isMicrosoftOfficialUrl(evidence.officialUrl)
+          )
+            return reply(404, {
+              error: 'Official Microsoft evidence not found',
+            })
+          if (evidence.fact.length > 50_000)
+            return reply(413, { error: 'Evidence is too large to translate' })
+          const translationId = hash({
+            sourceVersion: evidence.sourceVersion,
+            sourceFact: hash(evidence.fact),
+            targetLanguage: 'ja',
+            provider: 'Azure AI Translator',
+            apiVersion: '3.0',
+          })
+          try {
+            const cached = await store.get<{ translatedText: string }>(
+              'translations',
+              translationId,
+            )
+            return reply(200, {
+              translatedText: cached.translatedText,
+              provider: 'Azure AI Translator',
+              cached: true,
+            })
+          } catch (error) {
+            if ((error as { statusCode?: number }).statusCode !== 404)
+              throw error
+          }
+          const translatedText = await translateOfficialHtmlToJapanese({
+            resourceId,
+            text: evidence.fact,
+          })
+          await store.put('translations', translationId, {
+            sourceVersion: evidence.sourceVersion,
+            translatedText,
+            targetLanguage: 'ja',
+            provider: 'Azure AI Translator',
+            apiVersion: '3.0',
+            translatedAt: new Date().toISOString(),
+          })
+          return reply(200, {
+            translatedText,
+            provider: 'Azure AI Translator',
+            cached: false,
+          })
+        }
         if (path === 'revise') {
           requireUserRole(principal, apiRolePolicy.review)
           const body = z
@@ -179,6 +247,22 @@ app.http('api', {
     }
   },
 })
+
+function isMicrosoftOfficialUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return (
+      url.protocol === 'https:' &&
+      !url.username &&
+      !url.password &&
+      ['aka.ms', 'azure.com', 'microsoft.com'].some(
+        (host) => url.hostname === host || url.hostname.endsWith(`.${host}`),
+      )
+    )
+  } catch {
+    return false
+  }
+}
 app.http('web', {
   route: '{*path}',
   authLevel: 'anonymous',
@@ -269,3 +353,4 @@ app.timer('projectProgress', {
       await new AzureStore(config().account).recordProjectProgress(progress)
     }),
 })
+
