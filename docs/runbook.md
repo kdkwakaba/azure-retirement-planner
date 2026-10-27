@@ -26,7 +26,7 @@ az bicep build --file infra/bootstrap/permissions.bicep --stdout
 4. `infra/bootstrap/oidc.bicep`でGitHub main branch subjectのUAMI/Federationを作成。GitHub APIから取得した`githubOwnerId`と`githubRepositoryId`も渡す。新規Repositoryのsubjectは`repo:OWNER@OWNER_ID/REPOSITORY@REPOSITORY_ID:ref:refs/heads/main`であり、azure/loginが記録する実際のsubjectと完全一致させる。旧形式を使うRepositoryは実際の形式を確認してテンプレートを調整し、ワイルドカードへ緩和しない。通常CDのIdentityへ専用RGの必要なデプロイ権限を別途付与。Owner／権限付与権限は通常CDへ付けない。
 5. Repository Variablesに`AZURE_CLIENT_ID`、`AZURE_TENANT_ID`、`AZURE_SUBSCRIPTION_ID`、`AZURE_RESOURCE_GROUP`、`AZURE_LOCATION`、`AZURE_HOST_STORAGE_BLOB_ENDPOINT`、`ENTRA_CLIENT_ID`、`TARGET_SUBSCRIPTION_IDS`（カンマ区切り）、`DECISION_ENDPOINT`を設定。いずれも非機密設定で、秘密はVariablesへ入れない。
 6. mainのCI合格後、Manual PoC deploymentの`plan`を起動して差分とHashを確認し、同じCI runで`apply`、`infrastructure_only=true`を起動。最初はアプリ配置を行わずMIと保管先を作る。
-7. 管理者がoutputsを用いて`infra/bootstrap/permissions.bicep`を適用。データ用Blob/Queue/Table、ホストStorage、Key Vaultに用途別ロールを付与する。ホストBlob OwnerはFunctionsホストの要件であり、評価対象へのOwnerではない。評価対象はAPIのMIに許可Subscription/MGのReaderを別途付与。Exporterには評価対象読取を与えない。Foundry呼出ロールはAPIのMIに対象Foundryアカウント範囲で付与する。
+7. 管理者がoutputsを用いて`infra/bootstrap/permissions.bicep`を適用。データ用Blob/Queue/Table、ホストStorage、Key Vaultに用途別ロールを付与する。TranslatorもF0を既定としてデプロイし、出力の`translatorName`を`translatorAccountName`へ渡してAPI Managed IdentityへTranslatorリソース範囲の`Cognitive Services User`を付与する。Subscriptionに既存F0がある場合はS1等への変更費用を確認し、未確認のまま適用しない。ホストBlob OwnerはFunctionsホストの要件であり、評価対象へのOwnerではない。評価対象はAPIのMIに許可Subscription/MGのReaderを別途付与。Exporterには評価対象読取を与えない。Foundry呼出ロールはAPIのMIに対象Foundryアカウント範囲で付与する。
 8. `entra-client-secret`をKey Vaultに直接保存。PoCのGitHub Tokenも必要になった時点で`github-token`へ保存し、有効期限と実権限を台帳へ記録。秘密をログ・CLI引数・Gitへ残さない。Secretを完全排除した設計とは主張しない。
 9. Entraのcallbackを更新し、再度plan/applyを確認して`infrastructure_only=false`で検査済みの同一ZIPを配置。RBAC伝播・Key Vault参照成功を確認する。
 
@@ -38,6 +38,7 @@ az bicep build --file infra/bootstrap/permissions.bicep --stdout
 - Health Advisoryの非推奨・Retirement以外を含む入口は`infra/ingestion.bicep`。承認済み監視RGへSubscriptionごとに配置する。通知Payloadは原本保存後、ARGから正規情報を再読取する。受信本文のIDや日付を正本として使わない。配送試験を実Retirement取得と同一視しない。
 - Decision-1のDeployment、API設定、API MIへのFoundry限定推論権限を反映済み。実データ通知1件のv1応答に加え、合成3事例×3回の型・確率契約検証を完了（9/9成功、9/9 Unknownを含みAbstained相当）。これは判断精度の実証ではない。CLI利用者のCognitive Services UserはFoundryアカウント範囲に限定。説明モデルと実環境精度評価は未完了。応答契約不一致は原応答をAzureへ保存してUnavailable＋人間判断。採用契約は`packages/adapters/src/models.ts`、Prompt/Rule Versionはコードで追跡する。別モデルへの自動切替はない。
 - Unknown／Possible／Verification Requiredまたは確認フラグ付きConfirmedは分類理由・不足属性をレビュー欄に示す。説明モデル未設定・利用不可の場合は、未確定理由とEvidenceから確認タスクを決定的に生成する。いずれもRecommendedの確認であり、移行必須やAzure変更ではない。
+- Microsoft公式Evidenceの「日本語の参考訳を表示」は利用者操作時だけ実行する。訳文はAzure内に版付きでキャッシュされ、判断・Evidence・承認Hashには使わない。原文と公式リンクを必ず残し、判断時は原文を確認する。翻訳の失敗・未設定は原文表示を維持し、公式Evidenceの取得失敗として扱わない。
 - 無関係なHealth Advisoryを自動的に対象外へ分類しない。Reviewerが訂正欄で対象外を選ぶ場合、公式分類は保持し、理由をHuman Evidenceとして記録する。対象外の新版は優先度・作業案を空にし、承認・外部登録を拒否する。誤判定を訂正するときは根拠を確認して対象／未確定へ再評価し、以前の承認を再利用しない。
 - 説明モデルはJSON Schema対応とMIを確認。Resource/Workload/Ownerは別名化し、選別済み構成属性だけ送る。公式本文に機密が混ざらないことをSP-04で確認する。現在は外部URL本文の自動取得を行わない。
 - 外部Issue作成の成否が不明でOutboxが`Sending`の場合、Queue再試行で`<!-- arp:<Work Item ID> -->`をIssue一覧から照合する。見つかった場合のみ既存Issue IDを保存してProject追加へ進み、見つからない／一覧検索が不完全な場合は状態を`Sending`のまま保留し、新規Issueを作成しない。検索可能範囲・権限エラーを確認し、安易にOutboxを`Pending`へ戻さない。Issueが`IssueCreated`でProject追加だけ失敗した場合は保存済みIDからProject追加を再試行する。
@@ -132,3 +133,4 @@ traces
 - 再投入前にfailure stage、Functions invocation、Storage Queueのdequeue count、Outbox state、承認Hashを照合する。ExporterではGitHub Issueのmarkerと保存済Issue IDを先に照合し、`Sending`が未解決の場合は再投入しない。IssueCreatedのProject失敗は既存Issueを確認してからProject段階のみを再開する。
 - 原因を直し、対象メッセージが現行承認・現行評価へ結び付くことを確認後、OperatorがPoison Queueから個別に再投入する。再投入後に重複Issue、承認外登録、対象リソース変更がないことを確認し、時刻・相関ID・件数・結果を運用記録へ残す。現状、専用の自動再投入UI/APIはない。
 - Alert発報は障害の調査開始を示すだけで、処理失敗の全件捕捉やPoison Queue到達を保証しない。Functions失敗、Queue深度、ARG throttling、GitHub 403/429と合わせて確認する。
+
