@@ -118,7 +118,7 @@ Spikeは3代表シナリオ×3回＝9回。機能は30ケース（既存24＋非
 
 `@arp/domain`の`evaluateCases`は、正解と観測結果を分離した入力から上記の基本指標をmicro集計する。影響度・優先度の重み付き一致はLow→Medium→High→CriticalまたはP1→P2→P3→P4を等間隔とし、最大3段階差を0、完全一致を1とする線形スコアを暫定採用する。分母が0の指標は0%にせず`null`とする。Owner棄権数、生成時／検証後の架空Resource、検証経由Recall、未対応影響の過小評価、廃止通知の見逃し件数を別に出す。作業Precisionは全提案を予測集合、必須作業を正解集合として計算するため、追加Recommended作業の妥当性は別途人間が確認する。
 
-`validateEvaluationManifest`は評価観測ごとに、Synthetic／OfficialSnapshot／LiveReconstructionの区分、参照ID、取得時刻、評価基準日、内容Hash、モデル／Deployment／Prompt／Rule／契約版、入力・出力Hash、実行時刻、評価者数・レビュー状態を記録する。Raw Payloadを含む未宣言フィールドは拒否する。更新版を含む同一Retirement familyは一つのSplitに固定し、繰返し観測を開発・校正・Holdoutへ分割しない。同一Retirement family／scenarioの反復は同じinputHashを要求し、入力差をモデル揺れとして数えない。独立レビューや合議の有無は記録するが、評価基盤の成立条件として二名レビューを強制しない。これは計算・来歴検証基盤であり、正解集合、独立評価者、108回のモデル評価、閾値合意が完了したことを意味しない。評価入力は非実データfixtureまたは承認された保護領域の外部データを使い、実Payload・個人情報をリポジトリやCIへ入れない。
+`evaluateManifest`は全Observationと採点結果を一対一で照合し、Development／Calibration／Holdoutの指標を別々に算出する。各集計にはObservation IDを残し、分割横断の単一スコアを出さない。`validateEvaluationManifest`は評価観測ごとに、Synthetic／OfficialSnapshot／LiveReconstructionの区分、参照ID、取得時刻、評価基準日、内容Hash、モデル／Deployment／Prompt／Rule／契約版、入力・出力Hash、実行時刻、評価者数・レビュー状態を記録する。Raw Payloadを含む未宣言フィールドは拒否する。更新版を含む同一Retirement familyは一つのSplitに固定し、繰返し観測を開発・校正・Holdoutへ分割しない。同一Retirement family／scenarioの反復は同じinputHashを要求し、入力差をモデル揺れとして数えない。独立レビューや合議の有無は記録するが、評価基盤の成立条件として二名レビューを強制しない。これは計算・来歴検証基盤であり、正解集合、独立評価者、108回のモデル評価、閾値合意が完了したことを意味しない。評価入力は非実データfixtureまたは承認された保護領域の外部データを使い、実Payload・個人情報をリポジトリやCIへ入れない。
 
 ## 予算と制御
 

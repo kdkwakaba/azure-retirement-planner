@@ -1,4 +1,9 @@
 import type { Impact, Priority } from '@arp/contracts'
+import { validateEvaluationManifest } from './evaluation-manifest.ts'
+import type {
+  EvaluationManifest,
+  EvaluationSplit,
+} from './evaluation-manifest.ts'
 
 export interface EvaluationCase {
   caseId: string
@@ -28,6 +33,23 @@ export interface EvaluationCase {
     humanJudgementCount: number
     retirementDetected: boolean
   }
+}
+
+export interface EvaluationScore {
+  observationId: string
+  result: EvaluationCase
+}
+
+export interface SplitEvaluationResult {
+  observationIds: string[]
+  metrics: EvaluationReport
+}
+
+export interface EvaluationBenchmarkReport {
+  schemaVersion: '1'
+  benchmarkVersion: string
+  observationCount: number
+  splits: Record<EvaluationSplit, SplitEvaluationResult | null>
 }
 
 export interface EvaluationRate {
@@ -297,5 +319,64 @@ export function evaluateCases(cases: EvaluationCase[]): EvaluationReport {
       expectedNotices,
       missRate: expectedNotices ? retirementMisses / expectedNotices : null,
     },
+  }
+}
+
+export function evaluateManifest(
+  input: EvaluationManifest,
+  scores: EvaluationScore[],
+): EvaluationBenchmarkReport {
+  const manifest = validateEvaluationManifest(input)
+  const observationsById = new Map(
+    manifest.cases.map((observation) => [
+      observation.observationId,
+      observation,
+    ]),
+  )
+  const scoresBySplit: Record<EvaluationSplit, EvaluationScore[]> = {
+    Development: [],
+    Calibration: [],
+    Holdout: [],
+  }
+  const scoreByObservationId = new Map<string, EvaluationScore>()
+
+  for (const score of scores) {
+    if (!score.observationId.trim())
+      throw new Error('Evaluation score observationId must be non-empty')
+    if (scoreByObservationId.has(score.observationId))
+      throw new Error('Evaluation scores contain duplicate observationId')
+    const observation = observationsById.get(score.observationId)
+    if (!observation)
+      throw new Error('Evaluation score references an unknown observationId')
+    scoreByObservationId.set(score.observationId, score)
+  }
+
+  if (scoreByObservationId.size !== observationsById.size)
+    throw new Error('Evaluation scores must cover every manifest observation')
+  for (const observation of manifest.cases) {
+    const score = scoreByObservationId.get(observation.observationId)
+    if (score) scoresBySplit[observation.split].push(score)
+  }
+
+  const splits = Object.fromEntries(
+    (['Development', 'Calibration', 'Holdout'] as const).map((split) => {
+      const splitScores = scoresBySplit[split]
+      return [
+        split,
+        splitScores.length
+          ? {
+              observationIds: splitScores.map((score) => score.observationId),
+              metrics: evaluateCases(splitScores.map((score) => score.result)),
+            }
+          : null,
+      ]
+    }),
+  ) as Record<EvaluationSplit, SplitEvaluationResult | null>
+
+  return {
+    schemaVersion: '1',
+    benchmarkVersion: manifest.benchmarkVersion,
+    observationCount: manifest.cases.length,
+    splits,
   }
 }
