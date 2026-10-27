@@ -42,6 +42,26 @@ test('UI writes preserve the approved payload', async (t) => {
   })
 })
 
+test('UI translation sends only the assessment and official evidence identifiers', async (t) => {
+  const body = { assessmentId: 'a'.repeat(64), evidenceId: 'official-evidence' }
+  t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit) => {
+    assert.equal(url, '/api/translate-evidence')
+    assert.equal(init.method, 'POST')
+    assert.equal(init.credentials, 'same-origin')
+    assert.deepEqual(JSON.parse(String(init.body)), body)
+    return Response.json({
+      translatedText: '<p>廃止日</p>',
+      provider: 'Azure AI Translator',
+      cached: true,
+    })
+  })
+  assert.deepEqual(await request('translate-evidence', 'POST', body), {
+    translatedText: '<p>廃止日</p>',
+    provider: 'Azure AI Translator',
+    cached: true,
+  })
+})
+
 test('UI authentication failures do not display remote response details', async (t) => {
   t.mock.method(
     globalThis,

@@ -212,6 +212,19 @@ pre {
   margin-top: 8px;
   overflow-wrap: anywhere;
 }
+.evidence-translation {
+  margin-top: 18px;
+  padding: 14px;
+  border-left: 3px solid #4b7d75;
+  background: #f0f6f4;
+}
+.evidence-translation h4 {
+  margin: 0 0 8px;
+}
+.evidence-translation .translation-notice {
+  color: #526c6d;
+  font-size: 13px;
+}
 .work {
   border: 1px solid #dce6e3;
   padding: 16px;
