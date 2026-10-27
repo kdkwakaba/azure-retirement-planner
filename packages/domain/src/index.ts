@@ -438,7 +438,7 @@ export function resourceVerificationWorkItems(input: {
   eventId: string
   workloadId: string
   priority: Priority | null
-  eventEvidenceIds: string[]
+  eventEvidence: Evidence[]
   resources: ResourceImpact[]
 }): WorkItem[] {
   const groups = new Map<string, ResourceImpact[]>()
@@ -466,9 +466,25 @@ export function resourceVerificationWorkItems(input: {
     const attributes = [...sample.missingAttributes].sort()
     const resourceTypes = [...new Set(resources.map((r) => r.type))].sort()
     const resourceIds = [...new Set(resources.map((r) => r.id))].sort()
+    const resourceIdSet = new Set(resourceIds.map((id) => id.toLowerCase()))
+    const eventEvidenceIds = input.eventEvidence
+      .filter((item) => {
+        const resourceSubjects = item.subjectIds.filter((subjectId) =>
+          input.resources.some(
+            (resource) => resource.id.toLowerCase() === subjectId.toLowerCase(),
+          ),
+        )
+        return resourceSubjects.length
+          ? resourceSubjects.some((subjectId) =>
+              resourceIdSet.has(subjectId.toLowerCase()),
+            )
+          : item.subjectIds.includes(input.eventId) ||
+              item.subjectIds.includes(input.workloadId)
+      })
+      .map((item) => item.id)
     const evidenceIds = [
       ...new Set([
-        ...input.eventEvidenceIds,
+        ...eventEvidenceIds,
         ...resources.flatMap((r) => r.evidenceIds),
       ]),
     ].sort()

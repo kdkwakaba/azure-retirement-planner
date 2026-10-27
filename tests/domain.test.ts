@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  type Evidence,
   approvalSchema,
   assessmentSchema,
   dateSchema,
@@ -691,7 +692,7 @@ test('resource uncertainty produces evidence-backed verification work without re
     eventId: a.event.id,
     workloadId: a.workloadId,
     priority: 'P2',
-    eventEvidenceIds: a.event.evidence.map((e) => e.id),
+    eventEvidence: a.event.evidence,
     resources,
   })
   assert.equal(work.length, 3)
@@ -709,12 +710,42 @@ test('resource uncertainty produces evidence-backed verification work without re
   assert.ok(noProfile.every((item) => item.resourceIds.length === 1))
   assert.equal(noProfile[0]!.category, 'Impact Verification')
   assert.ok(noProfile[0]!.evidenceIds.includes(a.event.evidence[0]!.id))
+  const lbId = `${resourceId}-unmapped-lb`
+  const storageId = `${resourceId}-unmapped-storage`
+  const lbEvidence: Evidence = {
+    ...a.event.evidence[0]!,
+    id: hash('lb-only-evidence'),
+    subjectIds: [lbId],
+  }
+  const storageEvidence: Evidence = {
+    ...a.event.evidence[0]!,
+    id: hash('storage-only-evidence'),
+    subjectIds: [storageId],
+  }
+  const mixedWork = resourceVerificationWorkItems({
+    eventId: a.event.id,
+    workloadId: a.workloadId,
+    priority: 'P2',
+    eventEvidence: [...a.event.evidence, lbEvidence, storageEvidence],
+    resources: resources.slice(1, 3).map((resource) => ({
+      ...resource,
+      workloadId: a.workloadId,
+    })),
+  })
+  const lbWork = mixedWork.find((item) => item.resourceIds.includes(lbId))!
+  const storageWork = mixedWork.find((item) =>
+    item.resourceIds.includes(storageId),
+  )!
+  assert.ok(lbWork.evidenceIds.includes(lbEvidence.id))
+  assert.ok(!lbWork.evidenceIds.includes(storageEvidence.id))
+  assert.ok(storageWork.evidenceIds.includes(storageEvidence.id))
+  assert.ok(!storageWork.evidenceIds.includes(lbEvidence.id))
   assert.ok(
     resourceVerificationWorkItems({
       eventId: a.event.id,
       workloadId: a.workloadId,
       priority: 'P2',
-      eventEvidenceIds: a.event.evidence.map((e) => e.id),
+      eventEvidence: a.event.evidence,
       resources: [base],
     }).length === 0,
   )
