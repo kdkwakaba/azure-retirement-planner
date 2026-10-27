@@ -83,7 +83,9 @@ export function isTranslatableOfficialEvidence(
     evidence.sourceType !== stored.sourceType ||
     evidence.fact !== stored.fact ||
     evidence.sourceVersion !== stored.sourceVersion ||
-    evidence.officialUrl !== stored.officialUrl
+    evidence.officialUrl !== stored.officialUrl ||
+    evidence.observedAt !== stored.observedAt ||
+    JSON.stringify(evidence.subjectIds) !== JSON.stringify(stored.subjectIds)
   )
     return false
 
