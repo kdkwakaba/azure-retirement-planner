@@ -3,6 +3,7 @@ import workflowPolicyData from '../../../config/workflow-policy.json' with { typ
 import { randomUUID } from 'node:crypto'
 import type {
   Assessment,
+  Evidence,
   Explanation,
   LifecycleEvent,
   ResourceImpact,
@@ -17,6 +18,7 @@ import {
   validateAssessment,
   refreshAssessment,
   resourceVerificationWorkItems,
+  carryForwardHumanContext,
   impactDiscoveryOutcome,
   canSkipAssessmentReview,
   applyWorkflowPolicy,
@@ -34,6 +36,7 @@ import {
   required,
   unavailableDecision,
   applicableProfileIds,
+  fetchOfficialProfileEvidence,
   PROFILE_RESOURCE_TYPES,
   PROFILE_REGISTRY_VERSION,
 } from '@arp/adapters'
@@ -202,7 +205,7 @@ export async function assessSnapshot(message: unknown): Promise<void> {
     .parse(message)
   const settings = config(),
     store = new AzureStore(settings.account)
-  const event = await store.get<LifecycleEvent>('events', job.eventVersionId)
+  let event = await store.get<LifecycleEvent>('events', job.eventVersionId)
   const snapshot = await store.get<Awaited<ReturnType<typeof discover>>>(
     'discovery',
     job.snapshotId,
@@ -256,6 +259,19 @@ export async function assessSnapshot(message: unknown): Promise<void> {
       })
   }
   const profiles = applicableProfileIds(event)
+  const referenceEvidence: Evidence[] = []
+  for (const profileId of profiles) {
+    try {
+      referenceEvidence.push(await fetchOfficialProfileEvidence(profileId))
+    } catch {
+      complete = false
+      missing.push(`公式参照の取得に失敗: ${profileId}`)
+    }
+  }
+  event = {
+    ...event,
+    evidence: [...event.evidence, ...referenceEvidence],
+  }
   const workloads = [
     ...new Set(candidates.map((r) => r.workloadId ?? 'unassigned')),
   ]
@@ -316,9 +332,14 @@ async function assessWorkload(
   const asOf = new Date().toISOString().slice(0, 10)
   const policyHash = hash(workflowPolicyData)
   const policyParsed = workflowPolicySchema.safeParse(workflowPolicyData)
+  const officialReferenceVersions = event.evidence
+    .filter((item) => item.officialUrl !== null)
+    .map((item) => item.sourceVersion)
+    .sort()
   const id = hash({
     workflowPolicyHash: policyHash,
     eventVersionId: event.versionId,
+    ...(officialReferenceVersions.length ? { officialReferenceVersions } : {}),
     workloadId,
     timeKey: event.milestones.some((m) => m.kind !== 'Deprecation' && m.date)
       ? asOf
@@ -333,8 +354,10 @@ async function assessWorkload(
     decisionRevision: decisionRevision(limit),
   })
   const prior = await store.head(hash({ eventId: event.id, workloadId }))
+  let previousAssessment: Assessment | null = null
   if (prior) {
     const current = await store.assessment(prior.assessmentId)
+    previousAssessment = current
     const versionComparison = compareEventVersion(current.event, event)
     if (versionComparison === 'IncomingStale') return
     if (versionComparison === 'Conflict') {
@@ -559,5 +582,8 @@ async function assessWorkload(
   })
   assessment.validationErrors = validateAssessment(assessment)
   assessment.packageHash = packageHash(assessment)
-  await store.commitAssessment(assessment, prior)
+  const finalAssessment = previousAssessment
+    ? carryForwardHumanContext(assessment, previousAssessment)
+    : assessment
+  await store.commitAssessment(finalAssessment, prior)
 }
