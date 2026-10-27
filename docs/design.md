@@ -254,14 +254,14 @@ H1＝PoC実施中に保持し終了時に削除、H2＝現行状態と終了時�
 | WorkloadResourceMapping／所属 | mappingId、workloadId、resourceKey、有効期間、根拠 | 所属変更 | H2／構成・タグ・人間 |
 | BusinessContext／業務版 | contextVersionId、重要度、Owner、RTO/RPO、禁止期間、属性別出典 | 更新・訂正 | H1／人間・台帳 |
 | DecisionInput／固定入力 | inputId、runId、Snapshot参照、特徴量、欠損、Hash | 判断前 | H1／正本・計算 |
-| DecisionResult／判断 | decisionId、inputId、回答・分布、棄権、ルール後結果、版 | 推論・ルール | H1／モデル・ルール |
+| DecisionResult／判断 | decisionId、inputId、回答・分布、棄権、ルール後結果、版、`modelInvocations[]`（stage・deployment・version・status・duration・correlationId・安全な失敗分類） | 推論・ルール | H1／モデル・ルール |
 | Explanation／主張群 | explanationId、decisionId、claims、10項目 | 生成・訂正 | H1／LLM・人間 |
 | Evidence／根拠 | evidenceId、sourceVersionId、対象、位置、種別、Hash、時刻 | 取得・導出 | H1／各出典 |
 | WorkItem／作業版 | workItemVersionId、logicalId、runId、属性・根拠・状態 | 生成・修正 | H1／公式・社内・AI |
 | HumanReview／承認 | reviewId、packageHash、対象版、主体、結果、理由、scopeDisposition、reviewEvidenceIds | レビュー | H1／人間 |
 | Feedback／訂正 | feedbackId、対象、旧新値、理由、根拠、有効期間 | 訂正・評価 | H1／人間 |
-| AssessmentRun／実行 | runId、eventVersionId、scopeId、各版、状態、coverage | 実行・段階完了 | H1／基盤 |
-| ProcessingError／失敗 | errorId、runId、stage、分類、試行、マスク詳細 | 失敗・復旧 | H1／基盤 |
+| AssessmentRun／実行 | runId、eventVersionId、scopeId、各版、状態、coverage、取得元別`failureDetails[]` | 実行・段階完了 | H1／基盤 |
+| ProcessingError／失敗 | errorId、runId、source/stage、category、HTTP status、correlationId、試行。例外文面やペイロードは含めない | 失敗・復旧 | H1／基盤 |
 | ResourceSnapshot／構成版 | snapshotId、resourceKey、存在、type、SKU、region、許可属性 | 読取 | H1／ARG・ARM |
 | ScopeSnapshot／範囲 | scopeId、MG、期待・取得済Subscription、ページ完了 | 探索 | H1／Azure・設定 |
 | PolicyProfile／基準 | policyVersionId、条件・閾値、承認、有効期間 | 方針更新 | H1／責任者 |
@@ -424,6 +424,10 @@ flowchart TD
 ## 23. Observability
 
 eventId／runId／workloadId／workItemId／correlationIdで追跡。受信・重複・取得Scope・ページ完了・Unknown・モデル時間/Token/棄権・承認滞留・外部成否・Poison・費用を観測する。業務期限SLAは置かず、処理失敗・不正認証・費用異常は通知する。
+
+Service Health通知、Resource Graphインベントリ、Service Health impacted resources、Advisor推奨、公式参照の失敗は、取得元、HTTP status、固定カテゴリ、照会IDをassessmentと画面に残す。複数取得元は独立して実行し、一方の失敗で他方の成功結果を捨てない。Application Insightsの`ExternalDependencyFailure`トレースから同じ照会IDを検索できる。
+
+Decision-1と説明生成LLMは別々の`ModelInvocation`を評価へ保存し、stage、deployment、model/prompt version、status、所要時間、照会ID、失敗カテゴリを記録する。プロンプト、入力、モデル応答、Resource ID、Subscription ID、例外メッセージは通常トレースに出さない。説明生成の必須項目が応答から欠けた場合は根拠付きの固定テンプレートで補い、`SucceededWithFallback`として表示する。Decision-1の棄権とモデル通信失敗は別の状態として扱う。
 
 ARG残クォータ・Reset・ページングを扱い、固定クォータを仮定しない。無変更再推論、長文、再生成、同時実行、ログ量を制限。Azure予算通知だけを厳密な支出停止としない。保存・監査費用は推論停止後も残る。
 

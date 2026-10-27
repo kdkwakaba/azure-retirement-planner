@@ -1,8 +1,14 @@
 import { PlatformIdentity } from './identity.ts'
 import { z } from 'zod'
-import type { Evidence, LifecycleEvent, ResourceImpact } from '@arp/contracts'
+import type {
+  DiscoveryFailure,
+  Evidence,
+  LifecycleEvent,
+  ResourceImpact,
+} from '@arp/contracts'
 import { classifyResourceDetails, hash, normalizeNotice } from '@arp/domain'
 import { jsonRequest, RemoteError } from './http.ts'
+import { recordDependencyFailure } from './operations.ts'
 
 export const credential = new PlatformIdentity()
 function subscriptionResourceId(value: unknown): string | null {
@@ -88,19 +94,34 @@ export async function discover(subscriptionIds: string[], tenantId: string) {
   const events: LifecycleEvent[] = [],
     resources: ResourceImpact[] = [],
     evidence: Evidence[] = [],
-    failures: string[] = []
+    failures: string[] = [],
+    failureDetails: DiscoveryFailure[] = []
   for (const subscription of subscriptionIds) {
+    let notices: Record<string, unknown>[] = []
     try {
-      const notices = await argRows(
+      notices = await argRows(
         [subscription],
         "servicehealthresources | where type =~ 'microsoft.resourcehealth/events' | where tostring(properties.EventType) =~ 'HealthAdvisory' | project id, properties, lastUpdateTime=tostring(todatetime(tolong(properties.LastUpdateTime))), retirementDate=tostring(todatetime(tolong(properties.ImpactMitigationTime)))",
       )
-      for (const notice of notices) {
+    } catch (error) {
+      failures.push('Service Health通知の取得に失敗')
+      failureDetails.push(
+        recordDependencyFailure('ServiceHealthAdvisory', error),
+      )
+    }
+    for (const notice of notices) {
+      try {
         const p = z.record(z.string(), z.unknown()).parse(notice.properties)
         const tracking = String(p.TrackingId ?? '')
         const updated = String(notice.lastUpdateTime || p.LastUpdateTime || '')
         if (!tracking || !Number.isFinite(Date.parse(updated))) {
-          failures.push(`通知の識別子・更新日時不足: ${subscription}`)
+          failures.push('Service Health通知の識別子・更新日時不足')
+          failureDetails.push(
+            recordDependencyFailure(
+              'ServiceHealthAdvisory',
+              new SyntaxError('Invalid notice fields'),
+            ),
+          )
           continue
         }
         events.push(
@@ -119,7 +140,14 @@ export async function discover(subscriptionIds: string[], tenantId: string) {
             },
           }),
         )
+      } catch (error) {
+        failures.push('Service Health通知の形式を検証できません')
+        failureDetails.push(
+          recordDependencyFailure('ServiceHealthAdvisory', error),
+        )
       }
+    }
+    try {
       const inventory = await argRows(
         [subscription],
         "resources | where type in~ ('microsoft.network/loadbalancers','microsoft.storage/storageaccounts','microsoft.insights/webtests') | project id, type, location, kind, skuName=tostring(sku.name), workloadId=tostring(tags.WorkloadId), environment=tostring(tags.Environment), ownerTeam=tostring(tags.OwnerTeam), webTestKind=tostring(properties.Kind)",
@@ -156,16 +184,20 @@ export async function discover(subscriptionIds: string[], tenantId: string) {
           },
         })
       }
-    } catch {
-      failures.push(`Service Health／構成取得失敗: ${subscription}`)
+    } catch (error) {
+      failures.push('Resource Graphインベントリの取得に失敗')
+      failureDetails.push(
+        recordDependencyFailure('ResourceGraphInventory', error),
+      )
     }
   }
   return {
     events,
     resources,
     evidence,
-    scopeComplete: failures.length === 0,
+    scopeComplete: failureDetails.length === 0,
     failures,
+    failureDetails,
   }
 }
 export async function explicitResourceIds(
@@ -175,13 +207,15 @@ export async function explicitResourceIds(
   resourceIds: Set<string>
   complete: boolean
   failures: string[]
+  failureDetails: DiscoveryFailure[]
 }> {
   // Tracking IDは公式通知から取得した英数記号だけを許可しKQLリテラル注入を避ける。
   if (!/^[A-Za-z0-9_-]+$/.test(event.trackingId))
     throw new Error('Unsupported tracking ID')
   const tracking = event.trackingId
   const ids = new Set<string>(),
-    failures: string[] = []
+    failures: string[] = [],
+    failureDetails: DiscoveryFailure[] = []
   let complete = true
   try {
     const direct = await argRows(
@@ -192,9 +226,12 @@ export async function explicitResourceIds(
       const id = subscriptionResourceId(row.resourceId)
       if (id) ids.add(id)
     })
-  } catch {
+  } catch (error) {
     complete = false
     failures.push('Service Health明示対象の取得に失敗')
+    failureDetails.push(
+      recordDependencyFailure('ServiceHealthImpactedResources', error),
+    )
   }
   if (event.kinds.includes('Retirement')) {
     try {
@@ -206,12 +243,15 @@ export async function explicitResourceIds(
         const id = subscriptionResourceId(row.resourceId)
         if (id) ids.add(id)
       })
-    } catch {
+    } catch (error) {
       complete = false
       failures.push('Advisor明示対象の取得に失敗')
+      failureDetails.push(
+        recordDependencyFailure('AdvisorRetirementRecommendations', error),
+      )
     }
   }
-  return { resourceIds: ids, complete, failures }
+  return { resourceIds: ids, complete, failures, failureDetails }
 }
 export const PROFILE_REGISTRY_VERSION = '2026-10-26.1'
 export const PROFILE_RESOURCE_TYPES = [

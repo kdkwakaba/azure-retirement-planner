@@ -3,9 +3,12 @@ import workflowPolicyData from '../../../config/workflow-policy.json' with { typ
 import { randomUUID } from 'node:crypto'
 import type {
   Assessment,
+  Decision,
+  DiscoveryFailure,
   Evidence,
   Explanation,
   LifecycleEvent,
+  ModelInvocation,
   ResourceImpact,
   WorkItem,
 } from '@arp/contracts'
@@ -41,6 +44,9 @@ import {
   RESOURCE_PROFILES,
   PROFILE_RESOURCE_TYPES,
   PROFILE_REGISTRY_VERSION,
+  failureFacts,
+  recordDependencyFailure,
+  recordModelInvocation,
 } from '@arp/adapters'
 
 export function config() {
@@ -75,12 +81,59 @@ export function decisionRevision(limit: number): string | null {
     promptVersion: PROMPT_VERSION,
   })
 }
+function emitModelInvocation(input: {
+  stage: ModelInvocation['stage']
+  assessmentId: string
+  deployment: string | undefined
+  modelVersion: string | null
+  promptVersion: string | null
+  status: ModelInvocation['status']
+  durationMs: number | null
+  failureCategory: ModelInvocation['failureCategory']
+  httpStatus: number | null
+}): ModelInvocation {
+  const record: ModelInvocation = {
+    stage: input.stage,
+    provider: 'Microsoft Foundry',
+    deployment:
+      input.deployment && /^[A-Za-z0-9._-]{1,80}$/.test(input.deployment)
+        ? input.deployment
+        : 'not-configured',
+    modelVersion: input.modelVersion,
+    promptVersion: input.promptVersion,
+    status: input.status,
+    correlationId: hash({
+      assessmentId: input.assessmentId,
+      stage: input.stage,
+    }),
+    durationMs: input.durationMs,
+    failureCategory: input.failureCategory,
+    httpStatus: input.httpStatus,
+  }
+  recordModelInvocation(record)
+  return record
+}
+function modelFailure(error: unknown): {
+  category: ModelInvocation['failureCategory']
+  httpStatus: number | null
+} {
+  if (
+    error instanceof Error &&
+    (error.message === 'Daily model call limit reached' ||
+      error.message === 'Model calls disabled by budget setting')
+  )
+    return { category: 'DailyLimit', httpStatus: null }
+  if (error instanceof Error && error.name === 'RestError')
+    return { category: 'StorageFailure', httpStatus: null }
+  return failureFacts(error)
+}
 const EVIDENCE_SCOPE_VERSION = '2'
 export async function synchronize(): Promise<{
   events: number
   resources: number
   scopeComplete: boolean
   failures: string[]
+  failureDetails: DiscoveryFailure[]
 }> {
   const settings = config(),
     store = new AzureStore(settings.account)
@@ -102,6 +155,7 @@ export async function synchronize(): Promise<{
     resources: snapshot.resources.length,
     scopeComplete: snapshot.scopeComplete,
     failures: snapshot.failures,
+    failureDetails: snapshot.failureDetails,
   }
 }
 function fallbackExplanation(
@@ -109,9 +163,33 @@ function fallbackExplanation(
   missing: string[],
   resources: ResourceImpact[],
   includeGeneralReview = true,
+  decision?: Decision,
 ): Explanation {
   const empty = {
-    impact: [],
+    impact: [
+      {
+        id: 'impact-undetermined',
+        text:
+          decision?.status === 'Proposed' &&
+          decision.impactIfUnaddressed &&
+          decision.impactDuringAndAfterChange
+            ? `Decision-1の型付き判断: 未対応時 ${decision.impactIfUnaddressed}、対応時・対応後 ${decision.impactDuringAndAfterChange}。この結果は人間による最終確認が必要です。`
+            : '業務影響を確定できる根拠が不足しています。適用条件と業務情報を確認するまで影響度の判断を保留します。',
+        kind:
+          decision?.status === 'Proposed' &&
+          decision.impactIfUnaddressed &&
+          decision.impactDuringAndAfterChange
+            ? ('Model Decision' as const)
+            : ('Unknown' as const),
+        evidenceIds: [],
+        decisionRefs:
+          decision?.status === 'Proposed' &&
+          decision.impactIfUnaddressed &&
+          decision.impactDuringAndAfterChange
+            ? ['impactIfUnaddressed', 'impactDuringAndAfterChange']
+            : [],
+      },
+    ],
     increasingFactors: [],
     reducingFactors: [],
     startRationale: [],
@@ -170,6 +248,38 @@ function fallbackExplanation(
     ],
   }
 }
+export function ensureExplanationCoverage(
+  generated: Explanation,
+  fallback: Explanation,
+  needsMissingInformation: boolean,
+  needsMicrosoftFacts: boolean,
+  needsHumanChecks: boolean,
+): { explanation: Explanation; usedFallback: boolean } {
+  const explanation = {
+    ...generated,
+    impact: generated.impact.length ? generated.impact : fallback.impact,
+    missingInformation:
+      needsMissingInformation && !generated.missingInformation.length
+        ? fallback.missingInformation
+        : generated.missingInformation,
+    microsoftFacts:
+      needsMicrosoftFacts && !generated.microsoftFacts.length
+        ? fallback.microsoftFacts
+        : generated.microsoftFacts,
+    humanChecks:
+      needsHumanChecks && !generated.humanChecks.length
+        ? fallback.humanChecks
+        : generated.humanChecks,
+  }
+  return {
+    explanation,
+    usedFallback:
+      explanation.impact !== generated.impact ||
+      explanation.missingInformation !== generated.missingInformation ||
+      explanation.microsoftFacts !== generated.microsoftFacts ||
+      explanation.humanChecks !== generated.humanChecks,
+  }
+}
 function resourceGapText(resource: ResourceImpact): string {
   const attributes = resource.missingAttributes
   if (resource.classificationReason === 'RequiredAttributeMissing')
@@ -216,15 +326,22 @@ export async function assessSnapshot(message: unknown): Promise<void> {
   if (event.classification === 'OutOfScope') return
   let explicit = new Set<string>(),
     complete = snapshot.scopeComplete
-  const missing = [...snapshot.failures]
+  const missing = [...snapshot.failures],
+    discoveryFailureDetails: DiscoveryFailure[] = [
+      ...(snapshot.failureDetails ?? []),
+    ]
   try {
     const discovery = await explicitResourceIds(event, settings.subscriptions)
     explicit = discovery.resourceIds
     complete &&= discovery.complete
     missing.push(...discovery.failures)
-  } catch {
+    discoveryFailureDetails.push(...discovery.failureDetails)
+  } catch (error) {
     complete = false
     missing.push('公式対象関連付けが未完了')
+    discoveryFailureDetails.push(
+      recordDependencyFailure('ServiceHealthImpactedResources', error),
+    )
   }
   const matched = snapshot.resources.map((r) =>
     matchProfile(event, r, explicit),
@@ -277,9 +394,12 @@ export async function assessSnapshot(message: unknown): Promise<void> {
         ...(await fetchOfficialProfileEvidence(profileId)),
         subjectIds: matchingResources.map((resource) => resource.id),
       })
-    } catch {
+    } catch (error) {
       complete = false
       missing.push(`公式参照の取得に失敗: ${profileId}`)
+      discoveryFailureDetails.push(
+        recordDependencyFailure('OfficialReference', error),
+      )
     }
   }
   event = {
@@ -340,6 +460,7 @@ export async function assessSnapshot(message: unknown): Promise<void> {
         profileRegistryVersion: PROFILE_REGISTRY_VERSION,
         resourceCount: snapshot.resources.length,
         scopeComplete: complete,
+        failureDetails: discoveryFailureDetails,
       },
     )
   }
@@ -424,19 +545,46 @@ async function assessWorkload(
     outcome: impactOutcome,
     scopeComplete: complete,
   })
-  let decision = unavailableDecision(),
-    explanation = fallbackExplanation(
-      event,
-      missing,
-      resources,
-      !deterministicNoReview,
-    )
+  let decision = unavailableDecision()
+  const modelInvocations: ModelInvocation[] = []
   let workItems: WorkItem[] = []
   const endpoint = process.env.DECISION_ENDPOINT,
     deployment = process.env.DECISION_DEPLOYMENT
-  if (!deterministicNoReview && endpoint && deployment) {
+  if (deterministicNoReview) {
+    modelInvocations.push(
+      emitModelInvocation({
+        stage: 'Decision',
+        assessmentId,
+        deployment,
+        modelVersion: process.env.DECISION_MODEL_VERSION ?? null,
+        promptVersion: PROMPT_VERSION,
+        status: 'NotRequired',
+        durationMs: null,
+        failureCategory: null,
+        httpStatus: null,
+      }),
+    )
+  } else if (!endpoint || !deployment) {
+    modelInvocations.push(
+      emitModelInvocation({
+        stage: 'Decision',
+        assessmentId,
+        deployment,
+        modelVersion: process.env.DECISION_MODEL_VERSION ?? null,
+        promptVersion: PROMPT_VERSION,
+        status: 'NotConfigured',
+        durationMs: null,
+        failureCategory: null,
+        httpStatus: null,
+      }),
+    )
+    missing = [...missing, 'Decision-1が未設定のため手動判断']
+  } else {
+    const startedAt = Date.now()
+    let requestStarted = false
     try {
       await store.reserveModelCall(limit)
+      requestStarted = true
       const output = await decide(
         endpoint,
         deployment,
@@ -459,13 +607,44 @@ async function assessWorkload(
         output,
       )
       decision = output.decision
-    } catch {
-      missing = [
-        ...missing,
-        'Decision-1が未利用または応答契約を確認できないため手動判断',
-      ]
+      modelInvocations.push(
+        emitModelInvocation({
+          stage: 'Decision',
+          assessmentId,
+          deployment,
+          modelVersion: output.decision.modelVersion,
+          promptVersion: output.decision.promptVersion,
+          status: 'Succeeded',
+          durationMs: Date.now() - startedAt,
+          failureCategory: null,
+          httpStatus: null,
+        }),
+      )
+    } catch (error) {
+      const failure = modelFailure(error)
+      modelInvocations.push(
+        emitModelInvocation({
+          stage: 'Decision',
+          assessmentId,
+          deployment,
+          modelVersion: process.env.DECISION_MODEL_VERSION ?? null,
+          promptVersion: PROMPT_VERSION,
+          status: requestStarted ? 'Failed' : 'NotStarted',
+          durationMs: Date.now() - startedAt,
+          failureCategory: failure.category,
+          httpStatus: failure.httpStatus,
+        }),
+      )
+      missing = [...missing, 'Decision-1の判断を完了できないため手動判断']
     }
   }
+  let explanation = fallbackExplanation(
+    event,
+    missing,
+    resources,
+    !deterministicNoReview,
+    decision,
+  )
   const rules = applyRules({
     decision,
     asOf,
@@ -477,18 +656,54 @@ async function assessWorkload(
     unresolvedImpact: true,
     alternativeApproved: false,
   })
-  if (
-    !deterministicNoReview &&
-    decision.status !== 'Unavailable' &&
-    process.env.EXPLANATION_ENDPOINT &&
-    process.env.EXPLANATION_DEPLOYMENT
-  ) {
+  const explanationEndpoint = process.env.EXPLANATION_ENDPOINT,
+    explanationDeployment = process.env.EXPLANATION_DEPLOYMENT
+  if (deterministicNoReview || decision.status === 'Unavailable') {
+    modelInvocations.push(
+      emitModelInvocation({
+        stage: 'Explanation',
+        assessmentId,
+        deployment: explanationDeployment,
+        modelVersion: null,
+        promptVersion: null,
+        status: 'NotRequired',
+        durationMs: null,
+        failureCategory: null,
+        httpStatus: null,
+      }),
+    )
+  } else if (!explanationEndpoint || !explanationDeployment) {
+    modelInvocations.push(
+      emitModelInvocation({
+        stage: 'Explanation',
+        assessmentId,
+        deployment: explanationDeployment,
+        modelVersion: null,
+        promptVersion: null,
+        status: 'NotConfigured',
+        durationMs: null,
+        failureCategory: null,
+        httpStatus: null,
+      }),
+    )
+    missing = [...missing, '説明LLMが未設定のため固定テンプレートを使用']
+    explanation = fallbackExplanation(
+      event,
+      missing,
+      resources,
+      !deterministicNoReview,
+      decision,
+    )
+  } else {
+    const startedAt = Date.now()
+    let requestStarted = false
     try {
       await store.reserveModelCall(limit)
+      requestStarted = true
       const grounding = groundedInput(enriched, resources, workloadId, decision)
       const output = await explain(
-        process.env.EXPLANATION_ENDPOINT,
-        process.env.EXPLANATION_DEPLOYMENT,
+        explanationEndpoint,
+        explanationDeployment,
         grounding.state,
         (raw) =>
           store.put(
@@ -502,7 +717,36 @@ async function assessWorkload(
         hash({ id: assessmentId, stage: 'explanation' }),
         output,
       )
-      explanation = output.result.explanation
+      const fallback = fallbackExplanation(
+        event,
+        missing,
+        resources,
+        !deterministicNoReview,
+        decision,
+      )
+      const completed = ensureExplanationCoverage(
+        output.result.explanation,
+        fallback,
+        missing.length > 0,
+        event.evidence.some((item) => item.sourceType === 'Microsoft'),
+        !deterministicNoReview,
+      )
+      explanation = completed.explanation
+      modelInvocations.push(
+        emitModelInvocation({
+          stage: 'Explanation',
+          assessmentId,
+          deployment: explanationDeployment,
+          modelVersion: null,
+          promptVersion: PROMPT_VERSION,
+          status: completed.usedFallback
+            ? 'SucceededWithFallback'
+            : 'Succeeded',
+          durationMs: Date.now() - startedAt,
+          failureCategory: null,
+          httpStatus: null,
+        }),
+      )
       const ids = new Map(
         output.result.workItems.map((w, i) => [
           w.id,
@@ -519,8 +763,29 @@ async function assessWorkload(
         id: ids.get(w.id)!,
         dependencyIds: w.dependencyIds.map((id) => ids.get(id) ?? id),
       }))
-    } catch {
+    } catch (error) {
+      const failure = modelFailure(error)
+      modelInvocations.push(
+        emitModelInvocation({
+          stage: 'Explanation',
+          assessmentId,
+          deployment: explanationDeployment,
+          modelVersion: null,
+          promptVersion: PROMPT_VERSION,
+          status: requestStarted ? 'Failed' : 'NotStarted',
+          durationMs: Date.now() - startedAt,
+          failureCategory: failure.category,
+          httpStatus: failure.httpStatus,
+        }),
+      )
       missing = [...missing, '生成結果未確認。固定テンプレートで確認事項を提示']
+      explanation = fallbackExplanation(
+        event,
+        missing,
+        resources,
+        !deterministicNoReview,
+        decision,
+      )
     }
   }
   if (!deterministicNoReview && !workItems.length)
@@ -604,6 +869,7 @@ async function assessWorkload(
     event: enriched,
     resources,
     scopeComplete: complete,
+    modelInvocations,
     impactDiscoveryOutcome: impactOutcome,
     discoveryScope,
     humanReviewRequired:
