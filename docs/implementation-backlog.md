@@ -22,7 +22,7 @@
 | IMP-16 | Integration: Projectフィールド、改訂Issue更新・進捗取込 | 15 | 項目対応、競合・手動編集を保持、自動Closeなし | Issue管理領域の改訂更新、Priority／Due date同期、初期Status、重複照合を実装。Project Statusを15分ごとに任意取込し、外部進捗属性として保存、Entra保護APIとレビュー画面へ表示。評価・承認・作業完了を自動変更しない。同期は既定無効。GitHub実Project／資格情報を使う統合UATは未実施 | 実装済（合成試験のみ） / L / Dev / No |
 | IMP-17 | Operations: 再評価・処理ログ・Poison・復旧Runbook | 06–15 | 日次再取得、部分失敗表示、成否不明の手動照合 | ProcessingFailureの任意Scheduled Query AlertとAction Group設定、KQL、Poison Queueの安全な手動照合・再投入手順を追加。Alertは既定無効で、専用RG内の監視構成だけを対象。レビュー画面へ評価レコード単位の総数・人間確認待ち・P1/P2・調査不完全の読み取り専用サマリーを追加（業務システム件数とは区別）。実環境の発報・Poison再処理・成否不明照合、サマリーの実データ統合UATは未検証 | 一部実装 / M / SRE / Yes |
 | IMP-18 | Cost: 日次呼出回数枠・予算確認手順 | 10,17 | PoC累計20,000円を利用者がCost Managementで確認。要求単位のToken上限は設けない | 利用者の判断で金額ハード停止は実装対象外。API呼出枠は200/日。Cost Managementの予算通知は補助情報 | M / SRE+FinOps / Yes |
-| IMP-19 | Evaluation: 30ケース、108回、精度・Recall・Override | 07–16 | 当時版・独立正解集合、指標・未評価の記録 | 単体・固定応答試験のみ。実品質評価待ち | L / QA+Architect / Yes |
+| IMP-19 | Evaluation: 30ケース、108回、精度・Recall・Override | 07–16 | 当時版・独立正解集合、指標・未評価の記録 | `evaluateCases`の純粋micro指標計算（対象／確認経由Recall、影響・優先度重み付き一致と過小評価、Owner棄権、架空Resource、根拠なし主張、必須作業Precision/Recall、Override、通知見逃し）と合成テストを追加。正解集合、評価実行器・版来歴、独立レビュー、30／108回モデル品質評価は未実装 | L / QA+Architect / Yes |
 | IMP-20 | Demo/UAT: 同一実環境で3分ライブ | 10,14–19 | 事前サインイン、実通知、判断→根拠→承認→登録 | リハーサル待ち。合成をライブ取得と偽らない | M / Presenter+QA / No |
 | IMP-21 | Cleanup: 作成台帳と専用資源・Project・秘密の撤去 | 04,15 | 削除対象照合、残存保持・残費用報告 | 専用Azure資源・Entra App・資格情報を作成済。撤去はPoC終了時に別途実行 | M / Cloud+Owner / No |
 
