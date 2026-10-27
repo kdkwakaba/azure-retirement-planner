@@ -47,7 +47,7 @@ test('official profile evidence fetch is restricted, bounded, and cached', async
   assert.equal(first.sourceType, 'Microsoft')
   assert.equal(
     first.officialUrl,
-    'https://learn.microsoft.com/azure/load-balancer/load-balancer-basic-upgrade-guidance',
+    'https://learn.microsoft.com/en-us/azure/load-balancer/load-balancer-basic-upgrade-guidance',
   )
   assert.match(first.fact, /Microsoft documentation with an & escaped value/)
   assert.doesNotMatch(first.fact, /ignore this injected instruction/)
@@ -76,6 +76,33 @@ test('official profile evidence rejects unknown profiles and oversized pages', a
     /too large/,
   )
   assert.equal(calls, 1)
+})
+
+test('official reference revision hashes full text beyond the model excerpt', async () => {
+  let pageTail = 'A'.repeat(200),
+    calls = 0
+  const now = Date.parse('2026-10-29T00:00:00.000Z')
+  const fetcher: typeof fetch = async () => {
+    calls++
+    return new Response('<main>' + 'x'.repeat(9500) + pageTail + '</main>', {
+      headers: { 'content-type': 'text/html' },
+    })
+  }
+  const first = await fetchOfficialProfileEvidence(
+    'application-insights-url-ping',
+    fetcher,
+    now,
+  )
+  pageTail = 'B'.repeat(200)
+  const second = await fetchOfficialProfileEvidence(
+    'application-insights-url-ping',
+    fetcher,
+    now + 60 * 60 * 1000 + 1,
+  )
+  assert.equal(calls, 2)
+  assert.equal(first.fact, second.fact)
+  assert.notEqual(first.sourceVersion, second.sourceVersion)
+  assert.notEqual(first.id, second.id)
 })
 
 test('explicit impacted-resource discovery uses exact tracking IDs and active Advisor recommendations', async (t) => {

@@ -18,6 +18,7 @@ import {
   validateAssessment,
   refreshAssessment,
   resourceVerificationWorkItems,
+  carryForwardHumanContext,
   impactDiscoveryOutcome,
   canSkipAssessmentReview,
   applyWorkflowPolicy,
@@ -331,13 +332,14 @@ async function assessWorkload(
   const asOf = new Date().toISOString().slice(0, 10)
   const policyHash = hash(workflowPolicyData)
   const policyParsed = workflowPolicySchema.safeParse(workflowPolicyData)
+  const officialReferenceVersions = event.evidence
+    .filter((item) => item.officialUrl !== null)
+    .map((item) => item.sourceVersion)
+    .sort()
   const id = hash({
     workflowPolicyHash: policyHash,
     eventVersionId: event.versionId,
-    officialReferenceVersions: event.evidence
-      .filter((item) => item.officialUrl !== null)
-      .map((item) => item.sourceVersion)
-      .sort(),
+    ...(officialReferenceVersions.length ? { officialReferenceVersions } : {}),
     workloadId,
     timeKey: event.milestones.some((m) => m.kind !== 'Deprecation' && m.date)
       ? asOf
@@ -352,8 +354,10 @@ async function assessWorkload(
     decisionRevision: decisionRevision(limit),
   })
   const prior = await store.head(hash({ eventId: event.id, workloadId }))
+  let previousAssessment: Assessment | null = null
   if (prior) {
     const current = await store.assessment(prior.assessmentId)
+    previousAssessment = current
     const versionComparison = compareEventVersion(current.event, event)
     if (versionComparison === 'IncomingStale') return
     if (versionComparison === 'Conflict') {
@@ -578,5 +582,8 @@ async function assessWorkload(
   })
   assessment.validationErrors = validateAssessment(assessment)
   assessment.packageHash = packageHash(assessment)
-  await store.commitAssessment(assessment, prior)
+  const finalAssessment = previousAssessment
+    ? carryForwardHumanContext(assessment, previousAssessment)
+    : assessment
+  await store.commitAssessment(finalAssessment, prior)
 }

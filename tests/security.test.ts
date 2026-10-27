@@ -10,6 +10,7 @@ import {
 import { PlatformIdentity } from '../packages/adapters/src/identity.ts'
 import {
   reviseAssessment,
+  carryForwardHumanContext,
   verifyApproval,
   hash,
   refreshAssessment,
@@ -218,6 +219,71 @@ test('human correction preserves model output and invalidates prior approval', (
   assert.throws(() => verifyApproval(revised, review, revised.workItems[0]!.id))
   assert.equal(original.event.milestones.length, 0)
 })
+test('reassessment with the same event version carries human corrections but requires fresh review', () => {
+  const original = fixture()
+  const corrected = reviseAssessment(
+    original,
+    {
+      ...correction(),
+      workItemUpdates: [
+        {
+          id: original.workItems[0]!.id,
+          ownerTeam: 'confirmed-platform-team',
+          plannedStartDate: '2026-08-10',
+          dueDate: '2026-09-10',
+        },
+      ],
+    },
+    'synthetic-user',
+    '2026-08-02T00:00:00.000Z',
+  )
+  const approved = approvalSchema.parse({
+    id: hash('prior-approved-review'),
+    assessmentId: corrected.id,
+    packageHash: corrected.packageHash,
+    approvedItemIds: [corrected.workItems[0]!.id],
+    reviewerId: 'synthetic-user',
+    reviewedAt: '2026-08-02T00:00:00.000Z',
+    reason: 'Synthetic approval',
+    result: 'Approved',
+  })
+  const next = fixture()
+  const officialReference = {
+    id: hash('updated-official-reference'),
+    sourceType: 'Microsoft' as const,
+    sourceVersion: hash('updated-official-reference-content'),
+    observedAt: '2026-08-03T00:00:00.000Z',
+    subjectIds: [],
+    fact: 'Synthetic official reference update',
+    officialUrl: 'https://learn.microsoft.com/en-us/azure/synthetic',
+  }
+  next.event.evidence.push(officialReference)
+  next.packageHash = packageHash(next)
+  const carried = carryForwardHumanContext(next, corrected)
+  assert.equal(
+    carried.humanContext?.reviewedAt,
+    corrected.humanContext?.reviewedAt,
+  )
+  assert.equal(carried.humanContext?.impactIfUnaddressed, 'High')
+  assert.equal(carried.humanContext?.criticalWorkload, true)
+  assert.ok(
+    carried.event.evidence.some(
+      (item) => item.id === corrected.humanContext?.reviewEvidenceIds?.[0],
+    ),
+  )
+  assert.equal(
+    carried.event.milestones.find((item) => item.kind === 'Retirement')?.date,
+    '2026-10-01',
+  )
+  assert.equal(carried.workItems[0]?.ownerTeam, 'confirmed-platform-team')
+  assert.equal(carried.workItems[0]?.dueDate, '2026-09-10')
+  assert.equal(carried.humanReviewRequired, true)
+  assert.notEqual(carried.packageHash, corrected.packageHash)
+  assert.throws(() =>
+    verifyApproval(carried, approved, carried.workItems[0]!.id),
+  )
+  assert.deepEqual(validateAssessment(carried), [])
+})
 test('TST-29: human-confirmed out-of-scope assessment has no priority or work and cannot be approved', () => {
   const original = fixture()
   const event = normalizeNotice({
@@ -284,6 +350,25 @@ test('TST-29: human-confirmed out-of-scope assessment has no priority or work an
   assert.equal(refreshed.effectivePriority, null)
   assert.equal(refreshed.workItems.length, 0)
   assert.equal(refreshed.humanContext?.scopeDisposition, 'OutOfScope')
+  const next = structuredClone(original)
+  next.id = hash('next-evaluation-after-reference-update')
+  next.event.evidence.push({
+    id: hash('new-reference-for-out-of-scope'),
+    sourceType: 'Microsoft',
+    sourceVersion: hash('new-reference-content'),
+    observedAt: '2026-08-03T00:00:00.000Z',
+    subjectIds: [],
+    fact: 'Synthetic official reference update',
+    officialUrl: 'https://learn.microsoft.com/en-us/azure/synthetic',
+  })
+  next.packageHash = packageHash(next)
+  const carried = carryForwardHumanContext(next, revised)
+  assert.equal(carried.humanContext?.scopeDisposition, 'OutOfScope')
+  assert.equal(carried.workItems.length, 0)
+  assert.equal(carried.effectivePriority, null)
+  assert.equal(carried.humanReviewRequired, true)
+  assert.equal(canClose(carried), false)
+  assert.deepEqual(validateAssessment(carried), [])
 })
 test('deprecation date cannot be used as migration deadline', () =>
   assert.throws(() =>
