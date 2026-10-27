@@ -116,6 +116,21 @@ test('manifest prevents family leakage across splits while allowing repeated obs
       validateEvaluationManifest({
         schemaVersion: '1',
         benchmarkVersion: 'holdout-v1',
+        cases: [
+          observation(),
+          {
+            ...second,
+            run: { ...second.run, inputHash: 'b'.repeat(64) },
+          },
+        ],
+      }),
+    /inconsistent inputHash/,
+  )
+  assert.throws(
+    () =>
+      validateEvaluationManifest({
+        schemaVersion: '1',
+        benchmarkVersion: 'holdout-v1',
         cases: [observation(), { ...second, split: 'Development' }],
       }),
     /spans evaluation splits/,
