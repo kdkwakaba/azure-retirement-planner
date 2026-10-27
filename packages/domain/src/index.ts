@@ -48,6 +48,57 @@ export function canonical(value: unknown): string {
 }
 export const hash = (value: unknown) =>
   createHash('sha256').update(canonical(value)).digest('hex')
+
+const microsoftEvidenceHosts = ['aka.ms', 'azure.com', 'microsoft.com']
+function isTrustedMicrosoftEvidenceUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return (
+      url.protocol === 'https:' &&
+      !url.username &&
+      !url.password &&
+      !url.port &&
+      microsoftEvidenceHosts.some(
+        (host) => url.hostname === host || url.hostname.endsWith(`.${host}`),
+      )
+    )
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Allows translation only for persisted Microsoft evidence. Service Health facts
+ * have no page-specific URL, so their eligibility is bound to the normalized
+ * event ID, content hash, evidence ID, and subject ID instead of a guessed URL.
+ */
+export function isTranslatableOfficialEvidence(
+  event: LifecycleEvent,
+  evidence: Evidence,
+): boolean {
+  const stored = event.evidence.find((item) => item.id === evidence.id)
+  if (
+    !stored ||
+    stored.sourceType !== 'Microsoft' ||
+    evidence.sourceType !== stored.sourceType ||
+    evidence.fact !== stored.fact ||
+    evidence.sourceVersion !== stored.sourceVersion ||
+    evidence.officialUrl !== stored.officialUrl
+  )
+    return false
+
+  if (stored.officialUrl !== null)
+    return isTrustedMicrosoftEvidenceUrl(stored.officialUrl)
+
+  return (
+    event.source === 'ServiceHealth' &&
+    stored.sourceVersion === event.contentHash &&
+    stored.subjectIds.length === 1 &&
+    stored.subjectIds[0] === event.id &&
+    evidence.subjectIds.length === 1 &&
+    evidence.subjectIds[0] === event.id
+  )
+}
 export type EventVersionComparison =
   'IncomingNewer' | 'IncomingStale' | 'Same' | 'Conflict'
 export function compareEventVersion(
