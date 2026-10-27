@@ -13,6 +13,7 @@ import {
   classifyResource,
   classifyResourceDetails,
   compareEventVersion,
+  NORMALIZATION_VERSION,
   daysBetween,
   hash,
   impactDiscoveryOutcome,
@@ -386,6 +387,87 @@ test('TST-32: official retirement date is evidence-backed', () => {
   assert.match(
     e.evidence[0]!.fact,
     /ImpactMitigationTime: 2027-04-20T00:00:00Z/,
+  )
+  assert.equal(
+    e.versionId,
+    hash({
+      id: e.id,
+      contentHash: e.contentHash,
+      normalizationVersion: NORMALIZATION_VERSION,
+    }),
+  )
+})
+test('Retirement subtype accepts only an explicit retirement date in official wording', () => {
+  const e = normalizeNotice({
+    tenantId: tenant,
+    trackingId: 'TEST-TITLE-RETIREMENT-DATE',
+    title: 'Synthetic feature will be retired on 20 April 2027',
+    body: 'Synthetic official notice',
+    updatedAt: '2026-08-01T00:00:00.000Z',
+    metadata: { EventSubType: 'Retirement' },
+  })
+  assert.equal(e.milestones[0]?.kind, 'Retirement')
+  assert.equal(e.milestones[0]?.date, '2027-04-20')
+  assert.equal(e.milestones[0]?.rawDateText, '20 April 2027')
+  assert.equal(
+    e.milestones[0]?.scope,
+    'Service Health explicit retirement wording',
+  )
+  assert.match(
+    e.evidence[0]!.fact,
+    /Official Service Health explicit retirement wording: 20 April 2027/,
+  )
+})
+test('Retirement title date parser rejects transition deadlines and other subtypes', () => {
+  const transition = normalizeNotice({
+    tenantId: tenant,
+    trackingId: 'TEST-TRANSITION-DATE',
+    title: 'Synthetic API: transition to successor by 20 April 2027',
+    body: 'Synthetic notice',
+    updatedAt: '2026-08-01T00:00:00.000Z',
+    metadata: { EventSubType: 'Retirement' },
+  })
+  const otherSubtype = normalizeNotice({
+    tenantId: tenant,
+    trackingId: 'TEST-NON-RETIREMENT-DATE',
+    title: 'Synthetic feature will be retired on 20 April 2027',
+    body: 'Synthetic notice',
+    updatedAt: '2026-08-01T00:00:00.000Z',
+    metadata: { EventSubType: 'Informational' },
+  })
+  assert.equal(transition.milestones.length, 0)
+  assert.equal(otherSubtype.milestones.length, 0)
+})
+test('conflicting or multiple official retirement dates remain unnormalized', () => {
+  const conflict = normalizeNotice({
+    tenantId: tenant,
+    trackingId: 'TEST-CONFLICTING-DATES',
+    title: 'Synthetic feature will be retired on 20 April 2027',
+    body: 'Synthetic official notice',
+    updatedAt: '2026-08-01T00:00:00.000Z',
+    metadata: {
+      EventSubType: 'Retirement',
+      retirementDate: '2027-04-21T00:00:00Z',
+    },
+  })
+  const ambiguous = normalizeNotice({
+    tenantId: tenant,
+    trackingId: 'TEST-MULTIPLE-DATES',
+    title:
+      'Synthetic feature retired on 20 April 2027 and retired on 21 April 2027',
+    body: 'Synthetic official notice',
+    updatedAt: '2026-08-01T00:00:00.000Z',
+    metadata: { EventSubType: 'Retirement' },
+  })
+  assert.equal(conflict.milestones.length, 0)
+  assert.match(
+    conflict.evidence[0]!.fact,
+    /Conflicting official retirement dates/,
+  )
+  assert.equal(ambiguous.milestones.length, 0)
+  assert.match(
+    ambiguous.evidence[0]!.fact,
+    /Multiple explicit retirement dates/,
   )
 })
 test('TST-33: generic notice has no retirement milestone', () => {
