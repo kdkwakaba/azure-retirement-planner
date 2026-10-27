@@ -72,4 +72,3 @@ test('UI authentication failures do not display remote response details', async 
     message: 'サインインが必要です',
   })
 })
-
