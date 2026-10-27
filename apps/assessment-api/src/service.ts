@@ -37,6 +37,7 @@ import {
   unavailableDecision,
   applicableProfileIds,
   fetchOfficialProfileEvidence,
+  RESOURCE_PROFILES,
   PROFILE_RESOURCE_TYPES,
   PROFILE_REGISTRY_VERSION,
 } from '@arp/adapters'
@@ -261,8 +262,19 @@ export async function assessSnapshot(message: unknown): Promise<void> {
   const profiles = applicableProfileIds(event)
   const referenceEvidence: Evidence[] = []
   for (const profileId of profiles) {
+    const profile = RESOURCE_PROFILES.find((item) => item.id === profileId)
+    const matchingResources = profile
+      ? candidates.filter(
+          (resource) =>
+            resource.type.toLowerCase() === profile.resourceType.toLowerCase(),
+        )
+      : []
+    if (!profile || !matchingResources.length) continue
     try {
-      referenceEvidence.push(await fetchOfficialProfileEvidence(profileId))
+      referenceEvidence.push({
+        ...(await fetchOfficialProfileEvidence(profileId)),
+        subjectIds: matchingResources.map((resource) => resource.id),
+      })
     } catch {
       complete = false
       missing.push(`公式参照の取得に失敗: ${profileId}`)
@@ -296,9 +308,17 @@ export async function assessSnapshot(message: unknown): Promise<void> {
           '業務重要度・移行方式・工程期間・適用期限の人間確認が必要',
           ...resourceMissingInformation(resources),
         ]
+    const workloadEvent: LifecycleEvent = {
+      ...event,
+      evidence: event.evidence.filter(
+        (item) =>
+          item.officialUrl === null ||
+          resources.some((resource) => item.subjectIds.includes(resource.id)),
+      ),
+    }
     await assessWorkload(
       store,
-      event,
+      workloadEvent,
       resources,
       snapshot.evidence,
       workloadId,

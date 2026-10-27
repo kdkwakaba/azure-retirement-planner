@@ -545,9 +545,43 @@ export function validateAssessment(input: Assessment): string[] {
       (i) => `Schema: ${i.path.join('.')}: ${i.message}`,
     )
   const errors: string[] = []
-  const evidence = new Set(input.event.evidence.map((e) => e.id))
+  const evidenceById = new Map(input.event.evidence.map((e) => [e.id, e]))
+  const evidence = new Set(evidenceById.keys())
   const resources = new Map(input.resources.map((r) => [r.id.toLowerCase(), r]))
   const items = new Map(input.workItems.map((w) => [w.id, w]))
+  const evidenceAppliesTo = (
+    id: string,
+    workloadId: string,
+    resourceIds: string[],
+  ): boolean => {
+    const item = evidenceById.get(id)
+    if (!item) return true
+    const resourceSubjects = item.subjectIds
+      .map((subject) => subject.toLowerCase())
+      .filter((subject) => resources.has(subject))
+    if (resourceSubjects.length)
+      return resourceIds.some((resourceId) =>
+        resourceSubjects.includes(resourceId.toLowerCase()),
+      )
+    return (
+      item.subjectIds.includes(input.event.id) ||
+      item.subjectIds.includes(workloadId)
+    )
+  }
+  const checkEvidenceScope = (
+    ids: string[],
+    label: string,
+    workloadId: string,
+    resourceIds: string[],
+  ) => {
+    if (
+      ids.some(
+        (id) =>
+          evidence.has(id) && !evidenceAppliesTo(id, workloadId, resourceIds),
+      )
+    )
+      errors.push(`${label}: 対象範囲外のEvidence`)
+  }
   if (items.size !== input.workItems.length) errors.push('重複Work Item ID')
   const checkEvidence = (ids: string[], label: string) => {
     if (ids.some((id) => !evidence.has(id)))
@@ -559,6 +593,13 @@ export function validateAssessment(input: Assessment): string[] {
     checkEvidence(resource.evidenceIds, resource.id)
   if (input.humanContext?.reviewEvidenceIds)
     checkEvidence(input.humanContext.reviewEvidenceIds, 'Human Review')
+  if (input.humanContext?.reviewEvidenceIds)
+    checkEvidenceScope(
+      input.humanContext.reviewEvidenceIds,
+      'Human Review',
+      input.workloadId,
+      input.resources.map((resource) => resource.id),
+    )
   if (input.humanContext?.scopeDisposition === 'OutOfScope') {
     if (!input.humanContext.reason.trim()) errors.push('対象外判定の理由不足')
     if (!input.humanContext.reviewEvidenceIds?.length)
@@ -575,6 +616,12 @@ export function validateAssessment(input: Assessment): string[] {
   }
   for (const claim of Object.values(input.explanation).flat()) {
     checkEvidence(claim.evidenceIds, claim.id)
+    checkEvidenceScope(
+      claim.evidenceIds,
+      claim.id,
+      input.workloadId,
+      input.resources.map((resource) => resource.id),
+    )
     if (
       ['Confirmed Fact', 'Derived Fact', 'Recommendation'].includes(
         claim.kind,
@@ -593,6 +640,12 @@ export function validateAssessment(input: Assessment): string[] {
   }
   for (const item of input.workItems) {
     checkEvidence(item.evidenceIds, item.id)
+    checkEvidenceScope(
+      item.evidenceIds,
+      item.id,
+      item.workloadId,
+      item.resourceIds,
+    )
     if (
       item.necessity === 'Required' &&
       !['Impact Verification', 'Owner Confirmation'].includes(item.category)
@@ -652,6 +705,12 @@ export function validateAssessment(input: Assessment): string[] {
           'Microsoft'
       )
         errors.push(`${item.id}: 公式参照不正`)
+    checkEvidenceScope(
+      item.officialReferenceIds,
+      item.id,
+      item.workloadId,
+      item.resourceIds,
+    )
     for (const dep of item.dependencyIds) {
       const preceding = items.get(dep)
       if (!preceding) errors.push(`${item.id}: 未知の依存`)
