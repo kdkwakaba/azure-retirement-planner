@@ -139,6 +139,27 @@ test('manifest prevents family leakage across splits while allowing repeated obs
   )
 })
 
+test('colon-containing family and scenario IDs do not collide in repetition identity', () => {
+  const first = observation({
+    retirementFamilyKey: 'family:alpha',
+    scenarioId: 'case',
+  })
+  const second = observation({
+    observationId: 'obs-02',
+    retirementFamilyKey: 'family',
+    scenarioId: 'alpha:case',
+    run: { ...observation().run, runId: 'run-02' },
+  })
+  assert.equal(
+    validateEvaluationManifest({
+      schemaVersion: '1',
+      benchmarkVersion: 'v1',
+      cases: [first, second],
+    }).cases.length,
+    2,
+  )
+})
+
 test('invalid provenance, review state and undeclared payload fields are rejected', () => {
   assert.throws(
     () =>
