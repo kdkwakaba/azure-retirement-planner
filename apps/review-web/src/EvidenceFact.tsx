@@ -1,6 +1,10 @@
 import { useState, type ReactNode } from 'react'
 import { z } from 'zod'
-import type { Evidence } from '@arp/contracts'
+import {
+  isTranslatableOfficialEvidence,
+  type Evidence,
+  type LifecycleEvent,
+} from '@arp/contracts'
 import { request } from './api.ts'
 
 const excludedTags = new Set([
@@ -130,17 +134,17 @@ export function EvidenceFact({ value }: { value: string }) {
 
 export function EvidenceCard({
   evidence,
+  event,
   assessmentId,
 }: {
   evidence: Evidence
+  event: LifecycleEvent
   assessmentId: string
 }) {
   const [translated, setTranslated] = useState<string | null>(null)
   const [translationError, setTranslationError] = useState('')
   const [translating, setTranslating] = useState(false)
-  const canTranslate =
-    evidence.sourceType === 'Microsoft' &&
-    safeEvidenceUrl(evidence.officialUrl) !== null
+  const canTranslate = isTranslatableOfficialEvidence(event, evidence)
 
   async function translate() {
     setTranslating(true)
