@@ -502,7 +502,7 @@ function App() {
                         </b>
                         <small>{e.observedAt}</small>
                       </div>
-                      <EvidenceCard evidence={e} assessmentId={current.id} />
+                      <EvidenceCard evidence={e} event={current.event} assessmentId={current.id} />
                       {safeOfficialEvidenceUrl(e.officialUrl) && (
                         <p className="evidence-source-link">
                           <a
