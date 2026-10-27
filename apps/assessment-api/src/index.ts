@@ -4,7 +4,11 @@ import { readFile } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
 import { z } from 'zod'
 import { approvalSchema, correctionSchema } from '@arp/contracts'
-import { hash, isTranslatableOfficialEvidence, reviseAssessment } from '@arp/domain'
+import {
+  hash,
+  isTranslatableOfficialEvidence,
+  reviseAssessment,
+} from '@arp/domain'
 import {
   AzureStore,
   GitHubClient,
