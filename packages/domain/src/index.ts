@@ -18,6 +18,14 @@ export type {
   EvaluationRate,
   EvaluationReport,
 } from './evaluation.ts'
+export { validateEvaluationManifest } from './evaluation-manifest.ts'
+export type {
+  AdjudicationStatus,
+  EvaluationManifest,
+  EvaluationObservation,
+  EvaluationSourceKind,
+  EvaluationSplit,
+} from './evaluation-manifest.ts'
 
 export const RULE_VERSION = '2026-10-27.1'
 export const NORMALIZATION_VERSION = '2026-10-27.1'
