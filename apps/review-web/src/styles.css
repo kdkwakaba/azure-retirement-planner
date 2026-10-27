@@ -154,6 +154,64 @@ pre {
   max-height: 300px;
   overflow: auto;
 }
+.evidence-item {
+  margin: 14px 0;
+  padding: 16px;
+  border: 1px solid #dce6e3;
+  border-radius: 8px;
+  background: #fbfdfc;
+}
+.evidence-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.evidence-heading small {
+  margin: 0;
+}
+.evidence-item p {
+  line-height: 1.6;
+}
+.evidence-rich-text {
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.evidence-rich-text h4 {
+  margin: 18px 0 6px;
+  font-size: 15px;
+}
+.evidence-rich-text p {
+  margin: 8px 0;
+}
+.evidence-rich-text ul,
+.evidence-rich-text ol {
+  padding-left: 24px;
+}
+.evidence-rich-text li {
+  margin: 5px 0;
+}
+.evidence-rich-text blockquote {
+  margin: 12px 0;
+  padding: 2px 12px;
+  border-left: 3px solid #9bbeb5;
+  color: #526c6d;
+}
+.evidence-rich-text a,
+.evidence-source-link a {
+  overflow-wrap: anywhere;
+}
+.evidence-id {
+  color: #657f80;
+  font-size: 12px;
+}
+.evidence-id code {
+  display: block;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
 .work {
   border: 1px solid #dce6e3;
   padding: 16px;

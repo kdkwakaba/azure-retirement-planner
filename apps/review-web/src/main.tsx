@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { assessmentSchema, type Assessment } from '@arp/contracts'
 import './styles.css'
 import { CorrectionForm } from './CorrectionForm.tsx'
+import { EvidenceFact, safeOfficialEvidenceUrl } from './EvidenceFact.tsx'
 import { summarizeAssessments } from './summary.ts'
 
 import { request, syncFeedback } from './api.ts'
@@ -490,12 +491,33 @@ function App() {
                 <details>
                   <summary>Evidence一覧</summary>
                   {current.event.evidence.map((e) => (
-                    <article key={e.id}>
-                      <b>{e.sourceType}</b>
-                      <small>
-                        {e.id} · {e.observedAt}
-                      </small>
-                      <pre>{e.fact}</pre>
+                    <article className="evidence-item" key={e.id}>
+                      <div className="evidence-heading">
+                        <b>
+                          {e.sourceType === 'Microsoft'
+                            ? 'Microsoft公式情報'
+                            : e.sourceType === 'Azure'
+                              ? 'Azure構成情報'
+                              : e.sourceType}
+                        </b>
+                        <small>{e.observedAt}</small>
+                      </div>
+                      <EvidenceFact value={e.fact} />
+                      {safeOfficialEvidenceUrl(e.officialUrl) && (
+                        <p className="evidence-source-link">
+                          <a
+                            href={safeOfficialEvidenceUrl(e.officialUrl)!}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            公式参照を開く
+                          </a>
+                        </p>
+                      )}
+                      <details className="evidence-id">
+                        <summary>Evidence ID</summary>
+                        <code>{e.id}</code>
+                      </details>
                     </article>
                   ))}
                 </details>
