@@ -419,7 +419,6 @@ export type Impact = z.infer<typeof impactSchema>
 export type Priority = z.infer<typeof prioritySchema>
 export type Correction = z.infer<typeof correctionSchema>
 
-
 const microsoftEvidenceHosts = ['aka.ms', 'azure.com', 'microsoft.com']
 function isTrustedMicrosoftEvidenceUrl(value: string): boolean {
   try {
