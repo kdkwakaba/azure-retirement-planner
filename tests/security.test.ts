@@ -18,6 +18,7 @@ import {
   canClose,
   normalizeNotice,
   packageHash,
+  scopeEvidenceToWorkload,
 } from '@arp/domain'
 import { approvalSchema, type Correction } from '@arp/contracts'
 import { fixture, tenant, resourceId } from './fixtures.ts'
@@ -91,6 +92,41 @@ test('model input aliases Resource IDs, Workload and Team and only resolves know
       .resourceIds[0],
     'unknown-resource',
   )
+})
+test('Workload grounding removes and aliases Resource IDs from other Workloads', () => {
+  const a = fixture()
+  const otherResourceId = `${resourceId}-other-workload`
+  const sharedEvidence = {
+    ...a.event.evidence[0]!,
+    id: 'shared-profile-evidence',
+    subjectIds: [resourceId, otherResourceId],
+  }
+  const foreignEvidence = {
+    ...a.event.evidence[0]!,
+    id: 'foreign-profile-evidence',
+    subjectIds: [otherResourceId],
+  }
+  const scopedEvidence = scopeEvidenceToWorkload({
+    evidence: [a.event.evidence[0]!, sharedEvidence, foreignEvidence],
+    eventId: a.event.id,
+    workloadId: a.workloadId,
+    resources: a.resources,
+  })
+  assert.ok(scopedEvidence.some((item) => item.id === sharedEvidence.id))
+  assert.ok(!scopedEvidence.some((item) => item.id === foreignEvidence.id))
+  assert.deepEqual(
+    scopedEvidence.find((item) => item.id === sharedEvidence.id)?.subjectIds,
+    [resourceId],
+  )
+  const grounded = groundedInput(
+    { ...a.event, evidence: scopedEvidence },
+    a.resources,
+    a.workloadId,
+  )
+  const modelInput = JSON.stringify(grounded.state)
+  assert.ok(!modelInput.includes(resourceId))
+  assert.ok(!modelInput.includes(otherResourceId))
+  assert.ok(!modelInput.includes(foreignEvidence.id))
 })
 test('HTTP errors do not expose remote response or credentials', async () => {
   try {

@@ -434,6 +434,33 @@ export function canSkipAssessmentReview(input: {
       input.outcome === 'NoImpactMatched')
   )
 }
+export function scopeEvidenceToWorkload(input: {
+  evidence: Evidence[]
+  eventId: string
+  workloadId: string
+  resources: ResourceImpact[]
+}): Evidence[] {
+  const resourceIds = new Set(
+    input.resources.map((resource) => resource.id.toLowerCase()),
+  )
+  return input.evidence.flatMap((item) => {
+    const resourceSubjects = item.subjectIds.filter((id) =>
+      id.toLowerCase().startsWith('/subscriptions/'),
+    )
+    if (
+      resourceSubjects.length &&
+      !resourceSubjects.some((id) => resourceIds.has(id.toLowerCase()))
+    )
+      return []
+    const subjectIds = item.subjectIds.filter(
+      (id) =>
+        id === input.eventId ||
+        id === input.workloadId ||
+        resourceIds.has(id.toLowerCase()),
+    )
+    return subjectIds.length ? [{ ...item, subjectIds }] : []
+  })
+}
 export function resourceVerificationWorkItems(input: {
   eventId: string
   workloadId: string

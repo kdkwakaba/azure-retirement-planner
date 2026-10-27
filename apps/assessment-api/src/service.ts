@@ -22,6 +22,7 @@ import {
   impactDiscoveryOutcome,
   canSkipAssessmentReview,
   applyWorkflowPolicy,
+  scopeEvidenceToWorkload,
   workflowPolicySchema,
 } from '@arp/domain'
 import {
@@ -75,34 +76,6 @@ export function decisionRevision(limit: number): string | null {
   })
 }
 const EVIDENCE_SCOPE_VERSION = '2'
-function scopeEvidence(
-  evidence: Evidence[],
-  eventId: string,
-  workloadId: string,
-  resources: ResourceImpact[],
-): Evidence[] {
-  const resourceIds = new Set(
-    resources.map((resource) => resource.id.toLowerCase()),
-  )
-  return evidence.flatMap((item) => {
-    const resourceSubjects = item.subjectIds.filter((id) =>
-      id.startsWith('/subscriptions/'),
-    )
-    if (
-      resourceSubjects.length &&
-      !resourceSubjects.some((id) => resourceIds.has(id.toLowerCase()))
-    )
-      return []
-    const subjectIds = item.subjectIds.filter(
-      (id) =>
-        id === eventId ||
-        id === workloadId ||
-        resourceIds.has(id.toLowerCase()),
-    )
-    if (!subjectIds.length) return []
-    return [{ ...item, subjectIds }]
-  })
-}
 export async function synchronize(): Promise<{
   events: number
   resources: number
@@ -339,16 +312,16 @@ export async function assessSnapshot(message: unknown): Promise<void> {
         ]
     const workloadEvent: LifecycleEvent = {
       ...event,
-      evidence: scopeEvidence(
-        event.evidence.filter(
+      evidence: scopeEvidenceToWorkload({
+        evidence: event.evidence.filter(
           (item) =>
             item.officialUrl === null ||
             resources.some((resource) => item.subjectIds.includes(resource.id)),
         ),
-        event.id,
+        eventId: event.id,
         workloadId,
         resources,
-      ),
+      }),
     }
     await assessWorkload(
       store,
@@ -435,17 +408,17 @@ async function assessWorkload(
   const assessmentId = hash({ input: id, run: randomUUID() })
   const enriched = {
     ...event,
-    evidence: scopeEvidence(
-      [
+    evidence: scopeEvidenceToWorkload({
+      evidence: [
         ...event.evidence,
         ...evidence.filter((e) =>
           resources.some((r) => r.evidenceIds.includes(e.id)),
         ),
       ],
-      event.id,
+      eventId: event.id,
       workloadId,
       resources,
-    ),
+    }),
   }
   const deterministicNoReview = canSkipAssessmentReview({
     outcome: impactOutcome,
