@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
 import { z } from 'zod'
 import { approvalSchema, correctionSchema } from '@arp/contracts'
-import { hash, reviseAssessment } from '@arp/domain'
+import { hash, isTranslatableOfficialEvidence, reviseAssessment } from '@arp/domain'
 import {
   AzureStore,
   GitHubClient,
@@ -103,9 +103,7 @@ app.http('api', {
           )
           if (
             !evidence ||
-            evidence.sourceType !== 'Microsoft' ||
-            !evidence.officialUrl ||
-            !isMicrosoftOfficialUrl(evidence.officialUrl)
+            !isTranslatableOfficialEvidence(assessment.event, evidence)
           )
             return reply(404, {
               error: 'Official Microsoft evidence not found',
@@ -248,21 +246,6 @@ app.http('api', {
   },
 })
 
-function isMicrosoftOfficialUrl(value: string): boolean {
-  try {
-    const url = new URL(value)
-    return (
-      url.protocol === 'https:' &&
-      !url.username &&
-      !url.password &&
-      ['aka.ms', 'azure.com', 'microsoft.com'].some(
-        (host) => url.hostname === host || url.hostname.endsWith(`.${host}`),
-      )
-    )
-  } catch {
-    return false
-  }
-}
 app.http('web', {
   route: '{*path}',
   authLevel: 'anonymous',
