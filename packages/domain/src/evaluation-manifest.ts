@@ -317,7 +317,11 @@ export function validateEvaluationManifest(value: unknown): EvaluationManifest {
     observations.add(item.observationId)
     if (runIds.has(item.run.runId)) throw new Error('manifest: duplicate runId')
     runIds.add(item.run.runId)
-    const repetitionKey = `${item.retirementFamilyKey}:${item.scenarioId}:${item.repetition}`
+    const repetitionKey = JSON.stringify([
+      item.retirementFamilyKey,
+      item.scenarioId,
+      item.repetition,
+    ])
     if (repetitions.has(repetitionKey))
       throw new Error('manifest: duplicate scenario repetition')
     repetitions.add(repetitionKey)
