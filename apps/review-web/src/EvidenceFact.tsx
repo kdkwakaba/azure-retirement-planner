@@ -1,4 +1,7 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
+import { z } from 'zod'
+import type { Evidence } from '@arp/contracts'
+import { request } from './api.ts'
 
 const excludedTags = new Set([
   'script',
@@ -125,6 +128,74 @@ export function EvidenceFact({ value }: { value: string }) {
   )
 }
 
+export function EvidenceCard({
+  evidence,
+  assessmentId,
+}: {
+  evidence: Evidence
+  assessmentId: string
+}) {
+  const [translated, setTranslated] = useState<string | null>(null)
+  const [translationError, setTranslationError] = useState('')
+  const [translating, setTranslating] = useState(false)
+  const canTranslate =
+    evidence.sourceType === 'Microsoft' &&
+    safeEvidenceUrl(evidence.officialUrl) !== null
+
+  async function translate() {
+    setTranslating(true)
+    setTranslationError('')
+    try {
+      const result = z
+        .object({
+          translatedText: z.string(),
+          provider: z.literal('Azure AI Translator'),
+          cached: z.boolean(),
+        })
+        .parse(
+          await request('translate-evidence', 'POST', {
+            assessmentId,
+            evidenceId: evidence.id,
+          }),
+        )
+      setTranslated(result.translatedText)
+    } catch (error) {
+      setTranslationError(
+        error instanceof Error
+          ? error.message
+          : '日本語訳を取得できませんでした',
+      )
+    } finally {
+      setTranslating(false)
+    }
+  }
+
+  return (
+    <>
+      <EvidenceFact value={evidence.fact} />
+      {canTranslate && (
+        <section className="evidence-translation" aria-label="日本語参考訳">
+          {translated === null ? (
+            <button disabled={translating} onClick={() => void translate()}>
+              {translating ? '日本語訳を取得中…' : '日本語の参考訳を表示'}
+            </button>
+          ) : (
+            <>
+              <h4>日本語の参考訳（Azure AI Translator）</h4>
+              <p className="translation-notice">
+                自動翻訳です。判断根拠としては上のMicrosoft公式原文と公式参照を確認してください。
+              </p>
+              <EvidenceFact value={translated} />
+            </>
+          )}
+          {translationError && <p role="alert">{translationError}</p>}
+        </section>
+      )}
+    </>
+  )
+}
+
 export function safeOfficialEvidenceUrl(value: string | null): string | null {
   return safeEvidenceUrl(value)
 }
+
