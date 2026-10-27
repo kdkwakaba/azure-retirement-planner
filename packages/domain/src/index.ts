@@ -12,6 +12,12 @@ import type {
   WorkItem,
 } from '@arp/contracts'
 import { assessmentSchema, dateSchema, eventSchema } from '@arp/contracts'
+export { evaluateCases } from './evaluation.ts'
+export type {
+  EvaluationCase,
+  EvaluationRate,
+  EvaluationReport,
+} from './evaluation.ts'
 
 export const RULE_VERSION = '2026-10-27.1'
 export const NORMALIZATION_VERSION = '2026-10-27.1'
