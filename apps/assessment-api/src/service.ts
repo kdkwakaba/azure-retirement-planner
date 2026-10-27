@@ -37,6 +37,7 @@ import {
   unavailableDecision,
   applicableProfileIds,
   fetchOfficialProfileEvidence,
+  RESOURCE_PROFILES,
   PROFILE_RESOURCE_TYPES,
   PROFILE_REGISTRY_VERSION,
 } from '@arp/adapters'
@@ -71,6 +72,35 @@ export function decisionRevision(limit: number): string | null {
     deployment,
     modelVersion,
     promptVersion: PROMPT_VERSION,
+  })
+}
+const EVIDENCE_SCOPE_VERSION = '2'
+function scopeEvidence(
+  evidence: Evidence[],
+  eventId: string,
+  workloadId: string,
+  resources: ResourceImpact[],
+): Evidence[] {
+  const resourceIds = new Set(
+    resources.map((resource) => resource.id.toLowerCase()),
+  )
+  return evidence.flatMap((item) => {
+    const resourceSubjects = item.subjectIds.filter((id) =>
+      id.startsWith('/subscriptions/'),
+    )
+    if (
+      resourceSubjects.length &&
+      !resourceSubjects.some((id) => resourceIds.has(id.toLowerCase()))
+    )
+      return []
+    const subjectIds = item.subjectIds.filter(
+      (id) =>
+        id === eventId ||
+        id === workloadId ||
+        resourceIds.has(id.toLowerCase()),
+    )
+    if (!subjectIds.length) return []
+    return [{ ...item, subjectIds }]
   })
 }
 export async function synchronize(): Promise<{
@@ -261,8 +291,19 @@ export async function assessSnapshot(message: unknown): Promise<void> {
   const profiles = applicableProfileIds(event)
   const referenceEvidence: Evidence[] = []
   for (const profileId of profiles) {
+    const profile = RESOURCE_PROFILES.find((item) => item.id === profileId)
+    const matchingResources = profile
+      ? candidates.filter(
+          (resource) =>
+            resource.type.toLowerCase() === profile.resourceType.toLowerCase(),
+        )
+      : []
+    if (!profile || !matchingResources.length) continue
     try {
-      referenceEvidence.push(await fetchOfficialProfileEvidence(profileId))
+      referenceEvidence.push({
+        ...(await fetchOfficialProfileEvidence(profileId)),
+        subjectIds: matchingResources.map((resource) => resource.id),
+      })
     } catch {
       complete = false
       missing.push(`公式参照の取得に失敗: ${profileId}`)
@@ -296,9 +337,22 @@ export async function assessSnapshot(message: unknown): Promise<void> {
           '業務重要度・移行方式・工程期間・適用期限の人間確認が必要',
           ...resourceMissingInformation(resources),
         ]
+    const workloadEvent: LifecycleEvent = {
+      ...event,
+      evidence: scopeEvidence(
+        event.evidence.filter(
+          (item) =>
+            item.officialUrl === null ||
+            resources.some((resource) => item.subjectIds.includes(resource.id)),
+        ),
+        event.id,
+        workloadId,
+        resources,
+      ),
+    }
     await assessWorkload(
       store,
-      event,
+      workloadEvent,
       resources,
       snapshot.evidence,
       workloadId,
@@ -337,6 +391,7 @@ async function assessWorkload(
     .map((item) => item.sourceVersion)
     .sort()
   const id = hash({
+    evidenceScopeVersion: EVIDENCE_SCOPE_VERSION,
     workflowPolicyHash: policyHash,
     eventVersionId: event.versionId,
     ...(officialReferenceVersions.length ? { officialReferenceVersions } : {}),
@@ -380,12 +435,17 @@ async function assessWorkload(
   const assessmentId = hash({ input: id, run: randomUUID() })
   const enriched = {
     ...event,
-    evidence: [
-      ...event.evidence,
-      ...evidence.filter((e) =>
-        resources.some((r) => r.evidenceIds.includes(e.id)),
-      ),
-    ],
+    evidence: scopeEvidence(
+      [
+        ...event.evidence,
+        ...evidence.filter((e) =>
+          resources.some((r) => r.evidenceIds.includes(e.id)),
+        ),
+      ],
+      event.id,
+      workloadId,
+      resources,
+    ),
   }
   const deterministicNoReview = canSkipAssessmentReview({
     outcome: impactOutcome,
@@ -495,7 +555,7 @@ async function assessWorkload(
       eventId: event.id,
       workloadId,
       priority: rules.priority,
-      eventEvidenceIds: event.evidence.map((e) => e.id),
+      eventEvidence: event.evidence,
       resources,
     })
   if (!deterministicNoReview && !workItems.length)
@@ -523,7 +583,16 @@ async function assessWorkload(
           '根拠付きの対象・対象外・未確定事項を人間が確認する',
         ],
         humanApprovalRequired: true,
-        evidenceIds: event.evidence.map((e) => e.id),
+        evidenceIds: event.evidence
+          .filter((item) =>
+            item.subjectIds.every(
+              (subjectId) =>
+                subjectId === event.id ||
+                subjectId === workloadId ||
+                resources.some((resource) => resource.id === subjectId),
+            ),
+          )
+          .map((item) => item.id),
         sourceType: 'Internal',
         officialReferenceIds: [],
         dependencyIds: [],
