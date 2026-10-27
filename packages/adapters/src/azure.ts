@@ -11,6 +11,56 @@ import { jsonRequest, RemoteError } from './http.ts'
 import { recordDependencyFailure } from './operations.ts'
 
 export const credential = new PlatformIdentity()
+
+export async function translateOfficialHtmlToJapanese(
+  input: {
+    resourceId: string
+    text: string
+  },
+  tokenProvider = () =>
+    credential.getToken('https://cognitiveservices.azure.com/.default'),
+  fetcher: typeof fetch = fetch,
+): Promise<string> {
+  if (
+    !/^\/subscriptions\/[0-9a-f-]{36}\/resourceGroups\/[^/]+\/providers\/Microsoft\.CognitiveServices\/accounts\/[^/]+$/i.test(
+      input.resourceId,
+    ) ||
+    input.text.length === 0 ||
+    input.text.length > 50_000
+  )
+    throw new Error('Invalid translation input')
+  const token = await tokenProvider()
+  const url = new URL('https://api.cognitive.microsofttranslator.com/translate')
+  url.searchParams.set('api-version', '3.0')
+  url.searchParams.set('to', 'ja')
+  url.searchParams.set('textType', 'html')
+  const response = await fetcher(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token.token}`,
+      'Ocp-Apim-ResourceId': input.resourceId,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify([{ Text: input.text }]),
+    redirect: 'error',
+    signal: AbortSignal.timeout(20_000),
+  })
+  if (!response.ok)
+    throw new Error(`Translator request failed (${response.status})`)
+  const result = z
+    .array(
+      z.object({
+        translations: z
+          .array(
+            z.object({ text: z.string().max(200_000), to: z.literal('ja') }),
+          )
+          .min(1),
+      }),
+    )
+    .length(1)
+    .parse(await response.json())
+  return result[0]!.translations[0]!.text
+}
 function subscriptionResourceId(value: unknown): string | null {
   const id = String(value).toLowerCase()
   return /^\/subscriptions\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/(?:resourcegroups\/[^/]+\/)?providers\/[^/]+\/[^/]+\/[^/]+(?:\/.*)?$/.test(

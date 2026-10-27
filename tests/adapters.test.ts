@@ -10,11 +10,84 @@ import {
   explicitResourceIds,
   issueText,
   managedIssueContent,
+  translateOfficialHtmlToJapanese,
 } from '@arp/adapters'
 import { credential } from '../packages/adapters/src/azure.ts'
 import { fixture, tenant, resourceId } from './fixtures.ts'
 import { hash } from '@arp/domain'
 import type { Approval } from '@arp/contracts'
+
+test('official evidence translation uses the managed-identity Translator contract', async () => {
+  let requestBody = ''
+  const translated = await translateOfficialHtmlToJapanese(
+    {
+      resourceId:
+        '/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/arp/providers/Microsoft.CognitiveServices/accounts/arp-translate',
+      text: '<p>Retirement date</p>',
+    },
+    async () => ({
+      token: 'test-token',
+      expiresOnTimestamp: Date.now() + 60_000,
+    }),
+    async (input, init) => {
+      const url = new URL(String(input))
+      assert.equal(url.hostname, 'api.cognitive.microsofttranslator.com')
+      assert.equal(url.searchParams.get('api-version'), '3.0')
+      assert.equal(url.searchParams.get('to'), 'ja')
+      assert.equal(url.searchParams.get('textType'), 'html')
+      assert.equal(init?.redirect, 'error')
+      assert.equal(
+        init?.headers && new Headers(init.headers).get('Authorization'),
+        'Bearer test-token',
+      )
+      assert.equal(
+        init?.headers && new Headers(init.headers).get('Ocp-Apim-ResourceId'),
+        '/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/arp/providers/Microsoft.CognitiveServices/accounts/arp-translate',
+      )
+      requestBody = String(init?.body)
+      return Response.json([
+        { translations: [{ text: '<p>廃止日</p>', to: 'ja' }] },
+      ])
+    },
+  )
+  assert.equal(requestBody, '[{"Text":"<p>Retirement date</p>"}]')
+  assert.equal(translated, '<p>廃止日</p>')
+})
+
+test('official evidence translation rejects arbitrary resources and oversized text before network access', async () => {
+  let calls = 0
+  const noNetwork: typeof fetch = async () => {
+    calls++
+    return Response.json([])
+  }
+  await assert.rejects(
+    translateOfficialHtmlToJapanese(
+      { resourceId: 'https://attacker.invalid', text: 'evidence' },
+      async () => ({
+        token: 'test-token',
+        expiresOnTimestamp: Date.now() + 60_000,
+      }),
+      noNetwork,
+    ),
+    /Invalid translation input/,
+  )
+  await assert.rejects(
+    translateOfficialHtmlToJapanese(
+      {
+        resourceId:
+          '/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/arp/providers/Microsoft.CognitiveServices/accounts/arp-translate',
+        text: 'x'.repeat(50_001),
+      },
+      async () => ({
+        token: 'test-token',
+        expiresOnTimestamp: Date.now() + 60_000,
+      }),
+      noNetwork,
+    ),
+    /Invalid translation input/,
+  )
+  assert.equal(calls, 0)
+})
 
 test('official profile evidence fetch is restricted, bounded, and cached', async () => {
   let calls = 0
