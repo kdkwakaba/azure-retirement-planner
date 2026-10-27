@@ -13,7 +13,8 @@ import type {
 } from '@arp/contracts'
 import { assessmentSchema, dateSchema, eventSchema } from '@arp/contracts'
 
-export const RULE_VERSION = '2026-10-24.1'
+export const RULE_VERSION = '2026-10-27.1'
+export const NORMALIZATION_VERSION = '2026-10-27.1'
 export function canonical(value: unknown): string {
   if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']'
   if (value !== null && typeof value === 'object')
@@ -58,6 +59,66 @@ export function highestPriority(
       .filter((v): v is Priority => v !== null)
       .sort((a, b) => ranks.indexOf(a) - ranks.indexOf(b))[0] ?? null
   )
+}
+const monthNumbers: Record<string, string> = {
+  jan: '01',
+  january: '01',
+  feb: '02',
+  february: '02',
+  mar: '03',
+  march: '03',
+  apr: '04',
+  april: '04',
+  may: '05',
+  jun: '06',
+  june: '06',
+  jul: '07',
+  july: '07',
+  aug: '08',
+  august: '08',
+  sep: '09',
+  sept: '09',
+  september: '09',
+  oct: '10',
+  october: '10',
+  nov: '11',
+  november: '11',
+  dec: '12',
+  december: '12',
+}
+function explicitDate(value: string): string | null {
+  if (dateSchema.safeParse(value).success) return value
+  const dayFirst = /^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$/.exec(value)
+  const monthFirst = /^([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})$/.exec(value)
+  if (!dayFirst && !monthFirst) return null
+  const monthName = dayFirst?.[2] ?? monthFirst?.[1]
+  const dayValue = dayFirst?.[1] ?? monthFirst?.[2]
+  const year = dayFirst?.[3] ?? monthFirst?.[3]
+  if (!monthName || !dayValue || !year) return null
+  const month = monthNumbers[monthName.toLowerCase()]
+  if (!month) return null
+  const day = dayValue.padStart(2, '0')
+  const date = `${year}-${month}-${day}`
+  return dateSchema.safeParse(date).success ? date : null
+}
+function explicitRetirementDate(
+  text: string,
+): { date: string; rawDateText: string } | { ambiguous: true } | null {
+  const dateToken =
+    '(\\d{4}-\\d{2}-\\d{2}|\\d{1,2}\\s+[A-Za-z]+\\s+\\d{4}|[A-Za-z]+\\s+\\d{1,2},?\\s+\\d{4})'
+  const pattern = new RegExp(
+    `\\b(?:will be retired|is being retired|is retired|was retired|retired|will retire|retires)\\s+on\\s+${dateToken}(?=$|[.,;!?\\s])`,
+    'gi',
+  )
+  const candidates: { date: string; rawDateText: string }[] = []
+  for (const match of text.matchAll(pattern)) {
+    const rawDateText = match[1]
+    const date = rawDateText ? explicitDate(rawDateText) : null
+    if (date && rawDateText) candidates.push({ date, rawDateText })
+  }
+  const dates = new Set(candidates.map((candidate) => candidate.date))
+  if (dates.size > 1) return { ambiguous: true }
+  return candidates[0] ?? null
 }
 export function priorityFor(impact: Impact, slack: number): Priority {
   if (slack <= 0) return 'P1'
@@ -145,11 +206,11 @@ export function normalizeNotice(input: {
     kinds.push('SupportEnded')
   if (/retir|廃止/i.test(text) || input.metadata?.EventSubType === 'Retirement')
     kinds.push('Retirement')
-  // キーワードは候補選別のみ。公式日付・適用条件はこの段階で推測しない。
+  // 日付は、Retirement subtypeの構造化値か、公式文面で廃止日を明示する限定表現だけを使う。
   const retirementDateText = input.metadata?.retirementDate
-  const retirementDate =
-    input.metadata?.EventSubType === 'Retirement' &&
-    typeof retirementDateText === 'string'
+  const isRetirement = input.metadata?.EventSubType === 'Retirement'
+  const structuredRetirementDate =
+    isRetirement && typeof retirementDateText === 'string'
       ? (() => {
           const date = retirementDateText.slice(0, 10)
           const isDateOnly = retirementDateText === date
@@ -163,17 +224,40 @@ export function normalizeNotice(input: {
             : null
         })()
       : null
+  const textualRetirementDate = isRetirement
+    ? explicitRetirementDate(text)
+    : null
+  const hasDateConflict =
+    structuredRetirementDate !== null &&
+    textualRetirementDate !== null &&
+    'date' in textualRetirementDate &&
+    structuredRetirementDate.date !== textualRetirementDate.date
+  const retirementDate = hasDateConflict
+    ? null
+    : (structuredRetirementDate ??
+      (textualRetirementDate && 'date' in textualRetirementDate
+        ? textualRetirementDate
+        : null))
+  const retirementDateScope = structuredRetirementDate
+    ? 'Service Health ImpactMitigationTime'
+    : 'Service Health explicit retirement wording'
   const contentHash = hash({
     title: input.title,
     body: input.body,
     metadata: input.metadata ?? {},
   })
+  // Keep source content identity separate from the parser version. The latter
+  // creates a new immutable event version without inventing an official update.
   const id = hash({
     tenant: input.tenantId,
     source: 'ServiceHealth',
     trackingId: input.trackingId,
   })
-  const evidenceId = hash({ id, contentHash })
+  const evidenceId = hash({
+    id,
+    contentHash,
+    normalizationVersion: NORMALIZATION_VERSION,
+  })
   const milestones: LifecycleEvent['milestones'] = retirementDate
     ? [
         {
@@ -186,7 +270,7 @@ export function normalizeNotice(input: {
           kind: 'Retirement',
           date: retirementDate.date,
           rawDateText: retirementDate.rawDateText,
-          scope: 'Service Health ImpactMitigationTime',
+          scope: retirementDateScope,
           evidenceIds: [evidenceId],
         },
       ]
@@ -198,14 +282,22 @@ export function normalizeNotice(input: {
     observedAt: input.updatedAt,
     subjectIds: [id],
     fact: retirementDate
-      ? `${text}\nOfficial Service Health ImpactMitigationTime: ${retirementDate.rawDateText}`
-      : text,
+      ? `${text}\nOfficial ${retirementDateScope}: ${retirementDate.rawDateText}`
+      : hasDateConflict
+        ? `${text}\nConflicting official retirement dates; no date normalized.`
+        : textualRetirementDate && 'ambiguous' in textualRetirementDate
+          ? `${text}\nMultiple explicit retirement dates; no date normalized.`
+          : text,
     officialUrl: null,
   }
   return eventSchema.parse({
     schemaVersion: '1',
     id,
-    versionId: hash({ id, contentHash }),
+    versionId: hash({
+      id,
+      contentHash,
+      normalizationVersion: NORMALIZATION_VERSION,
+    }),
     tenantId: input.tenantId,
     trackingId: input.trackingId,
     source: 'ServiceHealth',
