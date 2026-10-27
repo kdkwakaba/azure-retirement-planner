@@ -1,6 +1,10 @@
 import { useState, type ReactNode } from 'react'
 import { z } from 'zod'
-import { isTranslatableOfficialEvidence, type Evidence, type LifecycleEvent } from '@arp/contracts'
+import {
+  isTranslatableOfficialEvidence,
+  type Evidence,
+  type LifecycleEvent,
+} from '@arp/contracts'
 import { request } from './api.ts'
 
 const excludedTags = new Set([
