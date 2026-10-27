@@ -774,4 +774,3 @@ test('approval and stable per-item outbox are one conditional transaction', asyn
   await store.approve(a, approval)
   assert.equal(submit.mock.callCount(), 1)
 })
-
