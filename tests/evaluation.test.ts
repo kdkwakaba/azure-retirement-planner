@@ -166,14 +166,16 @@ function manifestObservation(
   observationId: string,
   scenarioId: string,
   split: 'Development' | 'Calibration' | 'Holdout',
+  retirementFamilyKey = `family-${observationId}`,
+  repetition = 1,
 ): EvaluationObservation {
   const digest = 'a'.repeat(64)
   return {
     observationId,
     scenarioId,
-    retirementFamilyKey: `family-${observationId}`,
+    retirementFamilyKey,
     split,
-    repetition: 1,
+    repetition,
     source: {
       kind: 'Synthetic',
       referenceIds: [],
@@ -224,6 +226,7 @@ test('manifest scoring binds every observation and reports splits independently'
 
   assert.equal(report.benchmarkVersion, 'benchmark-1')
   assert.equal(report.observationCount, 2)
+  assert.equal(report.independentScenarioCount, 2)
   assert.deepEqual(report.splits.Development?.observationIds, ['obs-dev'])
   assert.deepEqual(report.splits.Holdout?.observationIds, ['obs-holdout'])
   assert.equal(report.splits.Development?.metrics.caseCount, 1)
@@ -250,4 +253,30 @@ test('manifest scoring rejects missing, duplicate and unrecognized observations'
       ]),
     /unknown observationId/,
   )
+})
+
+test('manifest reporting distinguishes repeated observations from independent scenarios', () => {
+  const manifest: EvaluationManifest = {
+    schemaVersion: '1',
+    benchmarkVersion: 'benchmark-1',
+    cases: [
+      manifestObservation('obs-1', 'scenario-a', 'Holdout', 'family-a', 1),
+      manifestObservation('obs-2', 'scenario-a', 'Holdout', 'family-a', 2),
+      manifestObservation('obs-3', 'scenario-a', 'Holdout', 'family-a', 3),
+      manifestObservation('obs-4', 'scenario-b', 'Holdout', 'family-b', 1),
+    ],
+  }
+  const report = evaluateManifest(
+    manifest,
+    manifest.cases.map((observation, index) => ({
+      observationId: observation.observationId,
+      result: { ...firstCase, caseId: `run-${index + 1}` },
+    })),
+  )
+
+  assert.equal(report.observationCount, 4)
+  assert.equal(report.independentScenarioCount, 2)
+  assert.equal(report.splits.Holdout?.observationCount, 4)
+  assert.equal(report.splits.Holdout?.independentScenarioCount, 2)
+  assert.equal(report.splits.Holdout?.metrics.caseCount, 4)
 })

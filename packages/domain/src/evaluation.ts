@@ -41,6 +41,8 @@ export interface EvaluationScore {
 }
 
 export interface SplitEvaluationResult {
+  observationCount: number
+  independentScenarioCount: number
   observationIds: string[]
   metrics: EvaluationReport
 }
@@ -49,6 +51,7 @@ export interface EvaluationBenchmarkReport {
   schemaVersion: '1'
   benchmarkVersion: string
   observationCount: number
+  independentScenarioCount: number
   splits: Record<EvaluationSplit, SplitEvaluationResult | null>
 }
 
@@ -365,6 +368,16 @@ export function evaluateManifest(
         split,
         splitScores.length
           ? {
+              observationCount: splitScores.length,
+              independentScenarioCount: new Set(
+                splitScores.map((score) => {
+                  const observation = observationsById.get(score.observationId)!
+                  return JSON.stringify([
+                    observation.retirementFamilyKey,
+                    observation.scenarioId,
+                  ])
+                }),
+              ).size,
               observationIds: splitScores.map((score) => score.observationId),
               metrics: evaluateCases(splitScores.map((score) => score.result)),
             }
@@ -377,6 +390,14 @@ export function evaluateManifest(
     schemaVersion: '1',
     benchmarkVersion: manifest.benchmarkVersion,
     observationCount: manifest.cases.length,
+    independentScenarioCount: new Set(
+      manifest.cases.map((observation) =>
+        JSON.stringify([
+          observation.retirementFamilyKey,
+          observation.scenarioId,
+        ]),
+      ),
+    ).size,
     splits,
   }
 }
