@@ -1,7 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import type { EvaluationCase } from '@arp/domain'
-import { evaluateCases } from '@arp/domain'
+import type {
+  EvaluationCase,
+  EvaluationManifest,
+  EvaluationObservation,
+} from '@arp/domain'
+import { evaluateCases, evaluateManifest } from '@arp/domain'
 
 const firstCase: EvaluationCase = {
   caseId: 'synthetic-lb-critical',
@@ -155,5 +159,95 @@ test('duplicate IDs and inconsistent evaluation counts are rejected', () => {
         },
       ]),
     /inconsistent resources/,
+  )
+})
+
+function manifestObservation(
+  observationId: string,
+  scenarioId: string,
+  split: 'Development' | 'Calibration' | 'Holdout',
+): EvaluationObservation {
+  const digest = 'a'.repeat(64)
+  return {
+    observationId,
+    scenarioId,
+    retirementFamilyKey: `family-${observationId}`,
+    split,
+    repetition: 1,
+    source: {
+      kind: 'Synthetic',
+      referenceIds: [],
+      capturedAt: '2026-10-27T10:00:00Z',
+      asOf: '2026-10-27',
+      contentHash: digest,
+    },
+    versions: {
+      decisionModel: null,
+      decisionDeploymentVersion: null,
+      explanationModel: null,
+      explanationDeploymentVersion: null,
+      promptVersion: null,
+      ruleVersion: 'rule-1',
+      contractVersion: '1',
+    },
+    run: {
+      runId: `run-${observationId}`,
+      inputHash: digest,
+      outputHash: digest,
+      startedAt: '2026-10-27T10:01:00Z',
+      durationMs: 100,
+    },
+    adjudication: {
+      status: 'Unreviewed',
+      reviewerCount: 0,
+      adjudicatedAt: null,
+    },
+  }
+}
+
+test('manifest scoring binds every observation and reports splits independently', () => {
+  const manifest: EvaluationManifest = {
+    schemaVersion: '1',
+    benchmarkVersion: 'benchmark-1',
+    cases: [
+      manifestObservation('obs-dev', 'scenario-dev', 'Development'),
+      manifestObservation('obs-holdout', 'scenario-holdout', 'Holdout'),
+    ],
+  }
+  const report = evaluateManifest(manifest, [
+    { observationId: 'obs-holdout', result: firstCase },
+    {
+      observationId: 'obs-dev',
+      result: { ...firstCase, caseId: 'development-case' },
+    },
+  ])
+
+  assert.equal(report.benchmarkVersion, 'benchmark-1')
+  assert.equal(report.observationCount, 2)
+  assert.deepEqual(report.splits.Development?.observationIds, ['obs-dev'])
+  assert.deepEqual(report.splits.Holdout?.observationIds, ['obs-holdout'])
+  assert.equal(report.splits.Development?.metrics.caseCount, 1)
+  assert.equal(report.splits.Calibration, null)
+})
+
+test('manifest scoring rejects missing, duplicate and unrecognized observations', () => {
+  const manifest: EvaluationManifest = {
+    schemaVersion: '1',
+    benchmarkVersion: 'benchmark-1',
+    cases: [manifestObservation('obs-1', 'scenario-1', 'Holdout')],
+  }
+  const score = { observationId: 'obs-1', result: firstCase }
+
+  assert.throws(() => evaluateManifest(manifest, []), /cover every/)
+  assert.throws(
+    () => evaluateManifest(manifest, [score, score]),
+    /duplicate observationId/,
+  )
+  assert.throws(
+    () =>
+      evaluateManifest(manifest, [
+        { observationId: 'obs-unknown', result: firstCase },
+      ]),
+    /unknown observationId/,
   )
 })
