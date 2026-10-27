@@ -13,6 +13,11 @@ param decisionDeployment string = ''
 param decisionModelVersion string = ''
 param explanationEndpoint string = ''
 param explanationDeployment string = ''
+@allowed([
+  'F0'
+  'S1'
+])
+param translatorSku string = 'F0'
 @minValue(0)
 @maxValue(200)
 param maxModelCallsPerDay int = 0
@@ -79,6 +84,18 @@ resource insights 'Microsoft.Insights/components@2020-02-02' = {
   tags: tags
   kind: 'web'
   properties: { Application_Type: 'web', WorkspaceResourceId: workspace.id, IngestionMode: 'LogAnalytics', Flow_Type: null, Request_Source: null }
+}
+resource translator 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
+  name: '${prefix}-translate-${suffix}'
+  location: location
+  tags: tags
+  kind: 'TextTranslation'
+  sku: { name: translatorSku }
+  properties: {
+    customSubDomainName: '${prefix}-translate-${suffix}'
+    disableLocalAuth: true
+    publicNetworkAccess: 'Enabled'
+  }
 }
 resource processingFailureAlert 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = if (processingFailureAlertsEnabled) {
   name: '${prefix}-processing-failure-${suffix}'
@@ -162,6 +179,7 @@ resource functions 'Microsoft.Web/sites@2024-11-01' = [for (name,i) in ['api','e
         { name: 'DECISION_MODEL_VERSION', value: decisionModelVersion }
         { name: 'EXPLANATION_ENDPOINT', value: explanationEndpoint }
         { name: 'EXPLANATION_DEPLOYMENT', value: explanationDeployment }
+        { name: 'TRANSLATOR_RESOURCE_ID', value: translator.id }
         { name: 'MAX_MODEL_CALLS_PER_DAY', value: string(maxModelCallsPerDay) }
         { name: 'EXPORT_ENABLED', value: toLower(string(exportEnabled)) }
         { name: 'SYNC_ENABLED', value: toLower(string(syncEnabled)) }
@@ -204,4 +222,7 @@ output exporterPrincipalId string = functions[1].identity.principalId
 output hostStorageName string = hostStorage.name
 output dataStorageName string = dataStorage.name
 output vaultName string = vault.name
+output translatorName string = translator.name
+output translatorResourceId string = translator.id
 output apiUrl string = 'https://${functions[0].properties.defaultHostName}'
+
