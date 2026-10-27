@@ -310,6 +310,7 @@ export function validateEvaluationManifest(value: unknown): EvaluationManifest {
   const observations = new Set<string>()
   const runIds = new Set<string>()
   const repetitions = new Set<string>()
+  const inputHashByScenario = new Map<string, string>()
   const splitByFamily = new Map<string, EvaluationSplit>()
   for (const item of cases) {
     if (observations.has(item.observationId))
@@ -325,6 +326,14 @@ export function validateEvaluationManifest(value: unknown): EvaluationManifest {
     if (repetitions.has(repetitionKey))
       throw new Error('manifest: duplicate scenario repetition')
     repetitions.add(repetitionKey)
+    const scenarioKey = JSON.stringify([
+      item.retirementFamilyKey,
+      item.scenarioId,
+    ])
+    const priorInputHash = inputHashByScenario.get(scenarioKey)
+    if (priorInputHash && priorInputHash !== item.run.inputHash)
+      throw new Error('manifest: repeated scenario has inconsistent inputHash')
+    inputHashByScenario.set(scenarioKey, item.run.inputHash)
     const priorSplit = splitByFamily.get(item.retirementFamilyKey)
     if (priorSplit && priorSplit !== item.split)
       throw new Error('manifest: retirement family spans evaluation splits')
