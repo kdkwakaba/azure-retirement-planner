@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  type Evidence,
   approvalSchema,
   assessmentSchema,
   dateSchema,
@@ -295,6 +296,50 @@ test('TST-18: unsupported fact is blocked', () => {
     },
   ]
   assert.ok(validateAssessment(a).some((e) => e.includes('根拠不足')))
+})
+test('Evidence for an unrelated resource cannot ground a work item or claim', () => {
+  const assessment = fixture()
+  const unrelatedResource = `/subscriptions/${tenant}/resourceGroups/other/providers/Microsoft.Storage/storageAccounts/other`
+  const evidenceId = hash('unrelated-resource-evidence')
+  assessment.event.evidence.push({
+    id: evidenceId,
+    sourceType: 'Microsoft',
+    sourceVersion: hash('unrelated-source-version'),
+    observedAt: '2026-08-01T00:00:00.000Z',
+    subjectIds: [unrelatedResource],
+    fact: 'Synthetic evidence for another resource',
+    officialUrl: 'https://learn.microsoft.com/en-us/azure/synthetic',
+  })
+  assessment.workItems[0]!.evidenceIds = [evidenceId]
+  assessment.workItems[0]!.officialReferenceIds = [evidenceId]
+  assessment.explanation.microsoftFacts.push({
+    id: 'unrelated-fact',
+    text: 'Synthetic claim about another resource',
+    kind: 'Confirmed Fact',
+    evidenceIds: [evidenceId],
+    decisionRefs: [],
+  })
+  const errors = validateAssessment(assessment)
+  assert.ok(
+    errors.filter((error) => error.includes('対象範囲外のEvidence')).length >=
+      2,
+  )
+})
+test('Evidence scoped to the target resource may ground its work item', () => {
+  const assessment = fixture()
+  const evidenceId = hash('target-resource-evidence')
+  assessment.event.evidence.push({
+    id: evidenceId,
+    sourceType: 'Microsoft',
+    sourceVersion: hash('target-source-version'),
+    observedAt: '2026-08-01T00:00:00.000Z',
+    subjectIds: [resourceId],
+    fact: 'Synthetic Microsoft guidance for the target resource',
+    officialUrl: 'https://learn.microsoft.com/en-us/azure/synthetic',
+  })
+  assessment.workItems[0]!.evidenceIds = [evidenceId]
+  assessment.workItems[0]!.officialReferenceIds = [evidenceId]
+  assert.deepEqual(validateAssessment(assessment), [])
 })
 test('TST-19: 100 identical payloads have one version key', () => {
   const ids = Array.from({ length: 100 }, () => fixture().event.versionId)
@@ -647,7 +692,7 @@ test('resource uncertainty produces evidence-backed verification work without re
     eventId: a.event.id,
     workloadId: a.workloadId,
     priority: 'P2',
-    eventEvidenceIds: a.event.evidence.map((e) => e.id),
+    eventEvidence: a.event.evidence,
     resources,
   })
   assert.equal(work.length, 3)
@@ -665,12 +710,42 @@ test('resource uncertainty produces evidence-backed verification work without re
   assert.ok(noProfile.every((item) => item.resourceIds.length === 1))
   assert.equal(noProfile[0]!.category, 'Impact Verification')
   assert.ok(noProfile[0]!.evidenceIds.includes(a.event.evidence[0]!.id))
+  const lbId = `${resourceId}-unmapped-lb`
+  const storageId = `${resourceId}-unmapped-storage`
+  const lbEvidence: Evidence = {
+    ...a.event.evidence[0]!,
+    id: hash('lb-only-evidence'),
+    subjectIds: [lbId],
+  }
+  const storageEvidence: Evidence = {
+    ...a.event.evidence[0]!,
+    id: hash('storage-only-evidence'),
+    subjectIds: [storageId],
+  }
+  const mixedWork = resourceVerificationWorkItems({
+    eventId: a.event.id,
+    workloadId: a.workloadId,
+    priority: 'P2',
+    eventEvidence: [...a.event.evidence, lbEvidence, storageEvidence],
+    resources: resources.slice(1, 3).map((resource) => ({
+      ...resource,
+      workloadId: a.workloadId,
+    })),
+  })
+  const lbWork = mixedWork.find((item) => item.resourceIds.includes(lbId))!
+  const storageWork = mixedWork.find((item) =>
+    item.resourceIds.includes(storageId),
+  )!
+  assert.ok(lbWork.evidenceIds.includes(lbEvidence.id))
+  assert.ok(!lbWork.evidenceIds.includes(storageEvidence.id))
+  assert.ok(storageWork.evidenceIds.includes(storageEvidence.id))
+  assert.ok(!storageWork.evidenceIds.includes(lbEvidence.id))
   assert.ok(
     resourceVerificationWorkItems({
       eventId: a.event.id,
       workloadId: a.workloadId,
       priority: 'P2',
-      eventEvidenceIds: a.event.evidence.map((e) => e.id),
+      eventEvidence: a.event.evidence,
       resources: [base],
     }).length === 0,
   )
