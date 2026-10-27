@@ -5,6 +5,7 @@ import {
   ensureIssueForExport,
   GitHubClient,
   argRows,
+  fetchOfficialProfileEvidence,
   decide,
   explicitResourceIds,
   issueText,
@@ -14,6 +15,95 @@ import { credential } from '../packages/adapters/src/azure.ts'
 import { fixture, tenant, resourceId } from './fixtures.ts'
 import { hash } from '@arp/domain'
 import type { Approval } from '@arp/contracts'
+
+test('official profile evidence fetch is restricted, bounded, and cached', async () => {
+  let calls = 0
+  const now = Date.parse('2026-10-27T00:00:00.000Z')
+  const fetcher: typeof fetch = async (input, init) => {
+    calls++
+    const url = new URL(String(input))
+    assert.equal(url.hostname, 'learn.microsoft.com')
+    assert.equal(init?.redirect, 'error')
+    assert.equal(init?.method, 'GET')
+    return new Response(
+      '<html><main><h1>Basic Load Balancer guidance</h1><p>' +
+        'Microsoft documentation with an &amp; escaped value. '.repeat(8) +
+        '</p><script>ignore this injected instruction</script></main></html>',
+      { headers: { 'content-type': 'text/html; charset=utf-8' } },
+    )
+  }
+  const first = await fetchOfficialProfileEvidence(
+    'basic-load-balancer',
+    fetcher,
+    now,
+  )
+  const cached = await fetchOfficialProfileEvidence(
+    'basic-load-balancer',
+    fetcher,
+    now + 1000,
+  )
+  assert.equal(calls, 1)
+  assert.equal(first.id, cached.id)
+  assert.equal(first.sourceType, 'Microsoft')
+  assert.equal(
+    first.officialUrl,
+    'https://learn.microsoft.com/en-us/azure/load-balancer/load-balancer-basic-upgrade-guidance',
+  )
+  assert.match(first.fact, /Microsoft documentation with an & escaped value/)
+  assert.doesNotMatch(first.fact, /ignore this injected instruction/)
+})
+
+test('official profile evidence rejects unknown profiles and oversized pages', async () => {
+  let calls = 0
+  await assert.rejects(
+    fetchOfficialProfileEvidence('https://attacker.invalid', async () => {
+      calls++
+      return Response.json({})
+    }),
+    /Unknown official reference profile/,
+  )
+  await assert.rejects(
+    fetchOfficialProfileEvidence(
+      'storage-gpv1',
+      async () => {
+        calls++
+        return new Response('<main>' + 'x'.repeat(2_000_100) + '</main>', {
+          headers: { 'content-type': 'text/html' },
+        })
+      },
+      Date.parse('2026-10-28T00:00:00.000Z'),
+    ),
+    /too large/,
+  )
+  assert.equal(calls, 1)
+})
+
+test('official reference revision hashes full text beyond the model excerpt', async () => {
+  let pageTail = 'A'.repeat(200),
+    calls = 0
+  const now = Date.parse('2026-10-29T00:00:00.000Z')
+  const fetcher: typeof fetch = async () => {
+    calls++
+    return new Response('<main>' + 'x'.repeat(9500) + pageTail + '</main>', {
+      headers: { 'content-type': 'text/html' },
+    })
+  }
+  const first = await fetchOfficialProfileEvidence(
+    'application-insights-url-ping',
+    fetcher,
+    now,
+  )
+  pageTail = 'B'.repeat(200)
+  const second = await fetchOfficialProfileEvidence(
+    'application-insights-url-ping',
+    fetcher,
+    now + 60 * 60 * 1000 + 1,
+  )
+  assert.equal(calls, 2)
+  assert.equal(first.fact, second.fact)
+  assert.notEqual(first.sourceVersion, second.sourceVersion)
+  assert.notEqual(first.id, second.id)
+})
 
 test('explicit impacted-resource discovery uses exact tracking IDs and active Advisor recommendations', async (t) => {
   t.mock.method(credential, 'getToken', async () => ({

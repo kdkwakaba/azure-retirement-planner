@@ -708,6 +708,7 @@ export function verifyApproval(
 export function canClose(assessment: Assessment): boolean {
   if (assessment.humanContext?.scopeDisposition === 'OutOfScope')
     return (
+      assessment.humanReviewRequired !== true &&
       assessment.workItems.length === 0 &&
       assessment.effectivePriority === null &&
       assessment.humanContext.reason.trim().length > 0 &&
@@ -725,6 +726,91 @@ export function canClose(assessment: Assessment): boolean {
         ) && !r.verificationRequired,
     )
   )
+}
+export function carryForwardHumanContext(
+  next: Assessment,
+  previous: Assessment,
+): Assessment {
+  if (
+    !previous.humanContext ||
+    previous.event.id !== next.event.id ||
+    previous.event.versionId !== next.event.versionId ||
+    previous.workloadId !== next.workloadId
+  )
+    return next
+  const result = structuredClone(next)
+  const reviewEvidenceIds = previous.humanContext.reviewEvidenceIds ?? []
+  const reviewEvidence = previous.event.evidence.filter((e) =>
+    reviewEvidenceIds.includes(e.id),
+  )
+  result.event.evidence.push(
+    ...reviewEvidence.filter(
+      (e) => !result.event.evidence.some((existing) => existing.id === e.id),
+    ),
+  )
+  result.event.milestones = structuredClone(previous.event.milestones)
+  result.humanContext = structuredClone(previous.humanContext)
+  result.criticalWorkload = previous.humanContext.criticalWorkload
+  result.humanReviewRequired = true
+  if (previous.humanContext.scopeDisposition === 'OutOfScope') {
+    result.workItems = []
+    result.effectivePriority = null
+    result.reviewReasons = [
+      `人間が対象外と判定: ${previous.humanContext.reason}`,
+      '評価根拠が更新されたため、新旧根拠を確認し承認を取り直してください',
+    ]
+  } else {
+    const context = previous.humanContext
+    const milestone = result.event.milestones.find(
+      (item) => item.kind === context.applicableKind,
+    )
+    const rules = applyRules({
+      decision: {
+        ...result.decision,
+        impactIfUnaddressed: context.impactIfUnaddressed,
+        impactDuringAndAfterChange: context.impactDuringAndAfterChange,
+        priority: null,
+      },
+      asOf: result.asOf,
+      applicableDeadline: milestone?.date ?? null,
+      remainingCalendarDays: context.remainingCalendarDays,
+      criticalWorkload: context.criticalWorkload,
+      scopeComplete: result.scopeComplete,
+      missingInformation: [],
+      unresolvedImpact: context.impactIfUnaddressed === null,
+      alternativeApproved: context.alternativeApproved,
+    })
+    const knownWorkItems = new Set(result.workItems.map((item) => item.id))
+    const staleUpdates = context.workItemUpdates.filter(
+      (update) => !knownWorkItems.has(update.id),
+    )
+    result.workItems = result.workItems.map((item) => {
+      const update = context.workItemUpdates.find(
+        (candidate) => candidate.id === item.id,
+      )
+      return {
+        ...item,
+        ...(update ?? {}),
+        priority: rules.priority,
+        applicableMilestoneIds: milestone ? [milestone.id] : [],
+        status: 'Draft',
+      }
+    })
+    if (staleUpdates.length)
+      result.missingInformation.push(
+        '根拠更新後の作業IDが前回の人間訂正と一致しないため、担当・日程の再確認が必要',
+      )
+    result.effectivePriority = rules.priority
+    result.reviewReasons = [
+      ...new Set([
+        ...rules.reviewReasons,
+        '評価根拠が更新されたため、前回の人間判断を引き継いだ上で再確認が必要',
+      ]),
+    ]
+  }
+  result.validationErrors = validateAssessment(result)
+  result.packageHash = packageHash(result)
+  return assessmentSchema.parse(result)
 }
 export function reviseAssessment(
   original: Assessment,
@@ -826,6 +912,7 @@ export function reviseAssessment(
     reviewedAt: now,
     reviewEvidenceIds: [evidenceId],
   }
+  if (scopeDisposition === 'OutOfScope') result.humanReviewRequired = false
   result.effectivePriority =
     scopeDisposition === 'OutOfScope' ? null : rules.priority
   result.reviewReasons =
