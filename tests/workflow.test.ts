@@ -1,7 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { applyWorkflowPolicy, workflowPolicySchema } from '@arp/domain'
+import {
+  applyWorkflowPolicy,
+  generateBusinessWorkflowTasks,
+  workflowPolicySchema,
+} from '@arp/domain'
 import { fixture, resourceId } from './fixtures.ts'
+import demoPolicy from '../config/examples/workflow-policy.demo.json' with { type: 'json' }
 
 const policy = {
   schemaVersion: '1',
@@ -147,4 +152,165 @@ test('resource matching is case-insensitive and limited to selected resources', 
   assert.deepEqual(result.workItems[0]!.workflowRouting!.policyRuleIds, [
     'network-verification',
   ])
+})
+
+test('multiple team candidates are all retained without review solely due to count', () => {
+  const multiple = workflowPolicySchema.parse({
+    ...policy,
+    roles: [
+      ...policy.roles,
+      { id: 'application-team', displayName: 'Application Team', kind: 'Team' },
+    ],
+    assignmentRules: [
+      ...policy.assignmentRules,
+      {
+        id: 'application-coordination',
+        match: { categories: ['Impact Verification'] },
+        teamRoleIds: ['application-team'],
+      },
+    ],
+  })
+  const result = applyWorkflowPolicy(
+    fixture().workItems,
+    fixture().resources,
+    multiple,
+  )
+  assert.deepEqual(
+    result.workItems[0]!.workflowRouting!.teamCandidates.map((r) => r.id),
+    ['platform-team', 'application-team'],
+  )
+  assert.deepEqual(result.reviewReasons, [])
+})
+
+test('business coordination and commercial work categories are supported by policy', () => {
+  const extended = workflowPolicySchema.parse({
+    ...policy,
+    assignmentRules: [
+      {
+        id: 'business-coordination',
+        match: {
+          categories: ['Customer Communication', 'Cross-Team Coordination'],
+        },
+        coordinationRoleIds: ['security-dept'],
+      },
+      {
+        id: 'commercial-review',
+        match: {
+          categories: [
+            'Vendor Assessment',
+            'Cost Assessment',
+            'Budget Approval',
+            'Contract Review',
+          ],
+        },
+        teamRoleIds: ['platform-team'],
+        approvalStages: [
+          {
+            id: 'commercial-approval',
+            title: 'Commercial approval',
+            roleIds: ['change-approver'],
+          },
+        ],
+      },
+    ],
+  })
+  assert.equal(extended.assignmentRules.length, 2)
+})
+
+test('synthetic demo workflow policy conforms to the runtime contract', () => {
+  const parsed = workflowPolicySchema.parse(demoPolicy)
+  assert.equal(parsed.version, 'demo-synthetic-1')
+  assert.ok(
+    parsed.roles.every((role) => role.displayName.startsWith('サンプル: ')),
+  )
+})
+
+test('business workflow templates generate only triggered, evidence-backed sample tasks', () => {
+  const demo = workflowPolicySchema.parse(demoPolicy)
+  const assessment = fixture()
+  const policy = {
+    ...demo,
+    businessContextProfiles: demo.businessContextProfiles.map((profile) => ({
+      ...profile,
+      workloadId: assessment.workloadId,
+    })),
+  }
+  const generated = generateBusinessWorkflowTasks({
+    policy,
+    event: assessment.event,
+    workloadId: assessment.workloadId,
+    resources: assessment.resources,
+    priority: 'P2',
+    existingWorkItems: assessment.workItems,
+    asOf: assessment.asOf,
+  })
+  assert.deepEqual(
+    generated.workItems.map((item) => item.category).sort(),
+    [
+      'Cost Assessment',
+      'Cross-Team Coordination',
+      'Customer Communication',
+      'Vendor Assessment',
+    ].sort(),
+  )
+  assert.ok(
+    generated.workItems.every(
+      (item) =>
+        item.necessity === 'Recommended' ||
+        item.category === 'Customer Communication' ||
+        item.category === 'Cross-Team Coordination',
+    ),
+  )
+  assert.equal(generated.evidence.length, 1)
+  assert.match(generated.evidence[0]!.fact, /合成デモデータ/)
+  assert.ok(
+    generated.workItems.every((item) =>
+      item.evidenceIds.includes(generated.evidence[0]!.id),
+    ),
+  )
+})
+
+test('business profile does not create budget approval before additional cost is confirmed', () => {
+  const demo = workflowPolicySchema.parse(demoPolicy)
+  const assessment = fixture()
+  const policy = {
+    ...demo,
+    businessContextProfiles: demo.businessContextProfiles.map((profile) => ({
+      ...profile,
+      workloadId: assessment.workloadId,
+      additionalCost: 'Possible' as const,
+      vendorUse: 'No' as const,
+      businessImpact: 'Unknown' as const,
+      contractReview: 'Unknown' as const,
+    })),
+  }
+  const generated = generateBusinessWorkflowTasks({
+    policy,
+    event: assessment.event,
+    workloadId: assessment.workloadId,
+    resources: assessment.resources,
+    priority: 'P2',
+    existingWorkItems: [],
+    asOf: assessment.asOf,
+  })
+  assert.deepEqual(
+    generated.workItems.map((item) => item.category),
+    ['Cost Assessment'],
+  )
+  assert.equal(generated.workItems[0]!.necessity, 'Recommended')
+})
+
+test('business task generation does not apply demo profiles to unmatched workloads', () => {
+  const parsed = workflowPolicySchema.parse(demoPolicy)
+  const assessment = fixture()
+  const result = generateBusinessWorkflowTasks({
+    policy: parsed,
+    event: assessment.event,
+    workloadId: assessment.workloadId,
+    resources: assessment.resources,
+    priority: null,
+    existingWorkItems: [],
+    asOf: assessment.asOf,
+  })
+  assert.deepEqual(result, { workItems: [], evidence: [] })
 })

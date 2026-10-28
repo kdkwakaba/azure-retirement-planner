@@ -1,7 +1,10 @@
+import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import {
   categorySchema,
   resourceClassSchema,
+  type LifecycleEvent,
+  type Priority,
   type ResourceImpact,
   type WorkItem,
 } from '@arp/contracts'
@@ -44,6 +47,43 @@ const assignmentRuleSchema = z
     approvalStages: z.array(approvalStageSchema).default([]),
   })
   .strict()
+const businessContextProfileSchema = z
+  .object({
+    workloadId: z.string().regex(/^synthetic-[a-z0-9][a-z0-9-]{1,100}$/),
+    displayLabel: z.string().min(1).max(120),
+    dataClassification: z.literal('SyntheticDemo'),
+    businessImpact: z.enum(['Confirmed', 'None', 'Unknown']),
+    vendorUse: z.enum(['Confirmed', 'No', 'Unknown']),
+    additionalCost: z.enum(['Confirmed', 'Possible', 'None', 'Unknown']),
+    contractReview: z.enum(['Required', 'NotRequired', 'Unknown']),
+    sampleCostDescription: z.string().max(500).nullable(),
+    samplePlanning: z
+      .object({
+        standardLeadTimeDays: z.number().int().positive().max(365),
+        blackoutPeriods: z
+          .array(z.object({ start: z.iso.date(), end: z.iso.date() }).strict())
+          .max(20),
+      })
+      .strict(),
+  })
+  .strict()
+const businessTaskTemplateSchema = z
+  .object({
+    id: z.string().regex(/^[a-z0-9][a-z0-9-]{1,62}$/),
+    trigger: z.enum([
+      'BusinessImpact',
+      'VendorUse',
+      'AdditionalCostNeedsAssessment',
+      'ConfirmedAdditionalCost',
+      'ContractReview',
+    ]),
+    category: categorySchema,
+    title: z.string().min(1).max(160),
+    description: z.string().min(1).max(2000),
+    necessity: z.enum(['Required', 'Recommended']),
+    completionCriteria: z.array(z.string().min(1)).min(1),
+  })
+  .strict()
 const sequenceRuleSchema = z
   .object({
     category: categorySchema,
@@ -57,6 +97,8 @@ export const workflowPolicySchema = z
     roles: z.array(roleSchema),
     assignmentRules: z.array(assignmentRuleSchema),
     sequence: z.array(sequenceRuleSchema),
+    businessContextProfiles: z.array(businessContextProfileSchema).default([]),
+    businessTaskTemplates: z.array(businessTaskTemplateSchema).default([]),
   })
   .strict()
   .superRefine((policy, context) => {
@@ -109,6 +151,26 @@ export const workflowPolicySchema = z
               path: ['assignmentRules', index, 'approvalStages'],
               message: `Approver以外のRoleを承認者に指定: ${roleId}`,
             })
+    }
+    const profileIds = new Set<string>()
+    for (const [index, profile] of policy.businessContextProfiles.entries()) {
+      if (profileIds.has(profile.workloadId))
+        context.addIssue({
+          code: 'custom',
+          path: ['businessContextProfiles', index, 'workloadId'],
+          message: 'Workloadごとの業務コンテキストは一意にしてください',
+        })
+      profileIds.add(profile.workloadId)
+    }
+    const templateIds = new Set<string>()
+    for (const [index, template] of policy.businessTaskTemplates.entries()) {
+      if (templateIds.has(template.id))
+        context.addIssue({
+          code: 'custom',
+          path: ['businessTaskTemplates', index, 'id'],
+          message: '業務作業テンプレートIDが重複しています',
+        })
+      templateIds.add(template.id)
     }
     const sequence = new Map<string, string[]>()
     for (const [index, item] of policy.sequence.entries()) {
@@ -227,8 +289,6 @@ export function applyWorkflowPolicy(
       for (const candidate of preceding) dependencyIds.add(candidate.id)
     }
     const unresolvedReasons: string[] = []
-    if (teamRoles.length > 1)
-      unresolvedReasons.push('担当チーム候補が複数あり、割当判断が必要です')
     if (!teamRoles.length && !item.ownerTeam)
       unresolvedReasons.push('担当チーム候補が設定されていません')
     if (unresolvedReasons.length)
@@ -269,4 +329,111 @@ function uniqueRoles<K extends Role['kind']>(
       ? [{ id: role.id, displayName: role.displayName, kind }]
       : []
   })
+}
+
+export function generateBusinessWorkflowTasks(input: {
+  policy: WorkflowPolicy
+  event: LifecycleEvent
+  workloadId: string
+  resources: ResourceImpact[]
+  priority: Priority | null
+  existingWorkItems: WorkItem[]
+  asOf: string
+}): { workItems: WorkItem[]; evidence: LifecycleEvent['evidence'] } {
+  const profile = input.policy.businessContextProfiles.find(
+    (candidate) => candidate.workloadId === input.workloadId,
+  )
+  if (!profile) return { workItems: [], evidence: [] }
+  const triggers = new Set<string>()
+  if (profile.businessImpact === 'Confirmed') triggers.add('BusinessImpact')
+  if (profile.vendorUse === 'Confirmed') triggers.add('VendorUse')
+  if (
+    profile.additionalCost === 'Possible' ||
+    profile.additionalCost === 'Unknown'
+  )
+    triggers.add('AdditionalCostNeedsAssessment')
+  if (profile.additionalCost === 'Confirmed')
+    triggers.add('ConfirmedAdditionalCost')
+  if (
+    profile.contractReview === 'Required' &&
+    profile.vendorUse === 'Confirmed'
+  )
+    triggers.add('ContractReview')
+
+  const existingCategories = new Set(
+    input.existingWorkItems.map((item) => item.category),
+  )
+  const templates = input.policy.businessTaskTemplates.filter(
+    (template) =>
+      triggers.has(template.trigger) &&
+      !existingCategories.has(template.category),
+  )
+  if (!templates.length) return { workItems: [], evidence: [] }
+
+  const evidenceId = `business-context:${createHash('sha256')
+    .update(`${input.policy.version}:${input.workloadId}`)
+    .digest('hex')}`
+  const evidence: LifecycleEvent['evidence'][number] = {
+    id: evidenceId,
+    sourceType: 'Internal',
+    sourceVersion: `workflow-policy:${input.policy.version}`,
+    observedAt: new Date(`${input.asOf}T00:00:00.000Z`).toISOString(),
+    subjectIds: [
+      input.event.id,
+      input.workloadId,
+      ...input.resources.map((resource) => resource.id),
+    ],
+    fact: [
+      `合成デモデータ (${profile.displayLabel})`,
+      `業務影響=${profile.businessImpact}`,
+      `ベンダー利用=${profile.vendorUse}`,
+      `追加費用=${profile.additionalCost}`,
+      `契約確認=${profile.contractReview}`,
+      ...(profile.sampleCostDescription
+        ? [`サンプル費用情報=${profile.sampleCostDescription}`]
+        : []),
+      `サンプル標準リードタイム=${profile.samplePlanning.standardLeadTimeDays}日`,
+      `サンプル変更禁止期間=${
+        profile.samplePlanning.blackoutPeriods
+          .map((period) => `${period.start}から${period.end}`)
+          .join('、') || 'なし'
+      }`,
+    ].join('。'),
+    officialUrl: null,
+  }
+  const workItems = templates.map((template) => ({
+    id: createHash('sha256')
+      .update(
+        `${input.event.id}:${input.workloadId}:${input.policy.version}:${template.id}`,
+      )
+      .digest('hex'),
+    category: template.category,
+    title: template.title,
+    description: `${template.description} (合成デモ用業務コンテキスト: ${profile.displayLabel})`,
+    workloadId: input.workloadId,
+    resourceIds: input.resources.map((resource) => resource.id),
+    ownerTeam: null,
+    necessity: template.necessity,
+    priority: input.priority,
+    plannedStartDate: null,
+    dueDate: null,
+    applicableMilestoneIds: input.event.milestones.map(
+      (milestone) => milestone.id,
+    ),
+    prerequisites: [],
+    completionCriteria: template.completionCriteria,
+    humanApprovalRequired: true as const,
+    evidenceIds: [evidenceId],
+    sourceType: 'Internal' as const,
+    officialReferenceIds: [],
+    dependencyIds: [],
+    status: 'Draft' as const,
+    confidence: {
+      kind: 'EvidenceSupport' as const,
+      value: null,
+      method: `明示された合成デモ業務コンテキストとテンプレート ${template.id}`,
+      limitations: ['実企業の業務情報・担当・費用を表すものではない'],
+    },
+  }))
+  return { workItems, evidence: [evidence] }
 }

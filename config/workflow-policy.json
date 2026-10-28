@@ -3,5 +3,7 @@
   "version": "poc-template-1",
   "roles": [],
   "assignmentRules": [],
-  "sequence": []
+  "sequence": [],
+  "businessContextProfiles": [],
+  "businessTaskTemplates": []
 }

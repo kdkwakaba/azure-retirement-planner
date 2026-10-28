@@ -49,6 +49,12 @@ export const categorySchema = z.enum([
   'Documentation Update',
   'CMDB Update',
   'Policy and IaC Update',
+  'Customer Communication',
+  'Cross-Team Coordination',
+  'Vendor Assessment',
+  'Cost Assessment',
+  'Budget Approval',
+  'Contract Review',
 ])
 export const dateSchema = z.iso.date()
 export const discoveryFailureSchema = z

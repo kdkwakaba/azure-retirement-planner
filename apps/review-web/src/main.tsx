@@ -563,6 +563,13 @@ function App() {
                           {w.priority ?? '未確定'}
                         </p>
                         <p>{w.description}</p>
+                        {w.description.includes(
+                          '合成デモ用業務コンテキスト',
+                        ) && (
+                          <small className="notice">
+                            合成デモデータ（実際の部署・契約・費用ではありません）
+                          </small>
+                        )}
                         <small>
                           GitHub Project進捗:{' '}
                           {projectProgress.find((p) => p.workItemId === w.id)
@@ -580,7 +587,7 @@ function App() {
                               {w.workflowRouting.policyVersion}）
                             </b>
                             <p>
-                              担当チーム候補:{' '}
+                              担当チーム候補（複数可・未確定）:{' '}
                               {w.workflowRouting.teamCandidates
                                 .map((r) => r.displayName)
                                 .join('、') || '未設定'}
