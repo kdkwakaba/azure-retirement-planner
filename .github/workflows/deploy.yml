@@ -67,7 +67,7 @@ jobs:
           SOURCE_SHA=$(jq -r .head_sha /tmp/ci-run.json)
           [[ "$SOURCE_SHA" == "$GITHUB_SHA" ]]
           echo "sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version-file: .node-version
       - run: npm ci --ignore-scripts
