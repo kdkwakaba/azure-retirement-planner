@@ -281,9 +281,9 @@ jobs:
 
           - Source PR: #$FAILED_PR_NUMBER ($FAILED_PR_URL)
           - Failed run: $FAILED_RUN_URL
-          - Failed revision: `$FAILED_HEAD_SHA`
+          - Failed revision: \`$FAILED_HEAD_SHA\`
 
-          A separate clean job reran `npm run verify` and the Bicep static builds successfully against this patch. Review the diff and CI checks before merging. This PR targets the source PR branch. No automatic merge, Azure deployment, or production change is performed.
+          A separate clean job reran \`npm run verify\` and the Bicep static builds successfully against this patch. Review the diff and CI checks before merging. This PR targets the source PR branch. No automatic merge, Azure deployment, or production change is performed.
           EOF
 
           gh pr create \
