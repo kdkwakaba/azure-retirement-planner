@@ -620,11 +620,16 @@ export function validateAssessment(input: Assessment): string[] {
     if (!item) return true
     const resourceSubjects = item.subjectIds
       .map((subject) => subject.toLowerCase())
-      .filter((subject) => resources.has(subject))
-    if (resourceSubjects.length)
-      return resourceIds.some((resourceId) =>
-        resourceSubjects.includes(resourceId.toLowerCase()),
+      .filter((subject) => subject.startsWith('/subscriptions/'))
+    if (resourceSubjects.length) {
+      const allowedResources = new Set(
+        resourceIds.map((resourceId) => resourceId.toLowerCase()),
       )
+      // A citation is valid only when every resource it names is in scope.
+      // Mixed event-level and unrelated-resource evidence must not pass just
+      // because it also includes the event or one in-scope resource.
+      return resourceSubjects.every((subject) => allowedResources.has(subject))
+    }
     return (
       item.subjectIds.includes(input.event.id) ||
       item.subjectIds.includes(workloadId)
