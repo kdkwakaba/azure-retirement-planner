@@ -860,3 +860,33 @@ test('probability contract rejects invalid sums', () => {
     parseDecision({ model: 'Microsoft-Decision-1', answers }, '1'),
   )
 })
+
+
+test('Event-level evidence cannot carry an out-of-scope resource subject', () => {
+  const assessment = fixture()
+  const unrelatedResource = `/subscriptions/${tenant}/resourceGroups/other/providers/Microsoft.Storage/storageAccounts/other`
+  const evidenceId = hash('mixed-scope-resource-evidence')
+  assessment.event.evidence.push({
+    id: evidenceId,
+    sourceType: 'Microsoft',
+    sourceVersion: hash('mixed-scope-source-version'),
+    observedAt: '2026-08-01T00:00:00.000Z',
+    subjectIds: [assessment.event.id, unrelatedResource],
+    fact: 'Synthetic event and unrelated-resource evidence',
+    officialUrl: 'https://learn.microsoft.com/en-us/azure/synthetic',
+  })
+  assessment.workItems[0]!.evidenceIds = [evidenceId]
+  assessment.workItems[0]!.officialReferenceIds = [evidenceId]
+  assessment.explanation.microsoftFacts.push({
+    id: 'mixed-scope-claim',
+    text: 'Synthetic claim grounded in mixed-scope evidence',
+    kind: 'Confirmed Fact',
+    evidenceIds: [evidenceId],
+    decisionRefs: [],
+  })
+
+  const scopeErrors = validateAssessment(assessment).filter((error) =>
+    error.includes('対象範囲外のEvidence'),
+  )
+  assert.ok(scopeErrors.length >= 2)
+})
