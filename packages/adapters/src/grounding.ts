@@ -63,7 +63,10 @@ export function groundedInput(
         ? ([...teamAliases].find(([, name]) => name === r.ownerTeam)?.[0] ??
           null)
         : null,
-      properties: r.properties,
+      // Resource properties are an open-ended ARM payload and can contain
+      // tenant-specific values. The model receives only the typed fields above;
+      // profile matching and rule evaluation use the full properties before
+      // the grounding package is built.
     })),
     workloadId: 'workload-1',
     ...(decision ? { decision } : {}),
