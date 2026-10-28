@@ -1,6 +1,6 @@
 # 実装タスクと検証状態
 
-2026-10-26。状態はコードの実装と接続検証を分ける。ローカル検査合格はPoC成功・実環境動作・モデル品質の証明ではない。
+2026-10-28。状態はコードの実装と接続検証を分ける。ローカル検査合格はPoC成功・実環境動作・モデル品質の証明ではない。
 
 | ID | Epic / 作業・成果物 | 依存 | 完了条件 | 状態 | Size / Role / 並列可 |
 |---|---|---|---|---|---|
@@ -26,6 +26,7 @@
 | IMP-20 | Demo/UAT: 同一実環境で3分ライブ | 10,14–19 | 事前サインイン、実通知、判断→根拠→承認→登録 | リハーサル待ち。合成をライブ取得と偽らない | M / Presenter+QA / No |
 | IMP-21 | Cleanup: 作成台帳と専用資源・Project・秘密の撤去 | 04,15 | 削除対象照合、残存保持・残費用報告 | 専用Azure資源・Entra App・資格情報を作成済。撤去はPoC終了時に別途実行 | M / Cloud+Owner / No |
 | IMP-22 | UI: Microsoft公式Evidenceの日本語参考訳 | 03,13 | 原文保持、公式Source限定、MI、翻訳と判断根拠の分離、版付きCache | Service Health通知Evidenceの出所検証とUI/API対応はPR #46でmainへ反映済み。run #35はinfra-only applyでアプリZIP配置なし。PR #48により配置stepのoutcomeはJob Summaryへ表示。画面・実翻訳の確認は利用者指示により保留。アプリ配置後の日本語表示UATとPoC Translator SKU/費用確認が残る | M / Dev+Cloud / Yes |
+| IMP-23 | Runtime / Compiler Upgrade: Node.js 26、@types/node 26、TypeScript 7の段階評価 | IMP-02 | Azure Functions対象プランでNode 26公式GA、TypeScript 7をtypescript-eslint安定版が正式サポート、全CI合格。現行本番ランタイム・型付きLintを先行変更しない | ADR-057により保留。Dependabot PR #4（TypeScript 7.0.2）はnpm ciのpeer dependency不整合で失敗、PR #6（@types/node 26.6.5）はCI成功だが未マージ。公式対応後に再開 | L / Dev+Cloud / Yes |
 
 ## 未確定情報と次のゲート
 
