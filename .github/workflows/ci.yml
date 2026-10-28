@@ -24,6 +24,7 @@ jobs:
         run: |
           az bicep build --file infra/main.bicep --stdout > /dev/null
           az bicep build --file infra/ingestion.bicep --stdout > /dev/null
+          az bicep build --file infra/evaluation-subscription.bicep --stdout > /dev/null
           az bicep build --file infra/bootstrap/oidc.bicep --stdout > /dev/null
           az bicep build --file infra/bootstrap/foundry.bicep --stdout > /dev/null
           az bicep build --file infra/bootstrap/auth-diagnostics.bicep --stdout > /dev/null
