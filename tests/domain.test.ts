@@ -861,7 +861,6 @@ test('probability contract rejects invalid sums', () => {
   )
 })
 
-
 test('Event-level evidence cannot carry an out-of-scope resource subject', () => {
   const assessment = fixture()
   const unrelatedResource = `/subscriptions/${tenant}/resourceGroups/other/providers/Microsoft.Storage/storageAccounts/other`
