@@ -56,10 +56,16 @@
 - Spike期間累計5,000円、PoCはSpike込み累計20,000円。回数・Token・時間を管理し、予算未承認の増額をしない。
 - 完了報告は変更・要件・実施検証・未検証・リスクを簡潔に記す。秘密・実データは添付しない。
 
+## CI失敗時の自動検知
+
+- `.github/workflows/ci-failure-agent.yml`は同一RepositoryのPRに対するCI失敗を検知する。Codexは読み取り権限、パッチ検証は別Runner、修復PR発行のみ書き込み権限とする。
+- 自動修復は根拠付き最小変更を別PRで提示するだけで、自動マージ・デプロイしない。Secrets、Workflow、テストを変更対象にしない。詳細は[CI失敗時のCodex調査・修正](docs/ci-failure-agent.md)。
+
 ## Skillsの使用
 
 - 機能追加／修正: [.agents/skills/arp-feature/SKILL.md](.agents/skills/arp-feature/SKILL.md)
 - 依存・EOL・脆弱性対応: [.agents/skills/arp-security-maintenance/SKILL.md](.agents/skills/arp-security-maintenance/SKILL.md)
 - リリース計画／手動CD: [.agents/skills/arp-release/SKILL.md](.agents/skills/arp-release/SKILL.md)
+- CI失敗の調査・修正: [.agents/skills/arp-ci-repair/SKILL.md](.agents/skills/arp-ci-repair/SKILL.md)
 
 通常作業は必要なSkillだけを読む。Skillsに業務基準やRunbook全文を複製しない。
