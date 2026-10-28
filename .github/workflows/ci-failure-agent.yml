@@ -114,6 +114,7 @@ jobs:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           codex-version: 0.165.0
           permission-profile: ':workspace'
+          allow-users: ${{ vars.CI_FAILURE_AGENT_ALLOWED_AUTHORS || github.repository_owner }}
           safety-strategy: drop-sudo
           prompt: |
             Follow the trusted task instructions in the workflow prompt. Read AGENTS.md and
