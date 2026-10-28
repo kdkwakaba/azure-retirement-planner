@@ -8,7 +8,7 @@
 | IMP-02 | Security: Node24、完全SHA Actions、全npm依存監査、日次保守 | 01 | 既知脆弱性0、EOL拒否、検査障害は失敗 | 実装済。ActionsのAdvisory調査はリリース時にも確認 | M / Security / Yes |
 | IMP-03 | Foundation: Schema、Evidence、Hash、元データ・原出力保存 | 01 | 厳密Schema、承認変更検知、原出力の保存 | 実装済。実データ取得後のQueue評価・Blob/Table保存を確認 | M / Dev / Yes |
 | IMP-04 | IaC: Flex2アプリ、Storage、Key Vault、監視、MI、Entra設定 | 01 | 静的コンパイル＋対象RGで疎通 | 専用Azure環境へ配置・再配置済。Entra認証、実通知・構成取得、Queue評価、永続化を確認 | L / Cloud / Yes |
-| IMP-05 | Release: OIDC Bootstrap、CI成果物Hash、What-if手動CD | 02,04 | main CI成果物のみ、差分Hash一致、権限分離 | main CI→OIDC→What-if/Hash→Bicep手動apply成功。run #35はinfrastructure_only=trueでアプリZIP配置なし。workflow summaryに各配置stepのoutcomeを明示する変更を実装中 | L / Cloud / Yes |
+| IMP-05 | Release: OIDC Bootstrap、CI成果物Hash、What-if手動CD | 02,04 | main CI成果物のみ、差分Hash一致、権限分離 | main CI→OIDC→What-if/Hash→Bicep手動apply成功。run #35はinfrastructure_only=trueでアプリZIP配置なし。PR #48でworkflow summaryへinfra/API/Exporter各stepの結果を表示する変更をmainへ反映済み。アプリZIP配置はinfrastructure_only=falseの別applyが必要 | L / Cloud / Yes |
 | IMP-06 | Ingestion: Secure Webhook、原本受付、Queue/Outbox | 03,04 | アプリ権限検証、重複・停止・再開・Poison確認 | 受付経路は実装済。Service Health実通知7件をARG取得しQueue評価を確認。Action Groupの実配送は未検証 | L / Dev+Cloud / Yes |
 | IMP-07 | Discovery: ARG Health Advisory、Advisor関連、3サービス構成 | 03 | 全ページ、部分失敗、公式明示対象・不明を区別 | Service Health実データ7件・構成2件を確認。Health AdvisoryとResource Graph inventoryを独立実行し、一方の失敗で他方の結果を失わない実装を追加。Service Health impacted resources、Advisor、公式参照も取得元別category／HTTP status／correlation IDをAssessmentと画面へ渡す契約・合成試験を追加。2026-10-26のAdvisor実ARG集計はCompleted 1件、active 0件、metadata 0件で正の相関は未検証。新ログを使った失敗元の実Azure確認、全ページ網羅・実環境精度は再配置後に確認 | L / Dev / Yes |
 | IMP-08 | Normalization: 非推奨ほか4種、版・旧通知・不明日付 | 07 | 非推奨開始日を廃止日にせず旧版巻戻し拒否 | TST-11/12を回帰確認。公式分類を保持しHuman scope dispositionで無関係通知を理由・根拠付き対象外にできるUI、作業・優先度抑止、承認ガードを追加。自動除外はしない。Health AdvisoryのImpactMitigationTimeに加え、Retirement subtypeの公式表題／本文で廃止に日付が直接結び付く限定表現を解析し、Evidenceへ根拠を保持する実装・合成試験を追加。非Retirement、移行期限、競合・複数日付は未確定のまま維持。正規化バージョン変更はsource hashと分離した新EventVersionを生成する。2026-10-27のLive UIではタイトル記載日が公式期限欄に出ず、値の不在か正規化漏れか未判定。PRマージ後に実通知の取得・期限反映・再評価を再検証 | M / Dev / No |
@@ -25,7 +25,7 @@
 | IMP-19 | Evaluation: 30ケース、108回、精度・Recall・Override | 07–16 | 当時版・独立正解集合、指標・未評価の記録 | `evaluateCases`の純粋micro指標計算と、Observation IDに結び付けた全件採点・split別集計の`evaluateManifest`を追加し、反復Observation数と独立scenario数を区別して表示。`validateEvaluationManifest`でsource区分・参照・asOf・Hash・Model/Prompt/Rule/Contract版・実行・レビュー状態を記録し、同じRetirement familyのSplit漏れ、反復観測のinputHash不一致、raw payloadフィールドを拒否。合成テスト済。独立正解集合、正解ラベル作成、30／108回のモデル品質評価、閾値合意は未実装 | L / QA+Architect / Yes |
 | IMP-20 | Demo/UAT: 同一実環境で3分ライブ | 10,14–19 | 事前サインイン、実通知、判断→根拠→承認→登録 | リハーサル待ち。合成をライブ取得と偽らない | M / Presenter+QA / No |
 | IMP-21 | Cleanup: 作成台帳と専用資源・Project・秘密の撤去 | 04,15 | 削除対象照合、残存保持・残費用報告 | 専用Azure資源・Entra App・資格情報を作成済。撤去はPoC終了時に別途実行 | M / Cloud+Owner / No |
-| IMP-22 | UI: Microsoft公式Evidenceの日本語参考訳 | 03,13 | 原文保持、公式Source限定、MI、翻訳と判断根拠の分離、版付きCache | Service Health通知Evidenceの出所検証とUI/API対応はPR #46でmainへ反映済み。Manual CD run #35はBicep applyまで成功したがinfrastructure_only=trueのためAPI／Exporter ZIP配置はスキップ。画面・実翻訳の確認は利用者指示により保留。アプリ配置後の日本語表示UATとPoC Translator SKU/費用確認が残る | M / Dev+Cloud / Yes |
+| IMP-22 | UI: Microsoft公式Evidenceの日本語参考訳 | 03,13 | 原文保持、公式Source限定、MI、翻訳と判断根拠の分離、版付きCache | Service Health通知Evidenceの出所検証とUI/API対応はPR #46でmainへ反映済み。run #35はinfra-only applyでアプリZIP配置なし。PR #48により配置stepのoutcomeはJob Summaryへ表示。画面・実翻訳の確認は利用者指示により保留。アプリ配置後の日本語表示UATとPoC Translator SKU/費用確認が残る | M / Dev+Cloud / Yes |
 
 ## 未確定情報と次のゲート
 
