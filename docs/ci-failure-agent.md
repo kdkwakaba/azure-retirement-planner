@@ -22,12 +22,14 @@
 
 API Keyが未登録、またはPR作成者が許可リスト外の場合、失敗検知とJob Summary記録は行いますが、モデル呼出しと修正PR作成は行いません。
 
+許可ユーザーはGitHub ActionとWorkflowの両方で制限します。既定はRepository Ownerのみです。自動修正ではCI Workflow、修復Skill、テストファイルを変更対象外とします。
+
 Codex GitHub ActionはコミットSHAで固定し、Codex CLIも安定版の明示バージョンに固定しています。更新時はAction、CLI、Responses API proxyの互換性と脆弱性情報を確認してください。
 
 ## セキュリティ境界
 
 - `workflow_run`で起動し、Fork PRは対象外。
-- Codex Jobは`actions:read`、`contents:read)、`pull-requests:read`のみ。GitHub書込権限は別のPublisher Jobに限る。
+- Codex Jobは`actions:read`、`contents:read`、`pull-requests:read`のみ。GitHub書込権限は別のPublisher Jobに限る。
 - Codex API Keyを含むJobではGitHub書込権限を持たず、npm lifecycle scriptsを無効にして依存を導入する。
 - パッチは別Runnerで再適用・再検証する。CI WorkflowとこのSkillは自動パッチ対象から除外する。
 - 元PRのhead SHAが変わった場合、またはPRが閉じられた場合は修正PRを作らない。
