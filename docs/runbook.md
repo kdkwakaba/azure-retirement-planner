@@ -11,6 +11,7 @@ npm ci --ignore-scripts
 npm run verify
 az bicep build --file infra/main.bicep --stdout
 az bicep build --file infra/ingestion.bicep --stdout
+az bicep build --file infra/evaluation-subscription.bicep --stdout
 az bicep build --file infra/bootstrap/oidc.bicep --stdout
 az bicep build --file infra/bootstrap/foundry.bicep --stdout
 az bicep build --file infra/bootstrap/permissions.bicep --stdout
@@ -24,13 +25,55 @@ az bicep build --file infra/bootstrap/permissions.bicep --stdout
 2. Entraの単一テナントApp登録を作成し、`Reader`、`Reviewer`、`Governance`、`Operator`（User）と`NotificationSender`（Application）のApp rolesを定義する。割当必須としユーザーを割り当てる。APIの許可表はReader=読取、Reviewer=読取＋訂正／レビュー、Operator=読取＋同期、Governance=読取＋同期＋訂正／レビュー、NotificationSender=Application限定の通知受付。ユーザー用APIは`kind=User`、通知受付は`kind=Application`も検証する。WebリダイレクトURIは`https://<api>.azurewebsites.net/.auth/login/aad/callback`。ID Tokenを使用するUIと、aud/issuer/tid/rolesを検証するAPIの両方を試験する。
 3. Secure Webhookは専用サービスプリンシパルのアプリ権限に限定。Access Token v2と`idtyp=app`のoptional claim、audienceを合わせる。Action Groupsの実際の送信主体へのApp role割当をSP-03で確認する。未設定のまま匿名受付へ緩和しない。
 4. `infra/bootstrap/oidc.bicep`でGitHub main branch subjectのUAMI/Federationを作成。GitHub APIから取得した`githubOwnerId`と`githubRepositoryId`も渡す。新規Repositoryのsubjectは`repo:OWNER@OWNER_ID/REPOSITORY@REPOSITORY_ID:ref:refs/heads/main`であり、azure/loginが記録する実際のsubjectと完全一致させる。旧形式を使うRepositoryは実際の形式を確認してテンプレートを調整し、ワイルドカードへ緩和しない。通常CDのIdentityへ専用RGの必要なデプロイ権限を別途付与。Owner／権限付与権限は通常CDへ付けない。
-5. Repository Variablesに`AZURE_CLIENT_ID`、`AZURE_TENANT_ID`、`AZURE_SUBSCRIPTION_ID`、`AZURE_RESOURCE_GROUP`、`AZURE_LOCATION`、`AZURE_HOST_STORAGE_BLOB_ENDPOINT`、`ENTRA_CLIENT_ID`、`TARGET_SUBSCRIPTION_IDS`（カンマ区切り）、`DECISION_ENDPOINT`を設定。いずれも非機密設定で、秘密はVariablesへ入れない。
+5. Repository Variablesに`AZURE_CLIENT_ID`、`AZURE_TENANT_ID`、`AZURE_SUBSCRIPTION_ID`、`AZURE_RESOURCE_GROUP`、`AZURE_LOCATION`、`AZURE_HOST_STORAGE_BLOB_ENDPOINT`、`ENTRA_CLIENT_ID`、`TARGET_SUBSCRIPTION_IDS`（カンマ区切り）、`DECISION_ENDPOINT`を設定する。`AZURE_SUBSCRIPTION_ID`はARP本体の配置先、`TARGET_SUBSCRIPTION_IDS`は評価対象であり、別の役割である。評価対象を分離するときは後者だけを評価用Subscription IDへ変更する。いずれも非機密設定で、秘密はVariablesへ入れない。
 6. mainのCI合格後、Manual PoC deploymentの`plan`を起動して差分とHashを確認し、同じCI runで`apply`、`infrastructure_only=true`を起動。最初はアプリ配置を行わずMIと保管先を作る。
-7. 管理者がoutputsを用いて`infra/bootstrap/permissions.bicep`を適用。データ用Blob/Queue/Table、ホストStorage、Key Vaultに用途別ロールを付与する。TranslatorもF0を既定としてデプロイし、出力の`translatorName`を`translatorAccountName`へ渡してAPI Managed IdentityへTranslatorリソース範囲の`Cognitive Services User`を付与する。Subscriptionに既存F0がある場合はS1等への変更費用を確認し、未確認のまま適用しない。ホストBlob OwnerはFunctionsホストの要件であり、評価対象へのOwnerではない。評価対象はAPIのMIに許可Subscription/MGのReaderを別途付与。Exporterには評価対象読取を与えない。Foundry呼出ロールはAPIのMIに対象Foundryアカウント範囲で付与する。
+7. 管理者がoutputsを用いて`infra/bootstrap/permissions.bicep`を適用。データ用Blob/Queue/Table、ホストStorage、Key Vaultに用途別ロールを付与する。TranslatorもF0を既定としてデプロイし、出力の`translatorName`を`translatorAccountName`へ渡してAPI Managed IdentityへTranslatorリソース範囲の`Cognitive Services User`を付与する。Subscriptionに既存F0がある場合はS1等への変更費用を確認し、未確認のまま適用しない。ホストBlob OwnerはFunctionsホストの要件であり、評価対象へのOwnerではない。評価対象SubscriptionへのAPI MIのReader割当は、次項の`infra/evaluation-subscription.bicep`で評価対象Subscriptionスコープに宣言する。Exporterには評価対象読取を与えない。Foundry呼出ロールはAPIのMIに対象Foundryアカウント範囲で付与する。
 8. `entra-client-secret`をKey Vaultに直接保存。PoCのGitHub Tokenも必要になった時点で`github-token`へ保存し、有効期限と実権限を台帳へ記録。秘密をログ・CLI引数・Gitへ残さない。Secretを完全排除した設計とは主張しない。
 9. Entraのcallbackを更新し、再度plan/applyを確認して`infrastructure_only=false`で検査済みの同一ZIPを配置。`infrastructure_only=true`のapplyはBicepだけを適用し、API／ExporterのZIPを配置しない。GitHub ActionsのManual deployment summaryでInfrastructure apply stepとAPI／Exporter package deploymentの各outcomeを確認する。RBAC伝播・Key Vault参照成功を確認する。
 
-## 3. 実接続を有効にする順序
+## 3. 評価対象SubscriptionへのReader・通知設定
+
+アプリ配置先は`AZURE_SUBSCRIPTION_ID`、評価対象は`TARGET_SUBSCRIPTION_IDS`で分離する。複数の評価対象がある場合、このsubscription-scopeテンプレートを各Subscriptionへ個別に適用する。
+
+`infra/evaluation-subscription.bicep`は、(1)評価対象Subscription直下へのAPI Function Appのシステム割り当てID用Reader role assignment、(2)専用の`rg-arp-monitoring`、(3)Service Health Action GroupとActivity Log Alertを作成する。既存ワークロードは変更しない。テンプレートを実行する人には対象Subscription上でResource Group作成とrole assignment作成の両方が必要である。通常のGitHub CD identityにはこれらの権限を付与しない。
+
+API配置後、管理者端末で以下を実行する。初回は必ずWhat-Ifを確認し、Reader以外のロールや対象外リソースへの変更がないことを確認する。Action GroupとAlertはデフォルトで無効であり、通知認証を確認するまでは有効化しない。
+
+```sh
+TARGET_SUBSCRIPTION_ID=7a23c246-5790-47a5-8d1a-21b21c706c76
+API_PRINCIPAL_ID=$(az deployment group show --resource-group "$ARP_RESOURCE_GROUP" --name arp-release --query properties.outputs.apiPrincipalId.value -o tsv)
+API_ORIGIN=$(az deployment group show --resource-group "$ARP_RESOURCE_GROUP" --name arp-release --query properties.outputs.apiUrl.value -o tsv)
+API_APPLICATION_OBJECT_ID=$(az ad app show --id "$ARP_ENTRA_CLIENT_ID" --query id -o tsv)
+
+az deployment sub what-if \
+  --subscription "$TARGET_SUBSCRIPTION_ID" \
+  --location "$ARP_LOCATION" \
+  --template-file infra/evaluation-subscription.bicep \
+  --parameters monitoringResourceGroupName=rg-arp-monitoring \
+    location="$ARP_LOCATION" apiPrincipalId="$API_PRINCIPAL_ID" \
+    apiOrigin="$API_ORIGIN" tenantId="$ARP_TENANT_ID" \
+    apiApplicationId="$ARP_ENTRA_CLIENT_ID" \
+    apiApplicationObjectId="$API_APPLICATION_OBJECT_ID" \
+    enableNotifications=false
+
+# What-Ifが想定どおりの場合のみ同じ引数でcreateを実行する
+az deployment sub create \
+  --subscription "$TARGET_SUBSCRIPTION_ID" \
+  --location "$ARP_LOCATION" \
+  --template-file infra/evaluation-subscription.bicep \
+  --parameters monitoringResourceGroupName=rg-arp-monitoring \
+    location="$ARP_LOCATION" apiPrincipalId="$API_PRINCIPAL_ID" \
+    apiOrigin="$API_ORIGIN" tenantId="$ARP_TENANT_ID" \
+    apiApplicationId="$ARP_ENTRA_CLIENT_ID" \
+    apiApplicationObjectId="$API_APPLICATION_OBJECT_ID" \
+    enableNotifications=false
+```
+
+Readerは評価対象Subscription範囲のみで、APIのシステム割り当てIDへ付与する。CD用ID、Exporter、ワークロードの変更権限は追加しない。Bicepを適用する人には`Contributor`相当のリソース作成権限と`Role Based Access Control Administrator`（または同等のrole assignment権限）が必要になる。これは一時的な人間の実行権限として扱い、通常CDへ恒常付与しない。
+
+通知を有効化する前に、RunbookのSecure Webhook手順（Action Group送信主体、`NotificationSender` app role、audience、API側の`INGEST_ENABLED`）を実環境で検証する。完了後、同じテンプレートを`enableNotifications=true`でWhat-Ifし、Action GroupとAlertを有効化する。APIの`INGEST_ENABLED`がfalseの間は受信時に503となるため、両側の設定を同時に確認する。配送テストは実Retirement情報の検知・評価確認とは分けて記録する。
+
+## 4. 実接続を有効にする順序
 
 - モデル接続リリース後は`MAX_MODEL_CALLS_PER_DAY=200`、同期/通知/外部登録はfalse。要求単位のToken上限は設定しない。`infra/main.bicep`とパラメーターへ構成を記録し、ポータル手修正を次のCDで消さない。
 - 許可するサービスはBasic LB、GPv1、URL pingの3種。現在のARGは3リソースTypeを取得する。未知の条件の構成もUnknownとして残し、0件を影響なしにしない。Owner/Workloadのタグは`OwnerTeam`、`WorkloadId`、環境は`Environment`。データプレーンは取得しない。
@@ -46,7 +89,7 @@ az bicep build --file infra/bootstrap/permissions.bicep --stdout
 - 個人の非公開Projectを作成し、GitHub Tokenの最小権限をSP-05で試験。RepositoryのIssue作成権限と個人Projectの追加権限は別。`GITHUB_OWNER/REPOSITORY/PROJECT_ID`を設定し、モデルの意味的根拠と作業をレビューした後に外部登録を有効化する。
 - 現在のIssueは相関ID・分類・優先度・日程・Evidence IDのみを送り、自由文・実Resource IDを複製しない。詳細は認証画面で確認する。ProjectのStatusフィールドは15分ごとに任意同期できる。`PROJECT_PROGRESS_SYNC_ENABLED`は既定でfalse。設定済みStatus field IDだけを読み、Issueと対応する内部Outboxへ外部Status名・option ID・取得時刻を別属性として保存する。承認・評価状態・Issue本文は変更せず、ProjectのDoneだけで自動クローズしない。認証済み`GET /api/project-progress`とレビュー画面の各作業項目で取得済みStatusを確認できる。未同期は完了を意味しない。
 
-## 4. リリースと障害対応
+## 5. リリースと障害対応
 
 CI成果物はmain push成功のrun IDに結び付く。手動CDは現在mainと同じSHAだけを受け付け、What-ifのHashを再計算。想定しない削除・不明差分は適用しない。What-ifは権限を要する処理でありPR CIでは実行しない。初回後もBootstrapのロール変更は通常CDに含めない。
 
@@ -56,7 +99,7 @@ GitHubはIssue作成前にOutboxを`Sending`へ条件更新する。作成応答
 
 API・評価Queue・日次同期・Receipt/Export outboxの処理失敗は、App InsightsへJSONの`ProcessingFailure`として`stage`、`correlationId`、`errorType`のみ記録する。例外メッセージ、スタック、要求本文、Resource IDはログへ出さない。APIは同じ相関IDを503応答に返す。背景処理は記録後に例外を再送出し、Functionsの5回再試行とPoison Queueへの移動を維持する。App Insightsで`ProcessingFailure`、401/403、429、Poison、依存待ちを監視する。Queue invocation IDとアプリ相関IDの実環境での結合、Poison再投入、業務KPIのDashboard／通知／専用画面は未検証。実PayloadはBlob/Tableのみ、CI成果物には残さない。
 
-## 5. 費用と撤去
+## 6. 費用と撤去
 
 APIの日次モデル呼出枠は200件で、同時予約をETagで制御する。要求ごとのToken上限は設けない。PoC累計20,000円は利用者がCost Managementで監視する。アプリによる金額ハード停止は実装しない。Cost ManagementのBudgetは通知用で、利用量停止機能ではなく課金データも遅延する。Foundryモデルの費用とFunctions、Storage、ログを含むRG費用を手動で確認する。
 
