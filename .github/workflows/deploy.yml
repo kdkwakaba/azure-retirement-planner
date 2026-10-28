@@ -12,7 +12,7 @@ on:
         options: [plan, apply]
         default: plan
       infrastructure_only:
-        description: First deployment requires separate identity bootstrap before application deployment
+        description: Skip Function app package deployment (use for infrastructure-only bootstrap/apply)
         type: boolean
         default: true
       expected_plan_hash:
@@ -35,6 +35,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       CI_RUN_ID: ${{ inputs.ci_run_id }}
       PHASE: ${{ inputs.phase }}
+      INFRASTRUCTURE_ONLY: ${{ inputs.infrastructure_only }}
       EXPECTED_PLAN_HASH: ${{ inputs.expected_plan_hash }}
       ARP_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
       ARP_ENTRA_CLIENT_ID: ${{ vars.ENTRA_CLIENT_ID }}
@@ -101,6 +102,7 @@ jobs:
             jq -e '[.changes[] | select(.changeType == "Delete" or .changeType == "Unsupported" or .changeType == "Deploy")] | length == 0' /tmp/what-if.json
           fi
       - name: Apply reviewed infrastructure
+        id: apply-infrastructure
         if: inputs.phase == 'apply'
         run: az deployment group create --resource-group "$ARP_RESOURCE_GROUP" --parameters infra/environments/poc.bicepparam --name arp-release --output json > /tmp/deployment.json
       - name: Read target app names
@@ -110,14 +112,44 @@ jobs:
           echo "api=$(jq -r .properties.outputs.apiName.value /tmp/deployment.json)" >> "$GITHUB_OUTPUT"
           echo "exporter=$(jq -r .properties.outputs.exporterName.value /tmp/deployment.json)" >> "$GITHUB_OUTPUT"
       - uses: Azure/functions-action@c5060b3b8bb1ebbcb531abd00c822ecbaa8ea656 # v1.5.7 / node24
+        id: deploy-api
         if: inputs.phase == 'apply' && !inputs.infrastructure_only
         with:
           app-name: ${{ steps.targets.outputs.api }}
           package: .artifacts/api.zip
           sku: flexconsumption
       - uses: Azure/functions-action@c5060b3b8bb1ebbcb531abd00c822ecbaa8ea656
+        id: deploy-exporter
         if: inputs.phase == 'apply' && !inputs.infrastructure_only
         with:
           app-name: ${{ steps.targets.outputs.exporter }}
           package: .artifacts/exporter.zip
           sku: flexconsumption
+      - name: Report deployment mode and step outcomes
+        if: always()
+        shell: bash
+        env:
+          PHASE: ${{ inputs.phase }}
+          INFRASTRUCTURE_ONLY: ${{ inputs.infrastructure_only }}
+          JOB_STATUS: ${{ job.status }}
+          INFRASTRUCTURE_OUTCOME: ${{ steps.apply-infrastructure.outcome }}
+          API_DEPLOY_OUTCOME: ${{ steps.deploy-api.outcome }}
+          EXPORTER_DEPLOY_OUTCOME: ${{ steps.deploy-exporter.outcome }}
+        run: |
+          {
+            echo "## Manual deployment summary"
+            echo "- Phase: $PHASE"
+            if [[ "$PHASE" == "plan" ]]; then
+              echo "- Infrastructure: What-If only; no changes applied."
+              echo "- Application packages: not deployed."
+            else
+              echo "- Infrastructure apply step: ${INFRASTRUCTURE_OUTCOME:-not run}"
+              if [[ "$INFRASTRUCTURE_ONLY" == "true" ]]; then
+                echo "- Application packages: not deployed (infrastructure-only mode)."
+              else
+                echo "- API package deployment: ${API_DEPLOY_OUTCOME:-not run}"
+                echo "- Exporter package deployment: ${EXPORTER_DEPLOY_OUTCOME:-not run}"
+              fi
+            fi
+            echo "- Workflow job: $JOB_STATUS"
+          } >> "$GITHUB_STEP_SUMMARY"
