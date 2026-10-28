@@ -20,7 +20,7 @@
 - 任意のRepository variable `CI_FAILURE_AGENT_ALLOWED_AUTHORS`へ、Codex実行を許可するGitHubユーザー名をカンマ区切りで指定する。未設定時はRepository Ownerだけを許可する。
 - `CI_FAILURE_AGENT`を`disabled`に設定すると自動起動を停止する。未設定なら有効。
 
-API Keyが未登録、またはPR作成者が許可リスト外の場合、失敗検知とJob Summary記録は行いますが、モデル呼出しと修正PR作成は行いません。
+公開Repositoryでも、`OPENAI_API_KEY` Secretが未登録の場合は失敗検知とJob Summary記録だけを行います。Codex Actionを実行せず、修正PRも作成しません。Secretが登録されていても、PR作成者が許可リスト外なら同様に自動修正をスキップします。Secretをソースコード、ログ、成果物へ出力しないでください。
 
 許可ユーザーはGitHub ActionとWorkflowの両方で制限します。既定はRepository Ownerのみです。自動修正ではCI Workflow、修復Skill、テストファイルを変更対象外とします。
 
