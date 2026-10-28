@@ -28,7 +28,7 @@ az bicep build --file infra/bootstrap/permissions.bicep --stdout
 6. mainのCI合格後、Manual PoC deploymentの`plan`を起動して差分とHashを確認し、同じCI runで`apply`、`infrastructure_only=true`を起動。最初はアプリ配置を行わずMIと保管先を作る。
 7. 管理者がoutputsを用いて`infra/bootstrap/permissions.bicep`を適用。データ用Blob/Queue/Table、ホストStorage、Key Vaultに用途別ロールを付与する。TranslatorもF0を既定としてデプロイし、出力の`translatorName`を`translatorAccountName`へ渡してAPI Managed IdentityへTranslatorリソース範囲の`Cognitive Services User`を付与する。Subscriptionに既存F0がある場合はS1等への変更費用を確認し、未確認のまま適用しない。ホストBlob OwnerはFunctionsホストの要件であり、評価対象へのOwnerではない。評価対象はAPIのMIに許可Subscription/MGのReaderを別途付与。Exporterには評価対象読取を与えない。Foundry呼出ロールはAPIのMIに対象Foundryアカウント範囲で付与する。
 8. `entra-client-secret`をKey Vaultに直接保存。PoCのGitHub Tokenも必要になった時点で`github-token`へ保存し、有効期限と実権限を台帳へ記録。秘密をログ・CLI引数・Gitへ残さない。Secretを完全排除した設計とは主張しない。
-9. Entraのcallbackを更新し、再度plan/applyを確認して`infrastructure_only=false`で検査済みの同一ZIPを配置。RBAC伝播・Key Vault参照成功を確認する。
+9. Entraのcallbackを更新し、再度plan/applyを確認して`infrastructure_only=false`で検査済みの同一ZIPを配置。`infrastructure_only=true`のapplyはBicepだけを適用し、API／ExporterのZIPを配置しない。GitHub ActionsのManual deployment summaryでInfrastructure apply stepとAPI／Exporter package deploymentの各outcomeを確認する。RBAC伝播・Key Vault参照成功を確認する。
 
 ## 3. 実接続を有効にする順序
 
