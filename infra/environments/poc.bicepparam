@@ -8,4 +8,11 @@ param prefix = 'arp'
 param decisionEndpoint = readEnvironmentVariable('ARP_DECISION_ENDPOINT')
 param decisionDeployment = 'arp-decision-1'
 param decisionModelVersion = '1'
+param githubOwner = readEnvironmentVariable('ARP_GITHUB_OWNER', '')
+param githubRepository = readEnvironmentVariable('ARP_GITHUB_REPOSITORY', '')
+param githubProjectId = readEnvironmentVariable('ARP_GITHUB_PROJECT_ID', '')
+param githubProjectStatusFieldId = readEnvironmentVariable('ARP_GITHUB_PROJECT_STATUS_FIELD_ID', '')
+param githubProjectStatusTodoOptionId = readEnvironmentVariable('ARP_GITHUB_PROJECT_STATUS_TODO_OPTION_ID', '')
+param exportEnabled = toLower(readEnvironmentVariable('ARP_EXPORT_ENABLED', 'false')) == 'true'
+param projectProgressSyncEnabled = toLower(readEnvironmentVariable('ARP_PROJECT_PROGRESS_SYNC_ENABLED', 'false')) == 'true'
 param maxModelCallsPerDay = 200
