@@ -2,7 +2,7 @@
 
 Azureの非推奨化・新規作成停止・サポート終了・リタイアメント情報と自社の構成・業務情報から、根拠付きの影響評価と対応計画を作成するシステム。
 
-**TypeScript/Reactのモノレポ、Functions、Bicep、CI・手動CD、判断・検証・レビュー・GitHub連携の初期実装があります。Azure配置・実接続・モデル評価は未実施であり、PoC全体の完了ではありません。**
+**TypeScript/Reactのモノレポ、Functions、Bicep、CI・手動CD、判断・検証・レビュー・GitHub連携を実装しています。2026-10-29時点でmainのAPI／ExporterをAzureへ配置し、過去にService Health実通知7件の取得とMicrosoft-Decision-1の実応答1件を確認しました。認証済み画面の最新UAT、Advisorとの正の相関、説明LLM、GitHub実Project登録などは未確認で、PoC全体の完了ではありません。現在の状態と未完了項目は[実装バックログ](docs/implementation-backlog.md)、配置・実データ確認の詳細は[Runbook](docs/runbook.md)を参照してください。**
 
 ## 設計書
 
@@ -46,4 +46,4 @@ npm run verify
 
 `apps/assessment-api`はAPI・収集・判断・レビューとUI配信、`apps/work-item-exporter`は承認済み作業の登録、`apps/review-web`はReact画面。共有契約・業務ルール・接続を`packages/`へ分ける。通常CIはクラウドを変更しない。Azure配信はEntra認証を必須にし、[Runbook](docs/runbook.md)のBootstrap後にmainのCI成果物を手動CDする。
 
-2026-10-24までの合意を反映。Microsoftの機能・期限・価格は実装前に公式情報で再確認する。
+合意事項と実装状況は随時更新。Microsoftの機能・期限・価格は利用時に公式情報で再確認する。
