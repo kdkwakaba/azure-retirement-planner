@@ -1,7 +1,7 @@
 # 利用者向け操作ガイド
 
-更新日: 2026-10-29  
-対象: Azure Retirement Plannerの認証済みレビュー画面を使う利用者・Reviewer・Governance。  
+更新日: 2026-10-29
+対象: Azure Retirement Plannerの認証済みレビュー画面を使う利用者・Reviewer・Governance。
 関連: [現行構成・Decision-1解説](architecture-and-decision-model.md)、[判断・承認基準](decision-policy.md)、[レビュー画面UAT](review-screen-uat.md)、[運用Runbook](runbook.md)
 
 ## 1. 利用者ロール
