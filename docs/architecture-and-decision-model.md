@@ -3,7 +3,7 @@
 更新日: 2026-10-29
 
 対象: 登壇スライド・説明準備用。現行コード、Bicep、実装バックログ、Runbookを照合した説明資料。
-関連: [システム設計](design.md)、[判断・承認基準](decision-policy.md)、[Spike・テスト計画](spike-and-testing.md)、[実装バックログ](implementation-backlog.md)、[Runbook](runbook.md)
+関連: [システム設計](design.md)、[判断・承認基準](decision-policy.md)、[利用者向け操作ガイド](user-operations-guide.md)、[Spike・テスト計画](spike-and-testing.md)、[実装バックログ](implementation-backlog.md)、[Runbook](runbook.md)
 
 ## この資料の読み方
 
