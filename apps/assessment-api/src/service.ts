@@ -25,6 +25,7 @@ import {
   impactDiscoveryOutcome,
   canSkipAssessmentReview,
   applyWorkflowPolicy,
+  generateBusinessWorkflowTasks,
   scopeEvidenceToWorkload,
   workflowPolicySchema,
 } from '@arp/domain'
@@ -844,6 +845,19 @@ async function assessWorkload(
       },
     ]
   let routingErrors: string[] = []
+  if (policyParsed.success && !deterministicNoReview) {
+    const businessTasks = generateBusinessWorkflowTasks({
+      policy: policyParsed.data,
+      event,
+      workloadId,
+      resources,
+      priority: rules.priority,
+      existingWorkItems: workItems,
+      asOf,
+    })
+    workItems = [...workItems, ...businessTasks.workItems]
+    enriched.evidence.push(...businessTasks.evidence)
+  }
   if (policyParsed.success && !deterministicNoReview) {
     const routing = applyWorkflowPolicy(workItems, resources, policyParsed.data)
     workItems = routing.workItems

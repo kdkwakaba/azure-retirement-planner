@@ -1,0 +1,208 @@
+{
+  "schemaVersion": "1",
+  "version": "demo-synthetic-1",
+  "roles": [
+    {
+      "id": "platform-team",
+      "displayName": "サンプル: Azure基盤チーム",
+      "kind": "Team"
+    },
+    {
+      "id": "application-team",
+      "displayName": "サンプル: アプリケーションチーム",
+      "kind": "Team"
+    },
+    {
+      "id": "business-owner",
+      "displayName": "サンプル: 業務利用者窓口",
+      "kind": "Department"
+    },
+    {
+      "id": "security-dept",
+      "displayName": "サンプル: セキュリティ部門",
+      "kind": "Department"
+    },
+    {
+      "id": "finance-dept",
+      "displayName": "サンプル: 財務・購買部門",
+      "kind": "Department"
+    },
+    {
+      "id": "change-board",
+      "displayName": "サンプル: 変更承認会議",
+      "kind": "Approver"
+    },
+    {
+      "id": "budget-approver",
+      "displayName": "サンプル: 予算承認者",
+      "kind": "Approver"
+    }
+  ],
+  "assignmentRules": [
+    {
+      "id": "customer-coordination",
+      "match": {
+        "categories": ["Customer Communication"]
+      },
+      "teamRoleIds": ["application-team"],
+      "coordinationRoleIds": ["business-owner"]
+    },
+    {
+      "id": "cross-team-coordination",
+      "match": {
+        "categories": ["Cross-Team Coordination"]
+      },
+      "teamRoleIds": ["platform-team", "application-team"],
+      "coordinationRoleIds": ["security-dept"]
+    },
+    {
+      "id": "vendor-assessment",
+      "match": {
+        "categories": ["Vendor Assessment", "Contract Review"]
+      },
+      "teamRoleIds": ["platform-team"],
+      "coordinationRoleIds": ["finance-dept"],
+      "approvalStages": [
+        {
+          "id": "contract-review",
+          "title": "契約・ベンダー確認",
+          "roleIds": ["budget-approver"]
+        }
+      ]
+    },
+    {
+      "id": "cost-and-budget",
+      "match": {
+        "categories": ["Cost Assessment", "Budget Approval"]
+      },
+      "teamRoleIds": ["platform-team"],
+      "coordinationRoleIds": ["finance-dept"],
+      "approvalStages": [
+        {
+          "id": "budget-review",
+          "title": "追加費用の予算確認",
+          "roleIds": ["budget-approver"]
+        }
+      ]
+    },
+    {
+      "id": "technical-change",
+      "match": {
+        "categories": [
+          "Architecture Design",
+          "Application Change",
+          "Infrastructure Change",
+          "Network Change",
+          "Security Review",
+          "Test",
+          "Change Management",
+          "Production Migration",
+          "Validation",
+          "Rollback Preparation"
+        ]
+      },
+      "teamRoleIds": ["platform-team", "application-team"],
+      "approvalStages": [
+        {
+          "id": "change-review",
+          "title": "変更承認",
+          "roleIds": ["change-board"]
+        }
+      ]
+    }
+  ],
+  "sequence": [],
+  "businessContextProfiles": [
+    {
+      "workloadId": "synthetic-demo-workload",
+      "displayLabel": "登壇デモ用サンプル業務システム（架空）",
+      "dataClassification": "SyntheticDemo",
+      "businessImpact": "Confirmed",
+      "vendorUse": "Confirmed",
+      "additionalCost": "Possible",
+      "contractReview": "Unknown",
+      "sampleCostDescription": "新規ライセンスまたはベンダー作業費を確認。金額は未確定のサンプル。",
+      "samplePlanning": {
+        "standardLeadTimeDays": 20,
+        "blackoutPeriods": [{ "start": "2026-11-23", "end": "2026-11-27" }]
+      }
+    }
+  ],
+  "businessTaskTemplates": [
+    {
+      "id": "notify-users",
+      "trigger": "BusinessImpact",
+      "category": "Customer Communication",
+      "title": "利用者・顧客へ影響と対応予定を共有",
+      "description": "確認済みの業務影響、利用停止可能性、対応予定を利用者・顧客と調整する。",
+      "necessity": "Required",
+      "completionCriteria": [
+        "対象利用者と連絡内容・時期を合意する",
+        "合意内容と未回答事項を記録する"
+      ]
+    },
+    {
+      "id": "coordinate-teams",
+      "trigger": "BusinessImpact",
+      "category": "Cross-Team Coordination",
+      "title": "影響する各チームと作業内容を調整",
+      "description": "対応手順、依存関係、作業窓、担当範囲を関係チームへ共有する。",
+      "necessity": "Required",
+      "completionCriteria": [
+        "関係チームと役割・依存関係を確認する",
+        "未解決の調整事項を記録する"
+      ]
+    },
+    {
+      "id": "verify-vendor-use",
+      "trigger": "VendorUseUnknown",
+      "category": "Vendor Assessment",
+      "title": "ベンダー利用の有無を確認",
+      "description": "対象システムでベンダー作業・契約が利用されているかをOwnerへ確認する。ベンダー利用を前提にしない。",
+      "necessity": "Recommended",
+      "completionCriteria": ["ベンダー利用の有無と確認根拠を記録する"]
+    },
+    {
+      "id": "assess-vendor",
+      "trigger": "VendorUse",
+      "category": "Vendor Assessment",
+      "title": "ベンダー作業の範囲と見積条件を確認",
+      "description": "必要なベンダー作業、見積、実施期間、責任分界を確認する。サンプル情報であり実契約を示さない。",
+      "necessity": "Recommended",
+      "completionCriteria": [
+        "ベンダー作業要否と見積条件を確認する",
+        "責任分界と作業日程を記録する"
+      ]
+    },
+    {
+      "id": "assess-cost",
+      "trigger": "AdditionalCostNeedsAssessment",
+      "category": "Cost Assessment",
+      "title": "追加費用の有無を確認",
+      "description": "ライセンス、構成変更による継続課金、ベンダー作業費の見込みを確認する。",
+      "necessity": "Recommended",
+      "completionCriteria": [
+        "追加費用の有無と根拠を確認する",
+        "費用が未確定なら確認先と期限を記録する"
+      ]
+    },
+    {
+      "id": "approve-budget",
+      "trigger": "ConfirmedAdditionalCost",
+      "category": "Budget Approval",
+      "title": "追加予算の承認を取得",
+      "description": "確認済みの追加費用について、予算・購買承認を得る。",
+      "necessity": "Required",
+      "completionCriteria": ["費用根拠と予算承認結果を記録する"]
+    },
+    {
+      "id": "review-contract",
+      "trigger": "ContractReview",
+      "category": "Contract Review",
+      "title": "ベンダー契約・変更条件を確認",
+      "description": "契約更新、追加発注、SLA、責任分界への影響を確認する。",
+      "necessity": "Recommended",
+      "completionCriteria": ["契約上の必要対応と承認結果を記録する"]
+    }
+  ]
+}

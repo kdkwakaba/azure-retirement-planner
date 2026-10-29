@@ -1112,5 +1112,9 @@ export function refreshAssessment(
   return assessmentSchema.parse(result)
 }
 
-export { applyWorkflowPolicy, workflowPolicySchema } from './workflow.ts'
+export {
+  applyWorkflowPolicy,
+  generateBusinessWorkflowTasks,
+  workflowPolicySchema,
+} from './workflow.ts'
 export type { WorkflowPolicy } from './workflow.js'
