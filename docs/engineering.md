@@ -1,6 +1,6 @@
 # 開発・運用基準
 
-2026-10-25 / 状態: コード・IaC・Workflowを実装しAzure配置・認証を確認。実通知取得・モデル・GitHub実連携は未完了。実装状態は[バックログ](implementation-backlog.md)、実行手順は[Runbook](runbook.md)を正とする。
+2026-10-29 / 状態: PR #56までのmainコード・IaC・API／ExporterをAzureへ配置済み。Service Health実通知7件とDecision-1実応答1件は過去に確認済み。最新の認証済み画面UAT、Advisor正の相関、説明LLM、GitHub実Project登録、Poison Queue復旧は未確認。実装状態は[バックログ](implementation-backlog.md)、配置・検証記録は[Runbook](runbook.md)を正とする。
 
 ## 技術とモノレポ
 

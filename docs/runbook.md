@@ -177,3 +177,11 @@ traces
 - 原因を直し、対象メッセージが現行承認・現行評価へ結び付くことを確認後、OperatorがPoison Queueから個別に再投入する。再投入後に重複Issue、承認外登録、対象リソース変更がないことを確認し、時刻・相関ID・件数・結果を運用記録へ残す。現状、専用の自動再投入UI/APIはない。
 - Alert発報は障害の調査開始を示すだけで、処理失敗の全件捕捉やPoison Queue到達を保証しない。Functions失敗、Queue深度、ARG throttling、GitHub 403/429と合わせて確認する。
 
+
+## 2026-10-29 PR #56 配置記録
+
+- main commit: `df34d2046202338a6a28f155ca8b86917cc97c2d`。CI run [#40792872416](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/40792872416) 成功成果物を使用。
+- What-if [#40793055079](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/40793055079): 専用Resource Group内のApplication Insights、API Function App、Exporter Function Appの3件Modify、19件NoChange、5件Ignore。Create／Deleteなし。Plan SHA256 `5f5608b59adc90956c198cb769e4ae719cc99f65281d655a1ff4021d3d1d05db`。
+- Apply／アプリ配置 [#40793281310](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/40793281310) 成功。Bicep apply、API ZIP、Exporter ZIPの各stepが成功。
+- 配置後の未認証GETはAPI root HTTP 401、Exporter root HTTP 200。これは匿名経路の認証応答確認であり、Entra認証済み画面、実データ評価、モデル品質のUATではない。
+- PR #56の合成業務ワークフロープロファイル／テンプレートは実行時ポリシーでは無効。実在Workloadへのサンプル業務情報の適用や実Issue登録は行っていない。
