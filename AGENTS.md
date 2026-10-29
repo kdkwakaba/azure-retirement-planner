@@ -6,7 +6,7 @@
 
 - アプリ、npm workspaces、IaC、CI・手動CDを実装。2026-10-29時点のmain API／ExporterをAzureへ配置済み。過去にService Health実通知7件の取得、Resource Graph構成2件の取得、Queue評価、およびMicrosoft-Decision-1の実応答1件を確認済み。最新の認証済み画面UAT、Advisor正の相関、説明LLM、GitHub実Project登録、Action Group実配送、Poison Queue復旧は未確認。詳細な実装状態は[実装バックログ](docs/implementation-backlog.md)、配置・実接続記録は[Runbook](docs/runbook.md)を参照。
 - 実行コマンド、検証結果、モデル利用可否を推測で記載しない。実装時は実際のmanifest・Workflowを確認する。
-- 開発環境・CI/CD・セキュリティ・撤去の正本は[開発・運用基準](docs/engineering.md)。仕様は[システム設計](docs/design.md)、[判断基準](docs/decision-policy.md)、[合意事項](docs/decisions.md)。
+- 開発環境・CI/CD・セキュリティ・撤去の正本は[開発・運用基準](docs/engineering.md)。要件・目標構成は[システム設計](docs/design.md)、判断基準は[判断・承認基準](docs/decision-policy.md)、合意履歴は[合意事項](docs/decisions.md)。現行構成とモデル接続の説明は[現行構成・Decision-1解説](docs/architecture-and-decision-model.md)、実行状態は[実装バックログ](docs/implementation-backlog.md)と[Runbook](docs/runbook.md)を参照。
 - 直近のユーザー指示を優先し、文書間の矛盾は関連箇所を合わせて直す。未確定のサービス・SKU・閾値を既決として扱わない。
 
 ## 技術と構成

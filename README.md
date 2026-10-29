@@ -8,7 +8,8 @@ Azureの非推奨化・新規作成停止・サポート終了・リタイアメ
 
 | 文書 | 内容 |
 |---|---|
-| [システム設計書](docs/design.md) | 要件、アーキテクチャ、データ、セキュリティ、運用、バックログ |
+| [システム設計書](docs/design.md) | 要件、論理設計、データ、セキュリティ、運用 |
+| [現行構成・Decision-1解説](docs/architecture-and-decision-model.md) | 登壇向けの構成図、処理／データフロー、Decision-1の入力・判断・出力と検証状況 |
 | [判断・承認基準](docs/decision-policy.md) | 影響度2軸、確度分類、P1〜P4、不確実性、人間レビュー、作業項目生成 |
 | [ワークフロー設定基準](docs/workflow-configuration.md) | 企業別の担当割当、部署調整、承認、移行順序の設定方式 |
 | [Spike・テスト計画](docs/spike-and-testing.md) | 実現性、3事例、30テスト（非推奨6件追加）、品質評価、予算 |
