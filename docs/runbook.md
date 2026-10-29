@@ -141,6 +141,9 @@ ServiceHealthResourcesの`LastUpdateTime`は数値で返る場合がある。ARG
 
 ## GitHub Project フィールド同期
 
+- PoCのGitHub Project設定はRepository VariablesからBicepへ渡す。`GITHUB_OWNER`、`GITHUB_REPOSITORY`、`GITHUB_PROJECT_ID`、`GITHUB_PROJECT_STATUS_FIELD_ID`、`GITHUB_PROJECT_STATUS_TODO_OPTION_ID`を設定し、GitHub TokenはAzure Key Vaultの`github-token` secretにのみ保存する。`ARP_EXPORT_ENABLED=true`はレビュー済み作業からIssue／Project itemを作るための明示的な有効化で、未設定時はfalseとして扱う。`ARP_PROJECT_PROGRESS_SYNC_ENABLED=true`は15分ごとのStatus読取を有効化する。デプロイworkflowは外部登録／進捗同期が有効な場合に必須設定を事前検査する。
+- PoCのProjectにはStatusフィールドのみ設定する。Priority欄にP3／P4 optionがないProjectではPriority field IDを渡さず、項目同期失敗を防ぐ。Status初期値には`Backlog` optionを使う。PriorityやDue date同期を追加する場合は、対応する全option／field IDが存在することを確認してから設定する。
+- GitHub Tokenは対象RepositoryのIssue作成・読取と、対象Projectの読取・追加・項目更新に必要な権限を持たせる。CLIの認証TokenとAzure Key Vaultの`github-token`は別の資格情報である。Tokenの値をRepository Variables、Source、CLI引数、ログに出さない。
 - 外部Issue／Projectへの登録は既定で無効のまま。実運用前にProjectのStatus、Priority、Due dateフィールドを用意し、field IDと各Status/Priority option IDを検証する。
 - IDは`GITHUB_PROJECT_*`のBicepパラメーター／Function App設定で管理する。Tokenや秘密はKey Vaultに置き、フィールドIDは機密情報として扱わない。既存Project itemの照合にはGitHub ProjectのRead権限（`read:project`相当）が必要で、Issue更新にはRepository Issues write、Project更新にはProject write権限が必要。
 - Priority option IDはP1〜P4を個別に設定する。Due dateは公式に確認された期限だけを設定する。未確定値や空値はProjectへ書き込まない。
