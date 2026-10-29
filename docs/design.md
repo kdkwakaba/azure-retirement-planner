@@ -1,6 +1,6 @@
 # システム設計書
 
-版: 0.3 / 更新日: 2026-10-24 / 状態: 設計・開発用指示整備、アプリ実装前
+版: 0.4 / 更新日: 2026-10-29 / 状態: 要件・目標設計。アプリ実装・一部実接続済み。現行構成と未確認範囲は[現行構成・Decision-1解説](architecture-and-decision-model.md)および[実装バックログ](implementation-backlog.md)を参照。
 
 会話で採用された方針をまとめる。数値閾値はPoC用であり、企業一般の標準や実測値ではない。詳細な基準は[判断・承認基準](decision-policy.md)、企業別フロー設定は[ワークフロー設定基準](workflow-configuration.md)、検証条件は[Spike・テスト計画](spike-and-testing.md)、最新の開発・CI/CD・認証・撤去方針は[開発・運用基準](engineering.md)を参照する。
 
