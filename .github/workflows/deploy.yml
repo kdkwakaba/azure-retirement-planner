@@ -44,6 +44,13 @@ jobs:
       ARP_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
       ARP_DECISION_ENDPOINT: ${{ vars.DECISION_ENDPOINT }}
       ARP_HOST_STORAGE_BLOB_ENDPOINT: ${{ vars.AZURE_HOST_STORAGE_BLOB_ENDPOINT }}
+      ARP_GITHUB_OWNER: ${{ vars.ARP_GITHUB_OWNER }}
+      ARP_GITHUB_REPOSITORY: ${{ vars.ARP_GITHUB_REPOSITORY }}
+      ARP_GITHUB_PROJECT_ID: ${{ vars.ARP_GITHUB_PROJECT_ID }}
+      ARP_GITHUB_PROJECT_STATUS_FIELD_ID: ${{ vars.ARP_GITHUB_PROJECT_STATUS_FIELD_ID }}
+      ARP_GITHUB_PROJECT_STATUS_TODO_OPTION_ID: ${{ vars.ARP_GITHUB_PROJECT_STATUS_TODO_OPTION_ID }}
+      ARP_EXPORT_ENABLED: ${{ vars.ARP_EXPORT_ENABLED }}
+      ARP_PROJECT_PROGRESS_SYNC_ENABLED: ${{ vars.ARP_PROJECT_PROGRESS_SYNC_ENABLED }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Resolve successful main CI from this workflow version
@@ -85,6 +92,21 @@ jobs:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Validate GitHub Project configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          export_enabled="${ARP_EXPORT_ENABLED,,}"
+          progress_enabled="${ARP_PROJECT_PROGRESS_SYNC_ENABLED,,}"
+          if [[ "$export_enabled" == "true" || "$progress_enabled" == "true" ]]; then
+            test -n "$ARP_GITHUB_OWNER"
+            test -n "$ARP_GITHUB_REPOSITORY"
+            test -n "$ARP_GITHUB_PROJECT_ID"
+            test -n "$ARP_GITHUB_PROJECT_STATUS_FIELD_ID"
+          fi
+          if [[ "$export_enabled" == "true" ]]; then
+            test -n "$ARP_GITHUB_PROJECT_STATUS_TODO_OPTION_ID"
+          fi
       - name: Recompute infrastructure plan
         id: plan
         shell: bash

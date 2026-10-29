@@ -634,6 +634,9 @@ function App() {
                         maxLength={2000}
                       />
                     </label>
+                    <p role="note">
+                      承認は作業案の選択と判断理由が必要です。差し戻し・保留は判断理由を入力すると有効になります。検証不適合が表示されている間は承認できません。操作結果や失敗理由はこの画面上部に表示されます。
+                    </p>
                     <div className="toolbar">
                       <button
                         disabled={
