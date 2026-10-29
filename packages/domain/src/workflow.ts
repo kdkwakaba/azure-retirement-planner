@@ -73,6 +73,7 @@ const businessTaskTemplateSchema = z
     trigger: z.enum([
       'BusinessImpact',
       'VendorUse',
+      'VendorUseUnknown',
       'AdditionalCostNeedsAssessment',
       'ConfirmedAdditionalCost',
       'ContractReview',
@@ -347,10 +348,8 @@ export function generateBusinessWorkflowTasks(input: {
   const triggers = new Set<string>()
   if (profile.businessImpact === 'Confirmed') triggers.add('BusinessImpact')
   if (profile.vendorUse === 'Confirmed') triggers.add('VendorUse')
-  if (
-    profile.additionalCost === 'Possible' ||
-    profile.additionalCost === 'Unknown'
-  )
+  if (profile.vendorUse === 'Unknown') triggers.add('VendorUseUnknown')
+  if (profile.additionalCost !== 'None')
     triggers.add('AdditionalCostNeedsAssessment')
   if (profile.additionalCost === 'Confirmed')
     triggers.add('ConfirmedAdditionalCost')
@@ -363,11 +362,46 @@ export function generateBusinessWorkflowTasks(input: {
   const existingCategories = new Set(
     input.existingWorkItems.map((item) => item.category),
   )
-  const templates = input.policy.businessTaskTemplates.filter(
-    (template) =>
-      triggers.has(template.trigger) &&
-      !existingCategories.has(template.category),
-  )
+  const uncertainTargets =
+    input.resources.length === 0 ||
+    input.resources.some(
+      (resource) =>
+        resource.classification !== 'Confirmed' ||
+        resource.verificationRequired,
+    )
+  const templates = input.policy.businessTaskTemplates.filter((template) => {
+    if (!triggers.has(template.trigger)) return false
+    if (existingCategories.has(template.category)) return false
+    if (
+      ['Customer Communication', 'Cross-Team Coordination'].includes(
+        template.category,
+      ) &&
+      profile.businessImpact !== 'Confirmed'
+    )
+      return false
+    if (
+      template.category === 'Vendor Assessment' &&
+      !['Confirmed', 'Unknown'].includes(profile.vendorUse)
+    )
+      return false
+    if (
+      template.category === 'Cost Assessment' &&
+      profile.additionalCost === 'None'
+    )
+      return false
+    if (
+      template.category === 'Budget Approval' &&
+      profile.additionalCost !== 'Confirmed'
+    )
+      return false
+    if (
+      template.category === 'Contract Review' &&
+      (profile.vendorUse !== 'Confirmed' ||
+        profile.contractReview !== 'Required')
+    )
+      return false
+    return true
+  })
   if (!templates.length) return { workItems: [], evidence: [] }
 
   const evidenceId = `business-context:${createHash('sha256')
@@ -403,9 +437,7 @@ export function generateBusinessWorkflowTasks(input: {
   }
   const workItems = templates.map((template) => ({
     id: createHash('sha256')
-      .update(
-        `${input.event.id}:${input.workloadId}:${input.policy.version}:${template.id}`,
-      )
+      .update(`${input.event.id}:${input.workloadId}:${template.id}`)
       .digest('hex'),
     category: template.category,
     title: template.title,
@@ -413,13 +445,16 @@ export function generateBusinessWorkflowTasks(input: {
     workloadId: input.workloadId,
     resourceIds: input.resources.map((resource) => resource.id),
     ownerTeam: null,
-    necessity: template.necessity,
+    necessity:
+      template.necessity === 'Required' && uncertainTargets
+        ? 'Recommended'
+        : template.necessity,
     priority: input.priority,
     plannedStartDate: null,
     dueDate: null,
-    applicableMilestoneIds: input.event.milestones.map(
-      (milestone) => milestone.id,
-    ),
+    applicableMilestoneIds: input.event.milestones
+      .filter((milestone) => milestone.kind !== 'Deprecation')
+      .map((milestone) => milestone.id),
     prerequisites: [],
     completionCriteria: template.completionCriteria,
     humanApprovalRequired: true as const,

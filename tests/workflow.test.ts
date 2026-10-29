@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import {
   applyWorkflowPolicy,
   generateBusinessWorkflowTasks,
+  packageHash,
+  validateAssessment,
   workflowPolicySchema,
 } from '@arp/domain'
 import { fixture, resourceId } from './fixtures.ts'
@@ -254,12 +256,7 @@ test('business workflow templates generate only triggered, evidence-backed sampl
     ].sort(),
   )
   assert.ok(
-    generated.workItems.every(
-      (item) =>
-        item.necessity === 'Recommended' ||
-        item.category === 'Customer Communication' ||
-        item.category === 'Cross-Team Coordination',
-    ),
+    generated.workItems.every((item) => item.necessity === 'Recommended'),
   )
   assert.equal(generated.evidence.length, 1)
   assert.match(generated.evidence[0]!.fact, /合成デモデータ/)
@@ -313,4 +310,162 @@ test('business task generation does not apply demo profiles to unmatched workloa
     asOf: assessment.asOf,
   })
   assert.deepEqual(result, { workItems: [], evidence: [] })
+})
+
+test('business tasks remain recommended for uncertain resources and validate with deprecation events', () => {
+  const demo = workflowPolicySchema.parse(demoPolicy)
+  const assessment = fixture()
+  assessment.resources[0]!.classification = 'Unknown'
+  assessment.resources[0]!.verificationRequired = true
+  assessment.event.milestones.push({
+    id: 'deprecation-start',
+    kind: 'Deprecation',
+    date: '2026-09-01',
+    rawDateText: 'September 2026',
+    scope: 'synthetic test only',
+    evidenceIds: [assessment.event.evidence[0]!.id],
+  })
+  const policy = {
+    ...demo,
+    businessContextProfiles: demo.businessContextProfiles.map((profile) => ({
+      ...profile,
+      workloadId: assessment.workloadId,
+    })),
+  }
+  const generated = generateBusinessWorkflowTasks({
+    policy,
+    event: assessment.event,
+    workloadId: assessment.workloadId,
+    resources: assessment.resources,
+    priority: 'P2',
+    existingWorkItems: assessment.workItems,
+    asOf: assessment.asOf,
+  })
+  assert.ok(
+    generated.workItems.every((item) => item.necessity === 'Recommended'),
+  )
+  assert.ok(
+    generated.workItems.every(
+      (item) => item.applicableMilestoneIds.length === 0,
+    ),
+  )
+  assessment.event.evidence.push(...generated.evidence)
+  assessment.workItems.push(...generated.workItems)
+  assessment.packageHash = packageHash(assessment)
+  assert.deepEqual(validateAssessment(assessment), [])
+})
+
+test('unknown vendor use proposes recommended verification without assuming a vendor or contract', () => {
+  const demo = workflowPolicySchema.parse(demoPolicy)
+  const assessment = fixture()
+  const policy = {
+    ...demo,
+    businessContextProfiles: demo.businessContextProfiles.map((profile) => ({
+      ...profile,
+      workloadId: assessment.workloadId,
+      businessImpact: 'Unknown' as const,
+      vendorUse: 'Unknown' as const,
+      additionalCost: 'None' as const,
+      contractReview: 'Unknown' as const,
+    })),
+  }
+  const generated = generateBusinessWorkflowTasks({
+    policy,
+    event: assessment.event,
+    workloadId: assessment.workloadId,
+    resources: assessment.resources,
+    priority: 'P2',
+    existingWorkItems: [],
+    asOf: assessment.asOf,
+  })
+  assert.deepEqual(
+    generated.workItems.map((item) => item.category),
+    ['Vendor Assessment'],
+  )
+  assert.equal(generated.workItems[0]!.necessity, 'Recommended')
+  assert.match(
+    generated.workItems[0]!.description,
+    /ベンダー作業・契約が利用されているか/,
+  )
+})
+
+test('budget and contract categories cannot bypass confirmed prerequisites through template triggers', () => {
+  const demo = workflowPolicySchema.parse(demoPolicy)
+  const assessment = fixture()
+  const policy = {
+    ...demo,
+    businessContextProfiles: demo.businessContextProfiles.map((profile) => ({
+      ...profile,
+      workloadId: assessment.workloadId,
+      businessImpact: 'Confirmed' as const,
+      vendorUse: 'Unknown' as const,
+      additionalCost: 'Possible' as const,
+      contractReview: 'Required' as const,
+    })),
+    businessTaskTemplates: [
+      ...demo.businessTaskTemplates,
+      {
+        id: 'unsafe-budget-trigger',
+        trigger: 'BusinessImpact' as const,
+        category: 'Budget Approval' as const,
+        title: 'Budget approval',
+        description: 'Must not bypass cost confirmation',
+        necessity: 'Required' as const,
+        completionCriteria: ['Check the approval'],
+      },
+      {
+        id: 'unsafe-contract-trigger',
+        trigger: 'BusinessImpact' as const,
+        category: 'Contract Review' as const,
+        title: 'Contract review',
+        description: 'Must not bypass vendor confirmation',
+        necessity: 'Required' as const,
+        completionCriteria: ['Check the contract'],
+      },
+    ],
+  }
+  const generated = generateBusinessWorkflowTasks({
+    policy,
+    event: assessment.event,
+    workloadId: assessment.workloadId,
+    resources: assessment.resources,
+    priority: 'P2',
+    existingWorkItems: [],
+    asOf: assessment.asOf,
+  })
+  assert.ok(
+    !generated.workItems.some((item) => item.category === 'Budget Approval'),
+  )
+  assert.ok(
+    !generated.workItems.some((item) => item.category === 'Contract Review'),
+  )
+})
+
+test('business task IDs remain stable across routing-only policy version bumps', () => {
+  const demo = workflowPolicySchema.parse(demoPolicy)
+  const assessment = fixture()
+  const policy = {
+    ...demo,
+    businessContextProfiles: demo.businessContextProfiles.map((profile) => ({
+      ...profile,
+      workloadId: assessment.workloadId,
+    })),
+  }
+  const args = {
+    event: assessment.event,
+    workloadId: assessment.workloadId,
+    resources: assessment.resources,
+    priority: 'P2' as const,
+    existingWorkItems: assessment.workItems,
+    asOf: assessment.asOf,
+  }
+  const original = generateBusinessWorkflowTasks({ policy, ...args })
+  const updated = generateBusinessWorkflowTasks({
+    policy: { ...policy, version: `${policy.version}-routing-change` },
+    ...args,
+  })
+  assert.deepEqual(
+    updated.workItems.map((item) => item.id),
+    original.workItems.map((item) => item.id),
+  )
 })

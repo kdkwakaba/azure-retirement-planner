@@ -154,6 +154,15 @@
       ]
     },
     {
+      "id": "verify-vendor-use",
+      "trigger": "VendorUseUnknown",
+      "category": "Vendor Assessment",
+      "title": "ベンダー利用の有無を確認",
+      "description": "対象システムでベンダー作業・契約が利用されているかをOwnerへ確認する。ベンダー利用を前提にしない。",
+      "necessity": "Recommended",
+      "completionCriteria": ["ベンダー利用の有無と確認根拠を記録する"]
+    },
+    {
       "id": "assess-vendor",
       "trigger": "VendorUse",
       "category": "Vendor Assessment",
