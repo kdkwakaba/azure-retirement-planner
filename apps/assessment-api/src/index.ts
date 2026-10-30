@@ -268,7 +268,9 @@ app.http('web', {
           ? 'text/css'
           : path.endsWith('.html')
             ? 'text/html'
-            : 'application/octet-stream'
+            : path.endsWith('.svg')
+              ? 'image/svg+xml'
+              : 'application/octet-stream'
       return {
         body: content,
         headers: {
