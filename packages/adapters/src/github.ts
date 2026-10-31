@@ -1,7 +1,11 @@
 import type { WorkItem } from '@arp/contracts'
 import { hash } from '@arp/domain'
 import { z } from 'zod'
-import { jsonRequest } from './http.ts'
+import {
+  GitHubGraphQLError,
+  jsonRequest,
+  type SafeFailureCategory,
+} from './http.ts'
 
 const managedStart = '<!-- arp:managed:start -->'
 const managedEnd = '<!-- arp:managed:end -->'
@@ -24,6 +28,42 @@ const categoryLabels: Record<string, string> = {
   'Documentation Update': 'ドキュメント更新',
   'CMDB Update': 'CMDB更新',
   'Policy and IaC Update': 'ポリシー・IaC更新',
+}
+function graphQLOperation(query: string): string {
+  if (query.includes('addProjectV2ItemById')) return 'ProjectAdd'
+  if (query.includes('updateProjectV2ItemFieldValue'))
+    return 'ProjectFieldUpdate'
+  if (query.includes('updateIssue')) return 'IssueUpdate'
+  if (query.includes('ProjectV2')) return 'ProjectRead'
+  if (query.includes('...on Issue')) return 'IssueRead'
+  return query.startsWith('mutation') ? 'GraphQLMutation' : 'GraphQLQuery'
+}
+function throwGraphQLErrors(errors: unknown, operation: string): void {
+  if (!errors) return
+  const entries = Array.isArray(errors) ? errors : [errors]
+  const codes = entries
+    .map((entry) => {
+      if (typeof entry !== 'object' || entry === null) return ''
+      const value = entry as {
+        type?: unknown
+        extensions?: { code?: unknown }
+      }
+      return [value.type, value.extensions?.code]
+        .filter((code): code is string => typeof code === 'string')
+        .join(' ')
+        .toUpperCase()
+    })
+    .join(' ')
+  const providerCode =
+    codes.split(/\s+/).find((code) => /^[A-Z][A-Z0-9_]{0,63}$/.test(code)) ??
+    null
+  let category: SafeFailureCategory = 'Unknown'
+  if (/FORBIDDEN|RESOURCE_NOT_ACCESSIBLE/.test(codes)) category = 'Forbidden'
+  else if (/UNAUTHORIZED/.test(codes)) category = 'Unauthorized'
+  else if (/RATE_LIMIT|THROTTL/.test(codes)) category = 'Throttled'
+  else if (/TIMEOUT/.test(codes)) category = 'Timeout'
+  else if (codes) category = 'InvalidResponse'
+  throw new GitHubGraphQLError(category, operation, providerCode)
 }
 function japaneseCategory(category: string): string {
   return categoryLabels[category] ?? category
@@ -74,7 +114,7 @@ export class GitHubClient {
     this.token = token
   }
   async request(path: string, body?: unknown) {
-    return jsonRequest('https://api.github.com' + path, {
+    const result = await jsonRequest('https://api.github.com' + path, {
       method: body === undefined ? 'GET' : 'POST',
       headers: {
         Authorization: `Bearer ${this.token}`,
@@ -84,6 +124,25 @@ export class GitHubClient {
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
+    if (
+      path === '/graphql' &&
+      typeof result === 'object' &&
+      result !== null &&
+      'errors' in result
+    ) {
+      const query =
+        typeof body === 'object' &&
+        body !== null &&
+        'query' in body &&
+        typeof body.query === 'string'
+          ? body.query
+          : 'GraphQL'
+      throwGraphQLErrors(
+        (result as { errors?: unknown }).errors,
+        graphQLOperation(query),
+      )
+    }
+    return result
   }
   async find(itemId: string): Promise<{ id: string; url: string } | null> {
     // 検索索引の反映待ちを避けRepositoryの全Issueをページング。上限到達は不明として停止。
@@ -148,7 +207,7 @@ export class GitHubClient {
           variables: { id: issueId },
         }),
       )
-    if (current.errors) throw new Error('Issue read failed')
+    throwGraphQLErrors(current.errors, 'IssueRead')
     const body = current.data.node?.body
     if (body === null || body === undefined)
       throw new Error('Issue body unavailable')
@@ -191,7 +250,7 @@ export class GitHubClient {
           variables: { id: issueId, body: updatedBody },
         }),
       )
-    if (updated.errors) throw new Error('Issue update failed')
+    throwGraphQLErrors(updated.errors, 'IssueUpdate')
     return hash(nextContent)
   }
   async ensureProjectItem(
@@ -234,8 +293,9 @@ export class GitHubClient {
             variables: { id: projectId, cursor },
           }),
         )
-      if (result.errors || !result.data.node)
-        throw new Error('Project read failed')
+      if (result.errors) throwGraphQLErrors(result.errors, 'ProjectRead')
+      if (!result.data.node)
+        throw new GitHubGraphQLError('InvalidResponse', 'ProjectRead')
       const matches = result.data.node.items.nodes.filter(
         (projectItem) => projectItem.content?.id === contentId,
       )
@@ -397,7 +457,7 @@ export class GitHubClient {
           },
         }),
       )
-    if (result.errors) throw new Error('Project field update failed')
+    throwGraphQLErrors(result.errors, 'ProjectFieldUpdate')
   }
 
   async addToProject(projectId: string, contentId: string): Promise<string> {
@@ -417,7 +477,7 @@ export class GitHubClient {
           variables: { project: projectId, content: contentId },
         }),
       )
-    if (result.errors) throw new Error('Project mutation failed')
+    throwGraphQLErrors(result.errors, 'ProjectAdd')
     return result.data.addProjectV2ItemById.item.id
   }
 }
