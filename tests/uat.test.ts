@@ -22,7 +22,9 @@ test('synthetic UAT fixture is isolated from real Azure resources and official f
     ),
   )
   assert.ok(
-    assessment.event.evidence.every((evidence) => evidence.officialUrl === null),
+    assessment.event.evidence.every(
+      (evidence) => evidence.officialUrl === null,
+    ),
   )
   assert.equal(assessment.workItems.length, 1)
   assert.match(assessment.workItems[0]!.title, /^\[SYNTHETIC UAT\]/)
