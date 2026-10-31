@@ -8,7 +8,8 @@ export const SYNTHETIC_UAT_WORKLOAD_ID = 'synthetic-uat-workload'
 export const SYNTHETIC_UAT_SUBSCRIPTION_ID =
   '00000000-0000-4000-8000-000000000001'
 export const SYNTHETIC_UAT_RESOURCE_ID =
-  `/subscriptions/${SYNTHETIC_UAT_SUBSCRIPTION_ID}/resourceGroups/synthetic-uat/providers/Microsoft.Network/loadBalancers/arp-demo-only`
+  `/subscriptions/${SYNTHETIC_UAT_SUBSCRIPTION_ID}/resourceGroups/synthetic-uat/` +
+  'providers/Microsoft.Network/loadBalancers/arp-demo-only'
 
 export function createSyntheticUatAssessment(): Assessment {
   const assessment = fixture()
@@ -51,7 +52,8 @@ export function createSyntheticUatAssessment(): Assessment {
       id: hash({ syntheticUatWorkItem: SYNTHETIC_UAT_TRACKING_ID }),
       title: '[SYNTHETIC UAT] GitHub Issue連携を確認',
       description:
-        '合成UATです。GitHub APIへの接続、Issue作成、Project追加だけを確認します。Azureリソースの変更や移行は行いません。',
+        '合成UATです。GitHub APIへの接続、Issue作成、Project追加だけを確認します。' +
+        'Azureリソースの変更や移行は行いません。',
       workloadId: SYNTHETIC_UAT_WORKLOAD_ID,
       resourceIds: [SYNTHETIC_UAT_RESOURCE_ID],
       evidenceIds: event.evidence.map((item) => item.id),
