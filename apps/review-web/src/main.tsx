@@ -60,6 +60,8 @@ const failureCategoryLabels: Record<string, string> = {
   StorageFailure: '監査保存失敗',
 }
 
+const syntheticUatTrackingId = 'ARP-SYNTHETIC-UAT-001'
+
 function App() {
   const [items, setItems] = useState<Assessment[]>([]),
     [selected, setSelected] = useState<string | null>(null),
@@ -68,6 +70,8 @@ function App() {
     [checked, setChecked] = useState<string[]>([]),
     [reason, setReason] = useState(''),
     [notice, setNotice] = useState(''),
+    [uatEnabled, setUatEnabled] = useState(false),
+    [uatIssueUrl, setUatIssueUrl] = useState(''),
     [projectProgress, setProjectProgress] = useState<
       Array<{ workItemId: string; status: string | null; syncedAt: string }>
     >([])
@@ -80,6 +84,8 @@ function App() {
         .array()
         .parse(await request('assessments', 'GET'))
       setItems(data)
+      const uat = await request('uat/status', 'GET')
+      setUatEnabled(uat.enabled === true)
       const progress = await request('project-progress', 'GET')
       setProjectProgress(
         Array.isArray(progress)
@@ -120,6 +126,44 @@ function App() {
       setBusy(false)
     }
   }
+  async function seedSyntheticUat() {
+    setBusy(true)
+    setError('')
+    setUatIssueUrl('')
+    try {
+      const result = await request('uat/seed', 'POST', {})
+      await refresh()
+      setSelected(result.assessmentId)
+      setNotice('合成UATを作成しました。実リソースは読み取らず、作業を選択して人間承認してください。')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '合成UAT作成失敗')
+    } finally {
+      setBusy(false)
+    }
+  }
+  async function exportSyntheticUat() {
+    if (!current || current.event.trackingId !== syntheticUatTrackingId) return
+    const item = current.workItems[0]
+    if (!item) return
+    if (!window.confirm('合成UATの承認済み作業1件をGitHub IssueとProjectへ登録します。実環境の作業ではありません。続けますか？'))
+      return
+    setBusy(true)
+    setError('')
+    setUatIssueUrl('')
+    try {
+      const result = await request('uat/export', 'POST', {
+        assessmentId: current.id,
+        packageHash: current.packageHash,
+        itemId: item.id,
+      })
+      setUatIssueUrl(result.issueUrl)
+      setNotice('合成UAT IssueをGitHub Projectへ登録しました。')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Issue登録失敗。作業承認とGitHub設定を確認してください。')
+    } finally {
+      setBusy(false)
+    }
+  }
   async function review(result: 'Approved' | 'Partial' | 'Returned' | 'Held') {
     if (!current) return
     setBusy(true)
@@ -135,7 +179,7 @@ function App() {
         result,
       })
       setNotice(
-        `レビューを記録しました。${response.exportEnabled ? '承認済み作業を登録待ちへ送ります。' : '外部登録は無効です。'}`,
+        `レビューを記録しました。${response.exportEnabled ? '承認済み作業を登録待ちへ送ります。' : current.event.trackingId === syntheticUatTrackingId ? '通常の外部登録は無効です。合成UATのIssue登録は専用ボタンから実行できます。' : '外部登録は無効です。'}`,
       )
       setChecked([])
       setReason('')
@@ -164,6 +208,11 @@ function App() {
           <button disabled={busy} onClick={() => void refresh()}>
             評価結果を更新
           </button>
+          {uatEnabled && (
+            <button disabled={busy} onClick={() => void seedSyntheticUat()}>
+              合成UATを作成
+            </button>
+          )}
           <span>評価対象は読み取り専用</span>
         </div>
         <section className="operations-summary" aria-labelledby="summary-title">
@@ -196,6 +245,7 @@ function App() {
           </div>
         )}
         {notice && <p role="status">{notice}</p>}
+        {uatIssueUrl && <p><a href={uatIssueUrl} target="_blank" rel="noopener noreferrer">作成した合成UAT Issueを開く</a></p>}
         <div className="layout">
           <aside>
             <h2>ライフサイクル通知</h2>
@@ -532,6 +582,15 @@ function App() {
                 ) : (
                   <>
                     <h3>作業案・部分承認</h3>
+                    {uatEnabled && current.event.trackingId === syntheticUatTrackingId && (
+                      <div className="notice">
+                        <b>合成UAT専用</b>
+                        <p>この通知とリソースは架空です。実Azureリソースへの変更はなく、通常Exporter／Outboxは使用しません。</p>
+                        <button disabled={busy || current.validationErrors.length > 0} onClick={() => void exportSyntheticUat()}>
+                          承認済み合成作業をGitHub Issueへ登録
+                        </button>
+                      </div>
+                    )}
                     {current.validationErrors.length > 0 && (
                       <div className="error">
                         検証不適合のため承認できません。
