@@ -138,9 +138,7 @@ app.http('api', {
             stage: typeof row.stage === 'string' ? row.stage : null,
             issueUrl,
             errorCategory:
-              typeof row.errorCategory === 'string'
-                ? row.errorCategory
-                : null,
+              typeof row.errorCategory === 'string' ? row.errorCategory : null,
             errorHttpStatus:
               typeof row.errorHttpStatus === 'number'
                 ? row.errorHttpStatus
@@ -154,11 +152,8 @@ app.http('api', {
                 ? row.errorProviderCode
                 : null,
             correlationId:
-              typeof row.correlationId === 'string'
-                ? row.correlationId
-                : null,
-            updatedAt:
-              typeof row.updatedAt === 'string' ? row.updatedAt : null,
+              typeof row.correlationId === 'string' ? row.correlationId : null,
+            updatedAt: typeof row.updatedAt === 'string' ? row.updatedAt : null,
           })
         } catch (error) {
           if ((error as { statusCode?: number }).statusCode !== 404) throw error
