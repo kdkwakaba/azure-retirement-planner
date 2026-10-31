@@ -1,7 +1,11 @@
 import type { WorkItem } from '@arp/contracts'
 import { hash } from '@arp/domain'
 import { z } from 'zod'
-import { GitHubGraphQLError, jsonRequest, type SafeFailureCategory } from './http.ts'
+import {
+  GitHubGraphQLError,
+  jsonRequest,
+  type SafeFailureCategory,
+} from './http.ts'
 
 const managedStart = '<!-- arp:managed:start -->'
 const managedEnd = '<!-- arp:managed:end -->'
