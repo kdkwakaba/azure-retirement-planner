@@ -44,7 +44,7 @@ export function managedIssueContent(item: WorkItem): string {
     `根拠ID: ${item.evidenceIds.join(', ')}`,
     `承認済み作業項目ID: ${item.id}`,
     '詳細説明と完了条件は、認証済みレビュー画面を参照してください。',
-  ].join('\\n\\n')
+  ].join('\n\n')
 }
 export function issueText(item: WorkItem): string {
   return [
