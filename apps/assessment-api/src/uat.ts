@@ -90,6 +90,6 @@ export function isSyntheticUatAssessment(assessment: Assessment): boolean {
     assessment.resources.length === 1 &&
     assessment.resources[0]?.id === SYNTHETIC_UAT_RESOURCE_ID &&
     assessment.workItems.length === 1 &&
-    assessment.workItems[0]?.title.startsWith('[SYNTHETIC UAT]')
+    assessment.workItems[0]?.title.startsWith('[SYNTHETIC UAT]') === true
   )
 }
