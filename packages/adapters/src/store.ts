@@ -133,8 +133,8 @@ export class AzureStore {
     await this.put('approvals', approval.id, approval)
     const outboxActions: TransactionAction[] = []
     if (!suppressExternalOutbox) {
-            for (const itemId of approval.approvedItemIds) {
-          const rowKey = 'outbox:' + itemId
+      for (const itemId of approval.approvedItemIds) {
+        const rowKey = 'outbox:' + itemId
         let existing: Record<string, unknown> | null = null
         try {
           existing = await this.table.getEntity(current.partitionKey, rowKey)
@@ -171,7 +171,7 @@ export class AzureStore {
             : ['create', entity],
         )
       }
-      }
+    }
     await this.table.submitTransaction([
       [
         'update',
