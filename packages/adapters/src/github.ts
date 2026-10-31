@@ -8,6 +8,12 @@ const managedEnd = '<!-- arp:managed:end -->'
 export function managedIssueContent(item: WorkItem): string {
   // 外部には最小限の管理属性のみ送信し、本文の手編集領域と分離する。
   return [
+    ...(item.title.startsWith('[SYNTHETIC UAT]')
+      ? [
+          '> **SYNTHETIC UAT** — synthetic data only; ' +
+            'no Azure change is performed.',
+        ]
+      : []),
     `Category: ${item.category}`,
     `Workload alias: ${hash(item.workloadId).slice(0, 12)}`,
     `Priority: ${item.priority ?? 'Unconfirmed'}`,
@@ -93,7 +99,9 @@ export class GitHubClient {
   async create(item: WorkItem): Promise<{ id: string; url: string }> {
     const result = z.object({ node_id: z.string(), html_url: z.url() }).parse(
       await this.request(`/repos/${this.owner}/${this.repo}/issues`, {
-        title: `[ARP] ${item.category} ${item.id.slice(0, 8)}`,
+        title: item.title.startsWith('[SYNTHETIC UAT]')
+          ? `[ARP][SYNTHETIC UAT] ${item.id.slice(0, 8)}`
+          : `[ARP] ${item.category} ${item.id.slice(0, 8)}`,
         body: issueText(item),
       }),
     )
