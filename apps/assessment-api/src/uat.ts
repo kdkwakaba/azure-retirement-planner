@@ -19,8 +19,7 @@ export function createSyntheticUatAssessment(): Assessment {
     tenantId: SYNTHETIC_UAT_SUBSCRIPTION_ID,
     trackingId: SYNTHETIC_UAT_TRACKING_ID,
     title: '[合成UAT] Azure Basic Load Balancerの廃止通知例',
-    body:
-      'これはGitHub連携の接続確認専用に生成した合成データです。Microsoft公式通知ではなく、実環境・実リソース・実期限を示しません。',
+    body: 'これはGitHub連携の接続確認専用に生成した合成データです。Microsoft公式通知ではなく、実環境・実リソース・実期限を示しません。',
     updatedAt: new Date().toISOString(),
   })
   event.evidence = event.evidence.map((evidence) => ({
@@ -64,16 +63,12 @@ export function createSyntheticUatAssessment(): Assessment {
         kind: 'EvidenceSupport',
         value: 1,
         method: '固定された合成UAT fixture',
-        limitations: [
-          '業務影響・Microsoft公式情報・実環境を表さない',
-        ],
+        limitations: ['業務影響・Microsoft公式情報・実環境を表さない'],
       },
     },
   ]
   assessment.humanReviewRequired = true
-  assessment.reviewReasons = [
-    '合成UATのため人間がIssue作成を明示承認する',
-  ]
+  assessment.reviewReasons = ['合成UATのため人間がIssue作成を明示承認する']
   assessment.missingInformation = []
   assessment.validationErrors = []
   assessment.packageHash = packageHash(assessment)
