@@ -609,17 +609,17 @@ function App() {
                     {uatEnabled &&
                       current.event.trackingId === syntheticUatTrackingId && (
                         <div className="notice">
-                        <b>合成UAT専用</b>
-                        <p>
-                          この通知とリソースは架空です。実Azureリソースへの変更はなく、
-                          通常Exporter／Outboxは使用しません。
-                        </p>
-                        <button
-                          disabled={busy || current.validationErrors.length > 0}
-                          onClick={() => void exportSyntheticUat()}
-                        >
-                          承認済み合成作業をGitHub Issueへ登録
-                        </button>
+                          <b>合成UAT専用</b>
+                          <p>
+                            この通知とリソースは架空です。実Azureリソースへの変更はなく、
+                            通常Exporter／Outboxは使用しません。
+                          </p>
+                          <button
+                            disabled={busy || current.validationErrors.length > 0}
+                            onClick={() => void exportSyntheticUat()}
+                          >
+                            承認済み合成作業をGitHub Issueへ登録
+                          </button>
                         </div>
                       )}
                     {current.validationErrors.length > 0 && (
