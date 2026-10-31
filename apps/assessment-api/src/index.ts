@@ -141,7 +141,10 @@ app.http('api', {
           const item = assessment.workItems.find(
             (candidate) => candidate.id === body.itemId,
           )
-          if (!item || item.title !== '[SYNTHETIC UAT] GitHub Issue連携を確認')
+          if (
+            !item ||
+            item.title !== '[SYNTHETIC UAT] GitHub Issue連携を確認'
+          )
             return reply(400, {
               error: 'Only the fixed synthetic UAT item can be exported',
             })
