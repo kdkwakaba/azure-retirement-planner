@@ -93,7 +93,9 @@ export class GitHubClient {
   async create(item: WorkItem): Promise<{ id: string; url: string }> {
     const result = z.object({ node_id: z.string(), html_url: z.url() }).parse(
       await this.request(`/repos/${this.owner}/${this.repo}/issues`, {
-        title: `[ARP] ${item.category} ${item.id.slice(0, 8)}`,
+        title: item.title.startsWith('[SYNTHETIC UAT]')
+          ? `[ARP][SYNTHETIC UAT] ${item.id.slice(0, 8)}`
+          : `[ARP] ${item.category} ${item.id.slice(0, 8)}`,
         body: issueText(item),
       }),
     )
