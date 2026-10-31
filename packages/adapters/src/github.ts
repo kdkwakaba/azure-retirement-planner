@@ -49,18 +49,12 @@ function throwGraphQLErrors(errors: unknown, operation: string): void {
     codes
       .split(/\s+/)
       .find((code) => /^[A-Z][A-Z0-9_]{0,63}$/.test(code)) ?? null
-  const category: SafeFailureCategory =
-    /FORBIDDEN|RESOURCE_NOT_ACCESSIBLE|UNAUTHORIZED/.test(codes)
-      ? /UNAUTHORIZED/.test(codes)
-        ? 'Unauthorized'
-        : 'Forbidden'
-      : /RATE_LIMIT|THROTTL/.test(codes)
-        ? 'Throttled'
-        : /TIMEOUT/.test(codes)
-          ? 'Timeout'
-          : codes
-            ? 'InvalidResponse'
-            : 'Unknown'
+  let category: SafeFailureCategory = 'Unknown'
+  if (/FORBIDDEN|RESOURCE_NOT_ACCESSIBLE/.test(codes)) category = 'Forbidden'
+  else if (/UNAUTHORIZED/.test(codes)) category = 'Unauthorized'
+  else if (/RATE_LIMIT|THROTTL/.test(codes)) category = 'Throttled'
+  else if (/TIMEOUT/.test(codes)) category = 'Timeout'
+  else if (codes) category = 'InvalidResponse'
   throw new GitHubGraphQLError(category, operation, providerCode)
 }
 function japaneseCategory(category: string): string {
