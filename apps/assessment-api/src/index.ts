@@ -143,7 +143,8 @@ app.http('api', {
           )
           if (
             !item ||
-            item.title !== '[SYNTHETIC UAT] GitHub Issue連携を確認'
+            item.title !==
+              '[SYNTHETIC UAT] GitHub Issue連携を確認'
           )
             return reply(400, {
               error: 'Only the fixed synthetic UAT item can be exported',
