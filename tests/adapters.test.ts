@@ -801,9 +801,9 @@ test('synthetic UAT approval is recorded without creating production outbox rows
     store.table,
     'submitTransaction',
     async (actions: unknown) => {
-    const text = JSON.stringify(actions)
-    assert.ok(text.includes('review:' + approval.id))
-    assert.ok(!text.includes('outbox:'))
+      const text = JSON.stringify(actions)
+      assert.ok(text.includes('review:' + approval.id))
+      assert.ok(!text.includes('outbox:'))
       return { status: 202, subResponses: [] }
     },
   )
