@@ -1,0 +1,24 @@
+name: Temporary Prettier Diagnostic
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/prettier-diagnostic.yml
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Print exact formatter diff
+        run: |
+          npx prettier --write apps/assessment-api/src/index.ts apps/review-web/src/main.tsx packages/adapters/src/github.ts
+          git --no-pager diff -- apps/assessment-api/src/index.ts apps/review-web/src/main.tsx packages/adapters/src/github.ts
