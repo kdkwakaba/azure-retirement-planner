@@ -9,7 +9,10 @@ export function managedIssueContent(item: WorkItem): string {
   // 外部には最小限の管理属性のみ送信し、本文の手編集領域と分離する。
   return [
     ...(item.title.startsWith('[SYNTHETIC UAT]')
-      ? ['> **SYNTHETIC UAT** — synthetic data only; no Azure change is performed.']
+      ? [
+          '> **SYNTHETIC UAT** — synthetic data only; ' +
+            'no Azure change is performed.',
+        ]
       : []),
     `Category: ${item.category}`,
     `Workload alias: ${hash(item.workloadId).slice(0, 12)}`,
