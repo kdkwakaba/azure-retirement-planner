@@ -29,6 +29,14 @@ const categoryLabels: Record<string, string> = {
   'CMDB Update': 'CMDB更新',
   'Policy and IaC Update': 'ポリシー・IaC更新',
 }
+function graphQLOperation(query: string): string {
+  if (query.includes('addProjectV2ItemById')) return 'ProjectAdd'
+  if (query.includes('updateProjectV2ItemFieldValue')) return 'ProjectFieldUpdate'
+  if (query.includes('updateIssue')) return 'IssueUpdate'
+  if (query.includes('ProjectV2')) return 'ProjectRead'
+  if (query.includes('...on Issue')) return 'IssueRead'
+  return query.startsWith('mutation') ? 'GraphQLMutation' : 'GraphQLQuery'
+}
 function throwGraphQLErrors(errors: unknown, operation: string): void {
   if (!errors) return
   const entries = Array.isArray(errors) ? errors : [errors]
@@ -130,7 +138,7 @@ export class GitHubClient {
           : 'GraphQL'
       throwGraphQLErrors(
         (result as { errors?: unknown }).errors,
-        query.startsWith('mutation') ? 'GraphQLMutation' : 'GraphQLQuery',
+        graphQLOperation(query),
       )
     }
     return result
