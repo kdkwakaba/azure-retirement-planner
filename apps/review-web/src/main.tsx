@@ -134,7 +134,9 @@ function App() {
       const result = await request('uat/seed', 'POST', {})
       await refresh()
       setSelected(result.assessmentId)
-      setNotice('合成UATを作成しました。実リソースは読み取らず、作業を選択して人間承認してください。')
+      setNotice(
+        '合成UATを作成しました。実リソースは読み取らず、作業を選択して人間承認してください。',
+      )
     } catch (e) {
       setError(e instanceof Error ? e.message : '合成UAT作成失敗')
     } finally {
@@ -606,7 +608,7 @@ function App() {
                     <h3>作業案・部分承認</h3>
                     {uatEnabled &&
                       current.event.trackingId === syntheticUatTrackingId && (
-                      <div className="notice">
+                        <div className="notice">
                         <b>合成UAT専用</b>
                         <p>
                           この通知とリソースは架空です。実Azureリソースへの変更はなく、
@@ -618,8 +620,8 @@ function App() {
                         >
                           承認済み合成作業をGitHub Issueへ登録
                         </button>
-                      </div>
-                    )}
+                        </div>
+                      )}
                     {current.validationErrors.length > 0 && (
                       <div className="error">
                         検証不適合のため承認できません。
