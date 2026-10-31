@@ -141,11 +141,7 @@ app.http('api', {
           const item = assessment.workItems.find(
             (candidate) => candidate.id === body.itemId,
           )
-          if (
-            !item ||
-            item.title !==
-              '[SYNTHETIC UAT] GitHub Issue連携を確認'
-          )
+          if (!item || item.title !== '[SYNTHETIC UAT] GitHub Issue連携を確認')
             return reply(400, {
               error: 'Only the fixed synthetic UAT item can be exported',
             })
@@ -192,9 +188,7 @@ app.http('api', {
                 itemId: item.id,
               })
             } catch (createError) {
-              if (
-                (createError as { statusCode?: number }).statusCode !== 409
-              )
+              if ((createError as { statusCode?: number }).statusCode !== 409)
                 throw createError
             }
             row = await store.table.getEntity(partitionKey, rowKey)
