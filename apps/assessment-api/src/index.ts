@@ -43,6 +43,17 @@ function reply(status: number, jsonBody: unknown): HttpResponseInit {
     },
   }
 }
+function safeGitHubIssueUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' && url.hostname === 'github.com'
+      ? value
+      : null
+  } catch {
+    return null
+  }
+}
 app.http('api', {
   route: 'api/{*path}',
   authLevel: 'anonymous',
@@ -121,17 +132,7 @@ app.http('api', {
             partitionKey,
             rowKey,
           )
-          const issueUrl =
-            typeof row.issueUrl === 'string' &&
-            (() => {
-              try {
-                return new URL(row.issueUrl as string).hostname === 'github.com'
-              } catch {
-                return false
-              }
-            })()
-              ? row.issueUrl
-              : null
+          const issueUrl = safeGitHubIssueUrl(row.issueUrl)
           return reply(200, {
             state: typeof row.state === 'string' ? row.state : 'Unknown',
             stage: typeof row.stage === 'string' ? row.stage : null,
