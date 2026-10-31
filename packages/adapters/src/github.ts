@@ -5,24 +5,46 @@ import { jsonRequest } from './http.ts'
 
 const managedStart = '<!-- arp:managed:start -->'
 const managedEnd = '<!-- arp:managed:end -->'
+const categoryLabels: Record<string, string> = {
+  'Impact Verification': '影響確認',
+  'Owner Confirmation': '担当者確認',
+  'Migration Assessment': '移行評価',
+  'Architecture Design': 'アーキテクチャ設計',
+  'Proof of Concept': '概念実証',
+  'Application Change': 'アプリケーション変更',
+  'Infrastructure Change': 'インフラ変更',
+  'Network Change': 'ネットワーク変更',
+  'Security Review': 'セキュリティレビュー',
+  Test: 'テスト',
+  'Change Management': '変更管理',
+  'Production Migration': '本番移行',
+  Validation: '検証',
+  'Rollback Preparation': 'ロールバック準備',
+  'Legacy Resource Removal': '旧リソース削除',
+  'Documentation Update': 'ドキュメント更新',
+  'CMDB Update': 'CMDB更新',
+  'Policy and IaC Update': 'ポリシー・IaC更新',
+}
+function japaneseCategory(category: string): string {
+  return categoryLabels[category] ?? category
+}
 export function managedIssueContent(item: WorkItem): string {
   // 外部には最小限の管理属性のみ送信し、本文の手編集領域と分離する。
   return [
     ...(item.title.startsWith('[SYNTHETIC UAT]')
       ? [
-          '> **SYNTHETIC UAT** — synthetic data only; ' +
-            'no Azure change is performed.',
+          '> **合成UAT** — 合成データのみを使用します。Azureリソースの変更は実行しません。',
         ]
       : []),
-    `Category: ${item.category}`,
-    `Workload alias: ${hash(item.workloadId).slice(0, 12)}`,
-    `Priority: ${item.priority ?? 'Unconfirmed'}`,
-    `Start: ${item.plannedStartDate ?? 'Unconfirmed'}`,
-    `Due: ${item.dueDate ?? 'Unconfirmed'}`,
-    `Evidence IDs: ${item.evidenceIds.join(', ')}`,
-    `Approved work item: ${item.id}`,
-    'Detailed description and completion criteria are available in the authenticated review application.',
-  ].join('\n\n')
+    `カテゴリ: ${japaneseCategory(item.category)}`,
+    `対象ワークロード（匿名化）: ${hash(item.workloadId).slice(0, 12)}`,
+    `優先度: ${item.priority ?? '未確定'}`,
+    `対応開始日: ${item.plannedStartDate ?? '未確定'}`,
+    `対応期限: ${item.dueDate ?? '未確定'}`,
+    `根拠ID: ${item.evidenceIds.join(', ')}`,
+    `承認済み作業項目ID: ${item.id}`,
+    '詳細説明と完了条件は、認証済みレビュー画面を参照してください。',
+  ].join('\\n\\n')
 }
 export function issueText(item: WorkItem): string {
   return [
@@ -101,7 +123,7 @@ export class GitHubClient {
       await this.request(`/repos/${this.owner}/${this.repo}/issues`, {
         title: item.title.startsWith('[SYNTHETIC UAT]')
           ? `[ARP][SYNTHETIC UAT] ${item.id.slice(0, 8)}`
-          : `[ARP] ${item.category} ${item.id.slice(0, 8)}`,
+          : `[ARP] ${japaneseCategory(item.category)} ${item.id.slice(0, 8)}`,
         body: issueText(item),
       }),
     )
