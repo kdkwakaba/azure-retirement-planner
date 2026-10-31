@@ -86,7 +86,8 @@ function uatProgressLabel(status: UatExportStatus | null): string {
   if (!status || status.state === 'NotStarted') return '未開始'
   if (status.state === 'Exported') return '登録済み'
   if (status.state === 'Failed') return '失敗'
-  return status.stage ? (uatStageLabels[status.stage] ?? '処理中') : '処理中'
+  if (!status.stage) return '処理中'
+  return uatStageLabels[status.stage] ?? '処理中'
 }
 function uatStepState(
   status: UatExportStatus,
@@ -99,6 +100,10 @@ function uatStepState(
   if (index < currentIndex) return 'complete'
   if (index === currentIndex) return 'active'
   return 'pending'
+}
+function uatFailureStageLabel(status: UatExportStatus): string {
+  if (!status.stage) return '不明'
+  return uatStageLabels[status.stage] ?? status.stage
 }
 function uatErrorCategoryLabel(category: string | null): string {
   return failureCategoryLabels[category ?? ''] ?? category ?? '未取得'
@@ -733,7 +738,9 @@ function App() {
                             }
                             onClick={() => void exportSyntheticUat()}
                           >
-                            {busy ? '登録処理中…' : '承認済み合成作業をGitHub Issueへ登録'}
+                            {busy
+                              ? '登録処理中…'
+                              : '承認済み合成作業をGitHub Issueへ登録'}
                           </button>
                           {uatExportStatus &&
                             uatExportStatus.state !== 'NotStarted' && (
@@ -745,8 +752,8 @@ function App() {
                                 <b>
                                   {uatExportStatus.state === 'Failed'
                                     ? '登録処理に失敗しました'
-                                    : uatStageLabels[uatExportStatus.stage ?? ''] ??
-                                      '登録状況を確認中'}
+                                    : (uatStageLabels[uatExportStatus.stage ?? ''] ??
+                                      '登録状況を確認中')}
                                 </b>
                                 <ol>
                                   {uatStages.map(([stage, label]) => (
@@ -764,9 +771,7 @@ function App() {
                                 {uatExportStatus.state === 'Failed' && (
                                   <p className="uat-diagnostic">
                                     失敗段階:{' '}
-                                    {uatStageLabels[uatExportStatus.stage ?? ''] ??
-                                      uatExportStatus.stage ??
-                                      '不明'}
+                                    {uatFailureStageLabel(uatExportStatus)}
                                     {' ／ '}分類:{' '}
                                     {uatErrorCategoryLabel(
                                       uatExportStatus.errorCategory,
@@ -778,12 +783,18 @@ function App() {
                                         {' (GraphQL応答)'}
                                       </>
                                     )}
-                                    {uatExportStatus.operation &&
-                                      ` ／ 操作 ${uatExportStatus.operation}`}
-                                    {uatExportStatus.providerCode &&
-                                      ` ／ GitHubコード ${uatExportStatus.providerCode}`}
-                                    {uatExportStatus.correlationId &&
-                                      ` ／ 照会ID ${uatExportStatus.correlationId}`}
+                                    {uatExportStatus.operation && (
+                                      <> ／ 操作 {uatExportStatus.operation}</>
+                                    )}
+                                    {uatExportStatus.providerCode && (
+                                      <>
+                                        {' ／ GitHubコード '}
+                                        {uatExportStatus.providerCode}
+                                      </>
+                                    )}
+                                    {uatExportStatus.correlationId && (
+                                      <> ／ 照会ID {uatExportStatus.correlationId}</>
+                                    )}
                                   </p>
                                 )}
                                 {uatExportStatus.issueUrl && (
