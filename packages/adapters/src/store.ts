@@ -105,7 +105,11 @@ export class AzureStore {
       await this.table.updateEntity(entity, 'Replace', { etag: prior.etag })
     else await this.table.createEntity(entity)
   }
-  async approve(assessment: Assessment, approval: Approval): Promise<void> {
+  async approve(
+    assessment: Assessment,
+    approval: Approval,
+    suppressExternalOutbox = false,
+  ): Promise<void> {
     approvalSchema.parse(approval)
     if (
       new Set(approval.approvedItemIds).size !==
@@ -128,43 +132,45 @@ export class AzureStore {
       throw new Error('Stale approval')
     await this.put('approvals', approval.id, approval)
     const outboxActions: TransactionAction[] = []
-    for (const itemId of approval.approvedItemIds) {
-      const rowKey = 'outbox:' + itemId
-      let existing: Record<string, unknown> | null = null
-      try {
-        existing = await this.table.getEntity(current.partitionKey, rowKey)
-      } catch (error) {
-        if (
-          typeof error !== 'object' ||
-          error === null ||
-          !('statusCode' in error) ||
-          error.statusCode !== 404
+    if (!suppressExternalOutbox) {
+      for (const itemId of approval.approvedItemIds) {
+        const rowKey = 'outbox:' + itemId
+        let existing: Record<string, unknown> | null = null
+        try {
+          existing = await this.table.getEntity(current.partitionKey, rowKey)
+        } catch (error) {
+          if (
+            typeof error !== 'object' ||
+            error === null ||
+            !('statusCode' in error) ||
+            error.statusCode !== 404
+          )
+            throw error
+        }
+        const entity = {
+          partitionKey: current.partitionKey,
+          rowKey,
+          entityKind: 'outbox',
+          state: 'Pending',
+          approvalId: approval.id,
+          assessmentId: assessment.id,
+          itemId,
+          ...(typeof existing?.issueId === 'string'
+            ? { issueId: existing.issueId }
+            : {}),
+          ...(typeof existing?.projectItemId === 'string'
+            ? { projectItemId: existing.projectItemId }
+            : {}),
+          ...(typeof existing?.managedContentHash === 'string'
+            ? { managedContentHash: existing.managedContentHash }
+            : {}),
+        }
+        outboxActions.push(
+          existing
+            ? ['update', entity, 'Replace', { etag: existing.etag as string }]
+            : ['create', entity],
         )
-          throw error
       }
-      const entity = {
-        partitionKey: current.partitionKey,
-        rowKey,
-        entityKind: 'outbox',
-        state: 'Pending',
-        approvalId: approval.id,
-        assessmentId: assessment.id,
-        itemId,
-        ...(typeof existing?.issueId === 'string'
-          ? { issueId: existing.issueId }
-          : {}),
-        ...(typeof existing?.projectItemId === 'string'
-          ? { projectItemId: existing.projectItemId }
-          : {}),
-        ...(typeof existing?.managedContentHash === 'string'
-          ? { managedContentHash: existing.managedContentHash }
-          : {}),
-      }
-      outboxActions.push(
-        existing
-          ? ['update', entity, 'Replace', { etag: existing.etag as string }]
-          : ['create', entity],
-      )
     }
     await this.table.submitTransaction([
       [
