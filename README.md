@@ -18,6 +18,7 @@ Azureの非推奨化・新規作成停止・サポート終了・リタイアメ
 | [開発・運用基準](docs/engineering.md) | モノレポ、CI/CD、認証、セキュリティ、終了時削除 |
 | [実装バックログ](docs/implementation-backlog.md) | 依存関係、実装状態、実接続ゲートと残作業 |
 | [利用者向け操作ガイド](docs/user-operations-guide.md) | サインイン、同期、評価・Evidence確認、訂正、承認、デモ準備 |
+| [合成UAT手順](docs/synthetic-uat.md) | 実データを使わず、レビュー承認後にGitHub Issue／Project登録を確認 |
 | [Runbook](docs/runbook.md) | 初期構築、Entra・MI、手動CD、復旧、撤去 |
 | [AGENTS.md](AGENTS.md) | エージェントが守る共通ルール |
 
