@@ -16,8 +16,14 @@ test('synthetic UAT fixture is isolated from real Azure resources and official f
     assessment.resources.map((resource) => resource.id),
     [SYNTHETIC_UAT_RESOURCE_ID],
   )
-  assert.ok(assessment.event.evidence.every((evidence) => evidence.sourceType === 'Internal'))
-  assert.ok(assessment.event.evidence.every((evidence) => evidence.officialUrl === null))
+  assert.ok(
+    assessment.event.evidence.every(
+      (evidence) => evidence.sourceType === 'Internal',
+    ),
+  )
+  assert.ok(
+    assessment.event.evidence.every((evidence) => evidence.officialUrl === null),
+  )
   assert.equal(assessment.workItems.length, 1)
   assert.match(assessment.workItems[0]!.title, /^\[SYNTHETIC UAT\]/)
 })
