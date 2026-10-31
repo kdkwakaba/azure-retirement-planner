@@ -144,10 +144,7 @@ function App() {
     }
   }
   async function exportSyntheticUat() {
-    if (
-      !current ||
-      current.event.trackingId !== syntheticUatTrackingId
-    )
+    if (!current || current.event.trackingId !== syntheticUatTrackingId)
       return
     const item = current.workItems[0]
     if (!item) return
