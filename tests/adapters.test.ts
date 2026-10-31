@@ -775,7 +775,6 @@ test('approval and stable per-item outbox are one conditional transaction', asyn
   assert.equal(submit.mock.callCount(), 1)
 })
 
-
 test('synthetic UAT approval is recorded without creating production outbox rows', async (t) => {
   const store = new AzureStore('syntheticaccount')
   const assessment = fixture()
@@ -798,12 +797,16 @@ test('synthetic UAT approval is recorded without creating production outbox rows
     etag: 'synthetic-etag',
   }))
   t.mock.method(store, 'put', async () => {})
-  const submit = t.mock.method(store.table, 'submitTransaction', async (actions: unknown) => {
+  const submit = t.mock.method(
+    store.table,
+    'submitTransaction',
+    async (actions: unknown) => {
     const text = JSON.stringify(actions)
     assert.ok(text.includes('review:' + approval.id))
     assert.ok(!text.includes('outbox:'))
-    return { status: 202, subResponses: [] }
-  })
+      return { status: 202, subResponses: [] }
+    },
+  )
   await store.approve(assessment, approval, true)
   assert.equal(submit.mock.callCount(), 1)
 })
