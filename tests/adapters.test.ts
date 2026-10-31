@@ -359,7 +359,11 @@ test('GitHub registration uses safe text and persists Issue separately from Proj
   const text = issueText(item)
   assert.ok(text.includes('カテゴリ: 影響確認'))
   assert.ok(text.includes('対象ワークロード（匿名化）:'))
-  assert.ok(text.includes(['カテゴリ: 影響確認', '対象ワークロード（匿名化）:'].join('\n\n')))
+  assert.ok(
+    text.includes(
+      ['カテゴリ: 影響確認', '対象ワークロード（匿名化）:'].join('\n\n'),
+    ),
+  )
   assert.ok(!text.includes(resourceId))
   assert.ok(!text.includes(item.description))
   const posts: string[] = []
