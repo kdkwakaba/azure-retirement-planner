@@ -183,7 +183,11 @@ function App() {
           'GET',
         )) as UatExportStatus
         if (!active) return
-        setUatExportStatus(status)
+        setUatExportStatus((currentStatus) =>
+          currentStatus?.state === 'Failed' && status.state !== 'Failed'
+            ? currentStatus
+            : status,
+        )
         if (status.issueUrl) setUatIssueUrl(status.issueUrl)
       } catch {
         // The export response contains the same correlation details if polling is unavailable.
