@@ -569,9 +569,9 @@ test('managed Issue updates preserve manual text and reject edits inside the man
   assert.equal(updatedHash, hash(managedIssueContent(revised)))
   assert.ok(mutationBody.includes(manualPrefix))
   assert.ok(mutationBody.includes(manualSuffix))
-  assert.ok(mutationBody.includes('Priority: P1'))
+  assert.ok(mutationBody.includes('優先度: P1'))
 
-  body = mutationBody.replace('Priority: P1', 'Priority: human edit')
+  body = mutationBody.replace('優先度: P1', 'Priority: human edit')
   await assert.rejects(
     client.updateManagedIssue('synthetic-issue', item, updatedHash),
     /human conflict review required/,
