@@ -1,6 +1,74 @@
 import { z } from 'zod'
 import { discoveryFailureSchema } from '@arp/contracts'
 
+export class ApiRequestError extends Error {
+  status: number
+  stage: string | null
+  category: string | null
+  upstreamHttpStatus: number | null
+  correlationId: string | null
+  operation: string | null
+  providerCode: string | null
+  constructor(
+    status: number,
+    details: {
+      stage?: unknown
+      category?: unknown
+      httpStatus?: unknown
+      correlationId?: unknown
+      operation?: unknown
+      providerCode?: unknown
+    },
+  ) {
+    const stage = typeof details.stage === 'string' ? details.stage : null
+    const category =
+      typeof details.category === 'string' ? details.category : null
+    const upstreamHttpStatus =
+      typeof details.httpStatus === 'number' ? details.httpStatus : null
+    const correlationId =
+      typeof details.correlationId === 'string' &&
+      /^[0-9a-f-]{36}$/i.test(details.correlationId)
+        ? details.correlationId
+        : null
+    const operation =
+      typeof details.operation === 'string' ? details.operation : null
+    const providerCode =
+      typeof details.providerCode === 'string' ? details.providerCode : null
+    const categoryLabels: Record<string, string> = {
+      Unauthorized: '認証エラー',
+      Forbidden: '権限エラー',
+      Throttled: 'スロットリング',
+      UpstreamUnavailable: '上流サービス障害',
+      Timeout: 'タイムアウト',
+      InvalidResponse: '応答形式不正',
+      NetworkError: 'ネットワークエラー',
+      Unknown: '原因未分類',
+    }
+    const pieces = [
+      status === 401
+        ? 'サインインが必要です'
+        : status === 403
+          ? 'この操作の権限がありません'
+          : `処理できませんでした (HTTP ${status})`,
+      stage ? `段階: ${stage}` : '',
+      category ? `分類: ${categoryLabels[category] ?? category}` : '',
+      operation ? `操作: ${operation}` : '',
+      providerCode ? `GitHubコード: ${providerCode}` : '',
+      upstreamHttpStatus !== null ? `GitHub応答: HTTP ${upstreamHttpStatus}` : '',
+      correlationId ? `照会ID: ${correlationId}` : '',
+    ].filter(Boolean)
+    super(pieces.join(' / '))
+    this.name = 'ApiRequestError'
+    this.status = status
+    this.stage = stage
+    this.category = category
+    this.upstreamHttpStatus = upstreamHttpStatus
+    this.correlationId = correlationId
+    this.operation = operation
+    this.providerCode = providerCode
+  }
+}
+
 export async function request(
   path: string,
   method: 'GET' | 'POST',
@@ -16,14 +84,14 @@ export async function request(
         }
       : {}),
   })
-  if (!response.ok)
-    throw new Error(
-      response.status === 401
-        ? 'サインインが必要です'
-        : response.status === 403
-          ? 'この操作の権限がありません'
-          : `処理できませんでした (${response.status})`,
-    )
+  if (!response.ok) {
+    const result: unknown = await response.json().catch(() => ({}))
+    const details =
+      typeof result === 'object' && result !== null
+        ? (result as Record<string, unknown>)
+        : {}
+    throw new ApiRequestError(response.status, details)
+  }
   return response.json()
 }
 
