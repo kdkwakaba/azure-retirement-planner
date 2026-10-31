@@ -119,8 +119,9 @@ function App() {
     [notice, setNotice] = useState(''),
     [uatEnabled, setUatEnabled] = useState(false),
     [uatIssueUrl, setUatIssueUrl] = useState(''),
-    [uatExportStatus, setUatExportStatus] =
-      useState<UatExportStatus | null>(null),
+    [uatExportStatus, setUatExportStatus] = useState<
+      UatExportStatus | null
+    >(null),
     [projectProgress, setProjectProgress] = useState<
       Array<{ workItemId: string; status: string | null; syncedAt: string }>
     >([])
@@ -752,8 +753,9 @@ function App() {
                                 <b>
                                   {uatExportStatus.state === 'Failed'
                                     ? '登録処理に失敗しました'
-                                    : (uatStageLabels[uatExportStatus.stage ?? ''] ??
-                                      '登録状況を確認中')}
+                                    : (uatStageLabels[
+                                        uatExportStatus.stage ?? ''
+                                      ] ?? '登録状況を確認中')}
                                 </b>
                                 <ol>
                                   {uatStages.map(([stage, label]) => (
@@ -776,7 +778,8 @@ function App() {
                                     {uatErrorCategoryLabel(
                                       uatExportStatus.errorCategory,
                                     )}
-                                    {uatExportStatus.errorHttpStatus !== null && (
+                                    {uatExportStatus.errorHttpStatus !==
+                                      null && (
                                       <>
                                         {' ／ GitHub通信 HTTP '}
                                         {uatExportStatus.errorHttpStatus}
@@ -793,7 +796,11 @@ function App() {
                                       </>
                                     )}
                                     {uatExportStatus.correlationId && (
-                                      <> ／ 照会ID {uatExportStatus.correlationId}</>
+                                      <>
+                                        {' '}
+                                        ／ 照会ID{' '}
+                                        {uatExportStatus.correlationId}
+                                      </>
                                     )}
                                   </p>
                                 )}
@@ -851,15 +858,18 @@ function App() {
                           </small>
                         )}
                         <small>
-                          {current.event.trackingId === syntheticUatTrackingId ? (
+                          {current.event.trackingId ===
+                          syntheticUatTrackingId ? (
                             <>
-                              合成UAT登録状態: {uatProgressLabel(uatExportStatus)}
+                              合成UAT登録状態:{' '}
+                              {uatProgressLabel(uatExportStatus)}
                             </>
                           ) : (
                             <>
                               GitHub Project進捗:{' '}
-                              {projectProgress.find((p) => p.workItemId === w.id)
-                                ?.status ?? '未同期'}
+                              {projectProgress.find(
+                                (p) => p.workItemId === w.id,
+                              )?.status ?? '未同期'}
                             </>
                           )}
                         </small>
