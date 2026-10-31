@@ -144,13 +144,20 @@ app.http('api', {
               typeof row.errorHttpStatus === 'number'
                 ? row.errorHttpStatus
                 : null,
-            operation: typeof row.errorOperation === 'string' ? row.errorOperation : null,
-            providerCode: typeof row.errorProviderCode === 'string' ? row.errorProviderCode : null,
+            operation:
+              typeof row.errorOperation === 'string'
+                ? row.errorOperation
+                : null,
+            providerCode:
+              typeof row.errorProviderCode === 'string'
+                ? row.errorProviderCode
+                : null,
             correlationId:
               typeof row.correlationId === 'string'
                 ? row.correlationId
                 : null,
-            updatedAt: typeof row.updatedAt === 'string' ? row.updatedAt : null,
+            updatedAt:
+              typeof row.updatedAt === 'string' ? row.updatedAt : null,
           })
         } catch (error) {
           if ((error as { statusCode?: number }).statusCode !== 404) throw error
