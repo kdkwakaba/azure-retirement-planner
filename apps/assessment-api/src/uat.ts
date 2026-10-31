@@ -76,6 +76,13 @@ export function isSyntheticUatAssessment(assessment: Assessment): boolean {
   return (
     assessment.event.trackingId === SYNTHETIC_UAT_TRACKING_ID &&
     assessment.event.title.startsWith('[合成UAT]') &&
+    assessment.event.evidence.length === 1 &&
+    assessment.event.evidence.every(
+      (evidence) =>
+        evidence.sourceType === 'Internal' &&
+        evidence.officialUrl === null &&
+        evidence.fact.includes('合成UATデータ'),
+    ) &&
     assessment.workloadId === SYNTHETIC_UAT_WORKLOAD_ID &&
     assessment.resources.length === 1 &&
     assessment.resources[0]?.id === SYNTHETIC_UAT_RESOURCE_ID &&
