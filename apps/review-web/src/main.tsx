@@ -144,8 +144,7 @@ function App() {
     }
   }
   async function exportSyntheticUat() {
-    if (!current || current.event.trackingId !== syntheticUatTrackingId)
-      return
+    if (!current || current.event.trackingId !== syntheticUatTrackingId) return
     const item = current.workItems[0]
     if (!item) return
     if (
@@ -612,7 +611,9 @@ function App() {
                             通常Exporter／Outboxは使用しません。
                           </p>
                           <button
-                            disabled={busy || current.validationErrors.length > 0}
+                            disabled={
+                              busy || current.validationErrors.length > 0
+                            }
                             onClick={() => void exportSyntheticUat()}
                           >
                             承認済み合成作業をGitHub Issueへ登録
