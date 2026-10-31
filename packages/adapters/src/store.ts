@@ -105,7 +105,11 @@ export class AzureStore {
       await this.table.updateEntity(entity, 'Replace', { etag: prior.etag })
     else await this.table.createEntity(entity)
   }
-  async approve(assessment: Assessment, approval: Approval): Promise<void> {
+  async approve(
+    assessment: Assessment,
+    approval: Approval,
+    suppressExternalOutbox = false,
+  ): Promise<void> {
     approvalSchema.parse(approval)
     if (
       new Set(approval.approvedItemIds).size !==
