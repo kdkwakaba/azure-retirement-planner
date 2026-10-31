@@ -8,10 +8,12 @@ import {
   hash,
   isTranslatableOfficialEvidence,
   reviseAssessment,
+  verifyApproval,
 } from '@arp/domain'
 import {
   AzureStore,
   GitHubClient,
+  ensureIssueForExport,
   createVerifier,
   requireApplicationRole,
   requireUserRole,
@@ -23,6 +25,10 @@ import {
   translateOfficialHtmlToJapanese,
 } from '@arp/adapters'
 import { assessSnapshot, config, synchronize } from './service.ts'
+import {
+  createSyntheticUatAssessment,
+  isSyntheticUatAssessment,
+} from './uat.ts'
 
 let verifier: ReturnType<typeof createVerifier> | undefined
 function reply(status: number, jsonBody: unknown): HttpResponseInit {
@@ -66,6 +72,10 @@ app.http('api', {
       requireUserRole(principal, apiRolePolicy.read)
       if (request.method === 'GET' && path === 'me')
         return reply(200, principal)
+      if (request.method === 'GET' && path === 'uat/status')
+        return reply(200, {
+          enabled: process.env.SYNTHETIC_UAT_ENABLED === 'true',
+        })
       const store = new AzureStore(config().account)
       if (request.method === 'GET' && path === 'assessments')
         return reply(200, await store.list())
@@ -88,6 +98,131 @@ app.http('api', {
         if (Buffer.byteLength(content) > 200000)
           return reply(413, { error: 'Request too large' })
         const payload: unknown = JSON.parse(content)
+        if (path === 'uat/seed') {
+          requireUserRole(principal, apiRolePolicy.review)
+          if (process.env.SYNTHETIC_UAT_ENABLED !== 'true')
+            return reply(404, { error: 'Synthetic UAT is disabled' })
+          z.object({}).strict().parse(payload)
+          const sample = createSyntheticUatAssessment()
+          const logicalId = hash({
+            eventId: sample.event.id,
+            workloadId: sample.workloadId,
+          })
+          const prior = await store.head(logicalId)
+          if (prior) {
+            const existing = await store.assessment(prior.assessmentId)
+            if (!isSyntheticUatAssessment(existing))
+              return reply(409, { error: 'Synthetic UAT identity conflict' })
+            return reply(200, { assessmentId: existing.id, created: false })
+          }
+          await store.commitAssessment(sample, null)
+          return reply(201, { assessmentId: sample.id, created: true })
+        }
+        if (path === 'uat/export') {
+          requireUserRole(principal, apiRolePolicy.review)
+          if (process.env.SYNTHETIC_UAT_ENABLED !== 'true')
+            return reply(404, { error: 'Synthetic UAT is disabled' })
+          const body = z.object({
+            assessmentId: z.string().regex(/^[a-f0-9]{64}$/),
+            packageHash: z.string().regex(/^[a-f0-9]{64}$/),
+            itemId: z.string().regex(/^[a-f0-9]{64}$/),
+          }).strict().parse(payload)
+          const assessment = await store.assessment(body.assessmentId)
+          if (!isSyntheticUatAssessment(assessment) || assessment.packageHash !== body.packageHash)
+            return reply(409, { error: 'Assessment is not the current synthetic UAT record' })
+          const item = assessment.workItems.find((candidate) => candidate.id === body.itemId)
+          if (!item || item.title !== '[SYNTHETIC UAT] GitHub Issue連携を確認')
+            return reply(400, { error: 'Only the fixed synthetic UAT item can be exported' })
+          const logicalId = hash({ eventId: assessment.event.id, workloadId: assessment.workloadId })
+          const partitionKey = 'assessment:' + logicalId
+          const head = await store.table.getEntity<Record<string, unknown>>(partitionKey, 'head')
+          const reviewId = head.lastReviewId
+          if (typeof reviewId !== 'string')
+            return reply(409, { error: 'Human approval is required before UAT export' })
+          const approval = approvalSchema.parse(await store.get('approvals', reviewId))
+          if (!['Approved', 'Partial'].includes(approval.result) || !approval.approvedItemIds.includes(item.id))
+            return reply(409, { error: 'The synthetic work item has not been approved' })
+          verifyApproval(assessment, approval, item.id)
+
+          const rowKey = 'uat-export:' + item.id
+          let row: Record<string, unknown>
+          try {
+            row = await store.table.getEntity(partitionKey, rowKey)
+          } catch (error) {
+            if ((error as { statusCode?: number }).statusCode !== 404) throw error
+            try {
+              await store.table.createEntity({
+                partitionKey,
+                rowKey,
+                entityKind: 'synthetic-uat-export',
+                state: 'Pending',
+                assessmentId: assessment.id,
+                itemId: item.id,
+              })
+            } catch (createError) {
+              if ((createError as { statusCode?: number }).statusCode !== 409) throw createError
+            }
+            row = await store.table.getEntity(partitionKey, rowKey)
+          }
+          if (row.state === 'Exported' && typeof row.issueUrl === 'string')
+            return reply(200, { issueUrl: row.issueUrl, alreadyExported: true })
+
+          const github = new GitHubClient(required('GITHUB_OWNER'), required('GITHUB_REPOSITORY'), required('GITHUB_TOKEN'))
+          const issueId = await ensureIssueForExport(
+            github,
+            item,
+            typeof row.state === 'string' ? row.state : null,
+            typeof row.issueId === 'string' ? row.issueId : null,
+            async () => {
+              await store.table.updateEntity(
+                { partitionKey, rowKey, entityKind: 'synthetic-uat-export', state: 'Sending' },
+                'Merge',
+                { etag: row.etag as string },
+              )
+            },
+            async (id) => {
+              await store.table.updateEntity(
+                { partitionKey, rowKey, entityKind: 'synthetic-uat-export', state: 'IssueCreated', issueId: id },
+                'Merge',
+              )
+            },
+          )
+          const managedContentHash = await github.updateManagedIssue(
+            issueId, item, typeof row.managedContentHash === 'string' ? row.managedContentHash : null,
+          )
+          await store.table.updateEntity(
+            { partitionKey, rowKey, entityKind: 'synthetic-uat-export', state: 'IssueCreated', issueId, managedContentHash },
+            'Merge',
+          )
+          const projectItem = await github.ensureProjectItem(required('GITHUB_PROJECT_ID'), issueId)
+          await github.updateProjectFields(
+            required('GITHUB_PROJECT_ID'),
+            projectItem.id,
+            item,
+            {
+              statusFieldId: process.env.GITHUB_PROJECT_STATUS_FIELD_ID,
+              todoOptionId: process.env.GITHUB_PROJECT_STATUS_TODO_OPTION_ID,
+              priorityFieldId: process.env.GITHUB_PROJECT_PRIORITY_FIELD_ID,
+              priorityOptionIds: process.env.GITHUB_PROJECT_PRIORITY_FIELD_ID
+                ? {
+                    P1: process.env.GITHUB_PROJECT_PRIORITY_P1_OPTION_ID,
+                    P2: process.env.GITHUB_PROJECT_PRIORITY_P2_OPTION_ID,
+                    P3: process.env.GITHUB_PROJECT_PRIORITY_P3_OPTION_ID,
+                    P4: process.env.GITHUB_PROJECT_PRIORITY_P4_OPTION_ID,
+                  }
+                : undefined,
+              dueDateFieldId: process.env.GITHUB_PROJECT_DUE_DATE_FIELD_ID,
+            },
+            projectItem.created,
+          )
+          const found = await github.find(item.id)
+          if (!found) throw new Error('Synthetic issue reconciliation incomplete')
+          await store.table.updateEntity(
+            { partitionKey, rowKey, entityKind: 'synthetic-uat-export', state: 'Exported', issueId, issueUrl: found.url, projectItemId: projectItem.id, managedContentHash },
+            'Merge',
+          )
+          return reply(200, { issueUrl: found.url, alreadyExported: false })
+        }
         if (path === 'translate-evidence') {
           const body = z
             .object({
