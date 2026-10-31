@@ -31,7 +31,8 @@ const categoryLabels: Record<string, string> = {
 }
 function graphQLOperation(query: string): string {
   if (query.includes('addProjectV2ItemById')) return 'ProjectAdd'
-  if (query.includes('updateProjectV2ItemFieldValue')) return 'ProjectFieldUpdate'
+  if (query.includes('updateProjectV2ItemFieldValue'))
+    return 'ProjectFieldUpdate'
   if (query.includes('updateIssue')) return 'IssueUpdate'
   if (query.includes('ProjectV2')) return 'ProjectRead'
   if (query.includes('...on Issue')) return 'IssueRead'
