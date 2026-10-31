@@ -144,7 +144,11 @@ function App() {
     }
   }
   async function exportSyntheticUat() {
-    if (!current || current.event.trackingId !== syntheticUatTrackingId) return
+    if (
+      !current ||
+      current.event.trackingId !== syntheticUatTrackingId
+    )
+      return
     const item = current.workItems[0]
     if (!item) return
     if (
@@ -188,11 +192,12 @@ function App() {
         reason,
         result,
       })
-      const exportNotice = response.exportEnabled
-        ? '承認済み作業を登録待ちへ送ります。'
-        : current.event.trackingId === syntheticUatTrackingId
-          ? '通常の外部登録は無効です。合成UATのIssue登録は専用ボタンから実行できます。'
-          : '外部登録は無効です。'
+      let exportNotice = '外部登録は無効です。'
+      if (response.exportEnabled)
+        exportNotice = '承認済み作業を登録待ちへ送ります。'
+      else if (current.event.trackingId === syntheticUatTrackingId)
+        exportNotice =
+          '通常の外部登録は無効です。合成UATのIssue登録は専用ボタンから実行できます。'
       setNotice(`レビューを記録しました。${exportNotice}`)
       setChecked([])
       setReason('')
@@ -606,7 +611,8 @@ function App() {
                       <div className="notice">
                         <b>合成UAT専用</b>
                         <p>
-                          この通知とリソースは架空です。実Azureリソースへの変更はなく、通常Exporter／Outboxは使用しません。
+                          この通知とリソースは架空です。実Azureリソースへの変更はなく、
+                          通常Exporter／Outboxは使用しません。
                         </p>
                         <button
                           disabled={busy || current.validationErrors.length > 0}
