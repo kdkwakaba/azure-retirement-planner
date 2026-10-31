@@ -119,9 +119,9 @@ function App() {
     [notice, setNotice] = useState(''),
     [uatEnabled, setUatEnabled] = useState(false),
     [uatIssueUrl, setUatIssueUrl] = useState(''),
-    [uatExportStatus, setUatExportStatus] = useState<
-      UatExportStatus | null
-    >(null),
+    [uatExportStatus, setUatExportStatus] = useState<UatExportStatus | null>(
+      null,
+    ),
     [projectProgress, setProjectProgress] = useState<
       Array<{ workItemId: string; status: string | null; syncedAt: string }>
     >([])
