@@ -26,8 +26,7 @@ export function createSyntheticUatAssessment(): Assessment {
   event.evidence = event.evidence.map((evidence) => ({
     ...evidence,
     sourceType: 'Internal',
-    fact:
-      '合成UATデータ。公式情報・実環境の事実として使用しない。',
+    fact: '合成UATデータ。公式情報・実環境の事実として使用しない。',
     officialUrl: null,
   }))
 
@@ -65,16 +64,12 @@ export function createSyntheticUatAssessment(): Assessment {
         kind: 'EvidenceSupport',
         value: 1,
         method: '固定された合成UAT fixture',
-        limitations: [
-          '業務影響・Microsoft公式情報・実環境を表さない',
-        ],
+        limitations: ['業務影響・Microsoft公式情報・実環境を表さない'],
       },
     },
   ]
   assessment.humanReviewRequired = true
-  assessment.reviewReasons = [
-    '合成UATのため人間がIssue作成を明示承認する',
-  ]
+  assessment.reviewReasons = ['合成UATのため人間がIssue作成を明示承認する']
   assessment.missingInformation = []
   assessment.validationErrors = []
   assessment.packageHash = packageHash(assessment)
