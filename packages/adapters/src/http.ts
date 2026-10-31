@@ -1,3 +1,31 @@
+export type SafeFailureCategory =
+  | 'Unauthorized'
+  | 'Forbidden'
+  | 'Throttled'
+  | 'UpstreamUnavailable'
+  | 'Timeout'
+  | 'InvalidResponse'
+  | 'NetworkError'
+  | 'Unknown'
+
+export class GitHubGraphQLError extends Error {
+  category: SafeFailureCategory
+  operation: string
+  providerCode: string | null
+  httpStatus = 200
+  constructor(
+    category: SafeFailureCategory,
+    operation: string,
+    providerCode: string | null = null,
+  ) {
+    super('GitHub GraphQL operation failed')
+    this.name = 'GitHubGraphQLError'
+    this.category = category
+    this.operation = operation
+    this.providerCode = providerCode
+  }
+}
+
 export class RemoteError extends Error {
   status: number
   retryAfterMs: number

@@ -4,19 +4,24 @@ import type {
   DiscoveryFailureSource,
   ModelInvocation,
 } from '@arp/contracts'
-import { RemoteError } from './http.ts'
+import { GitHubGraphQLError, RemoteError } from './http.ts'
 
 export interface ProcessingFailureRecord {
   event: 'ProcessingFailure'
   stage: string
   correlationId: string
   errorType: string
+  category: DiscoveryFailure['category']
+  httpStatus: number | null
 }
 
 export function failureFacts(error: unknown): {
   category: DiscoveryFailure['category']
   httpStatus: number | null
 } {
+  if (error instanceof GitHubGraphQLError) {
+    return { category: error.category, httpStatus: error.httpStatus }
+  }
   if (error instanceof RemoteError) {
     const status = error.status
     return {
@@ -94,6 +99,7 @@ export function logProcessingFailure(
     stage,
     correlationId,
     errorType,
+    ...failureFacts(error),
   }
   console.error(JSON.stringify(record))
   return correlationId

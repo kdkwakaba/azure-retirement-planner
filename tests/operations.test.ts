@@ -1,6 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  GitHubGraphQLError,
+  failureFacts,
   logProcessingFailure,
   recordDependencyFailure,
   recordModelInvocation,
@@ -61,4 +63,25 @@ test('model invocation telemetry contains status and versions, never payloads', 
   assert.equal(Object.hasOwn(parsed, 'prompt'), false)
   assert.equal(Object.hasOwn(parsed, 'input'), false)
   assert.equal(Object.hasOwn(parsed, 'output'), false)
+})
+
+test('GitHub GraphQL failure logs safe category and HTTP status only', (t) => {
+  let record = ''
+  t.mock.method(console, 'error', (line: string) => {
+    record = line
+  })
+  const error = new GitHubGraphQLError('Forbidden', 'ProjectAdd')
+  const details = failureFacts(error)
+  assert.equal(details.category, 'Forbidden')
+  assert.equal(details.httpStatus, 200)
+  logProcessingFailure(
+    'uat-project-add',
+    error,
+    '00000000-0000-4000-8000-000000000000',
+  )
+  const parsed = JSON.parse(record) as Record<string, unknown>
+  assert.equal(parsed.category, 'Forbidden')
+  assert.equal(parsed.httpStatus, 200)
+  assert.equal(parsed.correlationId, '00000000-0000-4000-8000-000000000000')
+  assert.ok(!record.includes('GitHub GraphQL operation failed'))
 })

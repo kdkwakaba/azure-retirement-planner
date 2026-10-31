@@ -20,6 +20,8 @@ import {
   apiRolePolicy,
   required,
   verifyWriteRequest,
+  failureFacts,
+  GitHubGraphQLError,
   logProcessingFailure,
   withProcessingFailureLog,
   translateOfficialHtmlToJapanese,
@@ -41,11 +43,31 @@ function reply(status: number, jsonBody: unknown): HttpResponseInit {
     },
   }
 }
+function safeGitHubIssueUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' && url.hostname === 'github.com'
+      ? value
+      : null
+  } catch {
+    return null
+  }
+}
 app.http('api', {
   route: 'api/{*path}',
   authLevel: 'anonymous',
   methods: ['GET', 'POST'],
   handler: async (request: HttpRequest) => {
+    let processingStage = 'http'
+    const correlationId = randomUUID()
+    let uatFailureTarget:
+      | {
+          partitionKey: string
+          rowKey: string
+          store: AzureStore
+        }
+      | undefined
     try {
       verifier ??= createVerifier(
         required('TENANT_ID'),
@@ -77,6 +99,77 @@ app.http('api', {
           enabled: process.env.SYNTHETIC_UAT_ENABLED === 'true',
         })
       const store = new AzureStore(config().account)
+      if (request.method === 'GET' && path === 'uat/export-status') {
+        if (process.env.SYNTHETIC_UAT_ENABLED !== 'true')
+          return reply(404, { error: 'Synthetic UAT is disabled' })
+        const query = z
+          .object({
+            assessmentId: z.string().regex(/^[a-f0-9]{64}$/),
+            itemId: z.string().regex(/^[a-f0-9]{64}$/),
+          })
+          .strict()
+          .parse({
+            assessmentId: request.query.get('assessmentId'),
+            itemId: request.query.get('itemId'),
+          })
+        const assessment = await store.assessment(query.assessmentId)
+        if (!isSyntheticUatAssessment(assessment))
+          return reply(404, { error: 'Synthetic UAT record not found' })
+        const item = assessment.workItems.find(
+          (candidate) =>
+            candidate.id === query.itemId &&
+            candidate.title === '[SYNTHETIC UAT] GitHub Issue連携を確認',
+        )
+        if (!item) return reply(404, { error: 'Synthetic UAT item not found' })
+        const logicalId = hash({
+          eventId: assessment.event.id,
+          workloadId: assessment.workloadId,
+        })
+        const partitionKey = 'assessment:' + logicalId
+        const rowKey = 'uat-export:' + item.id
+        try {
+          const row = await store.table.getEntity<Record<string, unknown>>(
+            partitionKey,
+            rowKey,
+          )
+          const issueUrl = safeGitHubIssueUrl(row.issueUrl)
+          return reply(200, {
+            state: typeof row.state === 'string' ? row.state : 'Unknown',
+            stage: typeof row.stage === 'string' ? row.stage : null,
+            issueUrl,
+            errorCategory:
+              typeof row.errorCategory === 'string' ? row.errorCategory : null,
+            errorHttpStatus:
+              typeof row.errorHttpStatus === 'number'
+                ? row.errorHttpStatus
+                : null,
+            operation:
+              typeof row.errorOperation === 'string'
+                ? row.errorOperation
+                : null,
+            providerCode:
+              typeof row.errorProviderCode === 'string'
+                ? row.errorProviderCode
+                : null,
+            correlationId:
+              typeof row.correlationId === 'string' ? row.correlationId : null,
+            updatedAt: typeof row.updatedAt === 'string' ? row.updatedAt : null,
+          })
+        } catch (error) {
+          if ((error as { statusCode?: number }).statusCode !== 404) throw error
+          return reply(200, {
+            state: 'NotStarted',
+            stage: null,
+            issueUrl: null,
+            errorCategory: null,
+            errorHttpStatus: null,
+            operation: null,
+            providerCode: null,
+            correlationId: null,
+            updatedAt: null,
+          })
+        }
+      }
       if (request.method === 'GET' && path === 'assessments')
         return reply(200, await store.list())
       if (request.method === 'GET' && path === 'project-progress')
@@ -193,11 +286,37 @@ app.http('api', {
             }
             row = await store.table.getEntity(partitionKey, rowKey)
           }
+          uatFailureTarget = { partitionKey, rowKey, store }
           if (row.state === 'Exported' && typeof row.issueUrl === 'string')
             return reply(200, {
               issueUrl: row.issueUrl,
               alreadyExported: true,
             })
+          const saveUatStage = async (
+            stage: string,
+            state: string,
+            extra: Record<string, unknown> = {},
+          ) => {
+            processingStage = stage
+            await store.table.updateEntity(
+              {
+                partitionKey,
+                rowKey,
+                entityKind: 'synthetic-uat-export',
+                state,
+                stage,
+                correlationId,
+                updatedAt: new Date().toISOString(),
+                errorCategory: null,
+                errorHttpStatus: null,
+                errorOperation: null,
+                errorProviderCode: null,
+                ...extra,
+              },
+              'Merge',
+            )
+          }
+          await saveUatStage('finding-or-creating-issue', 'Processing')
 
           const github = new GitHubClient(
             required('GITHUB_OWNER'),
@@ -210,30 +329,22 @@ app.http('api', {
             typeof row.state === 'string' ? row.state : null,
             typeof row.issueId === 'string' ? row.issueId : null,
             async () => {
-              await store.table.updateEntity(
-                {
-                  partitionKey,
-                  rowKey,
-                  entityKind: 'synthetic-uat-export',
-                  state: 'Sending',
-                },
-                'Merge',
-                { etag: row.etag as string },
-              )
+              await saveUatStage('creating-issue', 'Sending')
             },
             async (id) => {
-              await store.table.updateEntity(
-                {
-                  partitionKey,
-                  rowKey,
-                  entityKind: 'synthetic-uat-export',
-                  state: 'IssueCreated',
-                  issueId: id,
-                },
-                'Merge',
-              )
+              await saveUatStage('updating-issue', 'IssueCreated', {
+                issueId: id,
+              })
             },
           )
+          await saveUatStage('verifying-issue', 'IssueCreated', { issueId })
+          const found = await github.find(item.id)
+          if (!found || found.id !== issueId)
+            throw new Error('Synthetic issue reconciliation incomplete')
+          await saveUatStage('updating-issue', 'IssueCreated', {
+            issueId,
+            issueUrl: found.url,
+          })
           const managedContentHash = await github.updateManagedIssue(
             issueId,
             item,
@@ -252,10 +363,21 @@ app.http('api', {
             },
             'Merge',
           )
+          await saveUatStage('adding-to-project', 'IssueCreated', {
+            issueId,
+            issueUrl: found.url,
+            managedContentHash,
+          })
           const projectItem = await github.ensureProjectItem(
             required('GITHUB_PROJECT_ID'),
             issueId,
           )
+          await saveUatStage('updating-project-fields', 'ProjectItemAdded', {
+            issueId,
+            issueUrl: found.url,
+            projectItemId: projectItem.id,
+            managedContentHash,
+          })
           await github.updateProjectFields(
             required('GITHUB_PROJECT_ID'),
             projectItem.id,
@@ -276,22 +398,12 @@ app.http('api', {
             },
             projectItem.created,
           )
-          const found = await github.find(item.id)
-          if (!found)
-            throw new Error('Synthetic issue reconciliation incomplete')
-          await store.table.updateEntity(
-            {
-              partitionKey,
-              rowKey,
-              entityKind: 'synthetic-uat-export',
-              state: 'Exported',
-              issueId,
-              issueUrl: found.url,
-              projectItemId: projectItem.id,
-              managedContentHash,
-            },
-            'Merge',
-          )
+          await saveUatStage('completed', 'Exported', {
+            issueId,
+            issueUrl: found.url,
+            projectItemId: projectItem.id,
+            managedContentHash,
+          })
           return reply(200, {
             issueUrl: found.url,
             alreadyExported: false,
@@ -443,7 +555,7 @@ app.http('api', {
         message === 'Application identity required'
       )
         return reply(403, { error: 'Forbidden' })
-      if (error instanceof z.ZodError)
+      if (error instanceof z.ZodError && !uatFailureTarget)
         return reply(400, { error: 'Invalid request' })
       if (/JWT|token|tenant|principal|signature/i.test(message))
         return reply(401, { error: 'Authentication failed' })
@@ -451,10 +563,50 @@ app.http('api', {
         return reply(409, { error: 'Review conflict or validation failed' })
       if (/origin|content-type/.test(message))
         return reply(403, { error: 'Write origin rejected' })
-      const correlationId = randomUUID()
-      logProcessingFailure('http', error, correlationId)
+      const facts = failureFacts(error)
+      const githubFailure =
+        error instanceof GitHubGraphQLError
+          ? {
+              operation: error.operation,
+              providerCode: error.providerCode,
+            }
+          : { operation: null, providerCode: null }
+      const errorType =
+        error instanceof Error &&
+        /^[A-Za-z][A-Za-z0-9_.]{0,79}$/.test(error.name)
+          ? error.name
+          : 'Error'
+      if (uatFailureTarget) {
+        try {
+          await uatFailureTarget.store.table.updateEntity(
+            {
+              partitionKey: uatFailureTarget.partitionKey,
+              rowKey: uatFailureTarget.rowKey,
+              entityKind: 'synthetic-uat-export',
+              state: 'Failed',
+              stage: processingStage,
+              errorCategory: facts.category,
+              errorHttpStatus: facts.httpStatus,
+              errorOperation: githubFailure.operation,
+              errorProviderCode: githubFailure.providerCode,
+              correlationId,
+              updatedAt: new Date().toISOString(),
+            },
+            'Merge',
+          )
+        } catch (statusError) {
+          logProcessingFailure('uat-status-persist', statusError, correlationId)
+        }
+      }
+      logProcessingFailure(processingStage, error, correlationId)
       return reply(503, {
         error: 'Processing failed',
+        stage: processingStage,
+        category: facts.category,
+        httpStatus: facts.httpStatus,
+        operation: githubFailure.operation,
+        providerCode: githubFailure.providerCode,
+        errorType,
         correlationId,
       })
     }
