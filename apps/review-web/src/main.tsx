@@ -134,9 +134,7 @@ function App() {
       const result = await request('uat/seed', 'POST', {})
       await refresh()
       setSelected(result.assessmentId)
-      setNotice(
-        '合成UATを作成しました。実リソースは読み取らず、作業を選択して人間承認してください。',
-      )
+      setNotice('合成UATを作成しました。実リソースは読み取らず、作業を選択して人間承認してください。')
     } catch (e) {
       setError(e instanceof Error ? e.message : '合成UAT作成失敗')
     } finally {
