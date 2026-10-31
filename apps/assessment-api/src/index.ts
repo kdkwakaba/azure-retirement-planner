@@ -350,16 +350,14 @@ app.http('api', {
             return reply(400, {
               error: 'Unapproved result cannot select work items',
             })
-          await store.approve(
-            assessment,
-            approval,
-            isSyntheticUatAssessment(assessment),
-          )
-          if (process.env.EXPORT_ENABLED === 'true')
+          const syntheticUat = isSyntheticUatAssessment(assessment)
+          await store.approve(assessment, approval, syntheticUat)
+          if (!syntheticUat && process.env.EXPORT_ENABLED === 'true')
             await store.dispatchOutbox()
           return reply(200, {
             reviewId: approval.id,
-            exportEnabled: process.env.EXPORT_ENABLED === 'true',
+            exportEnabled:
+              !syntheticUat && process.env.EXPORT_ENABLED === 'true',
           })
         }
       }
