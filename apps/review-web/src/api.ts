@@ -54,7 +54,9 @@ export class ApiRequestError extends Error {
       category ? `分類: ${categoryLabels[category] ?? category}` : '',
       operation ? `操作: ${operation}` : '',
       providerCode ? `GitHubコード: ${providerCode}` : '',
-      upstreamHttpStatus !== null ? `GitHub応答: HTTP ${upstreamHttpStatus}` : '',
+      upstreamHttpStatus !== null
+        ? `GitHub応答: HTTP ${upstreamHttpStatus}`
+        : '',
       correlationId ? `照会ID: ${correlationId}` : '',
     ].filter(Boolean)
     super(pieces.join(' / '))
