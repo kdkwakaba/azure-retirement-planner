@@ -350,7 +350,11 @@ app.http('api', {
             return reply(400, {
               error: 'Unapproved result cannot select work items',
             })
-          await store.approve(assessment, approval)
+          await store.approve(
+            assessment,
+            approval,
+            isSyntheticUatAssessment(assessment),
+          )
           if (process.env.EXPORT_ENABLED === 'true')
             await store.dispatchOutbox()
           return reply(200, {
