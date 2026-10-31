@@ -6,7 +6,7 @@ import { CorrectionForm } from './CorrectionForm.tsx'
 import { EvidenceCard, safeOfficialEvidenceUrl } from './EvidenceFact.tsx'
 import { summarizeAssessments } from './summary.ts'
 
-import { request, syncFeedback } from './api.ts'
+import { ApiRequestError, request, syncFeedback } from './api.ts'
 
 const discoveryOutcomeLabels: Record<string, string> = {
   CandidatesFound: '影響候補あり',
@@ -61,6 +61,27 @@ const failureCategoryLabels: Record<string, string> = {
 }
 
 const syntheticUatTrackingId = 'ARP-SYNTHETIC-UAT-001'
+type UatExportStatus = {
+  state: string
+  stage: string | null
+  issueUrl: string | null
+  errorCategory: string | null
+  errorHttpStatus: number | null
+  correlationId: string | null
+  operation: string | null
+  providerCode: string | null
+  updatedAt: string | null
+}
+const uatStages = [
+  ['finding-or-creating-issue', 'Issueを確認中'],
+  ['creating-issue', 'Issueを作成中'],
+  ['updating-issue', 'Issue内容を更新中'],
+  ['verifying-issue', 'Issueを確認中'],
+  ['adding-to-project', 'Projectに登録中'],
+  ['updating-project-fields', 'Project項目を更新中'],
+  ['completed', '登録完了'],
+] as const
+const uatStageLabels = Object.fromEntries(uatStages) as Record<string, string>
 
 function App() {
   const [items, setItems] = useState<Assessment[]>([]),
@@ -72,6 +93,8 @@ function App() {
     [notice, setNotice] = useState(''),
     [uatEnabled, setUatEnabled] = useState(false),
     [uatIssueUrl, setUatIssueUrl] = useState(''),
+    [uatExportStatus, setUatExportStatus] =
+      useState<UatExportStatus | null>(null),
     [projectProgress, setProjectProgress] = useState<
       Array<{ workItemId: string; status: string | null; syncedAt: string }>
     >([])
@@ -112,6 +135,41 @@ function App() {
   useEffect(() => {
     void refresh()
   }, [])
+  useEffect(() => {
+    const item = current?.workItems.find(
+      (candidate) =>
+        candidate.title === '[SYNTHETIC UAT] GitHub Issue連携を確認',
+    )
+    if (
+      !uatEnabled ||
+      current?.event.trackingId !== syntheticUatTrackingId ||
+      !current ||
+      !item
+    ) {
+      return
+    }
+    let active = true
+    const loadStatus = async () => {
+      try {
+        const status = (await request(
+          `uat/export-status?assessmentId=${encodeURIComponent(current.id)}&itemId=${encodeURIComponent(item.id)}`,
+          'GET',
+        )) as UatExportStatus
+        if (!active) return
+        setUatExportStatus(status)
+        if (status.issueUrl) setUatIssueUrl(status.issueUrl)
+      } catch {
+        // The export response contains the same correlation details if polling is unavailable.
+      }
+    }
+    void loadStatus()
+    if (!busy) return () => { active = false }
+    const timer = window.setInterval(() => void loadStatus(), 1000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [selected, uatEnabled, busy])
   async function sync() {
     setBusy(true)
     setError('')
@@ -155,7 +213,19 @@ function App() {
       return
     setBusy(true)
     setError('')
+    setNotice('')
     setUatIssueUrl('')
+    setUatExportStatus({
+      state: 'Processing',
+      stage: 'finding-or-creating-issue',
+      issueUrl: null,
+      errorCategory: null,
+      errorHttpStatus: null,
+      correlationId: null,
+      operation: null,
+      providerCode: null,
+      updatedAt: new Date().toISOString(),
+    })
     try {
       const result = await request('uat/export', 'POST', {
         assessmentId: current.id,
@@ -163,12 +233,30 @@ function App() {
         itemId: item.id,
       })
       setUatIssueUrl(result.issueUrl)
+      setUatExportStatus((status) =>
+        status
+          ? { ...status, state: 'Exported', stage: 'completed', issueUrl: result.issueUrl }
+          : status,
+      )
       setNotice('合成UAT IssueをGitHub Projectへ登録しました。')
     } catch (e) {
+      if (e instanceof ApiRequestError) {
+        setUatExportStatus((status) => ({
+          state: 'Failed',
+          stage: e.stage ?? status?.stage ?? null,
+          issueUrl: status?.issueUrl ?? null,
+          errorCategory: e.category,
+          errorHttpStatus: e.upstreamHttpStatus,
+          correlationId: e.correlationId,
+          operation: e.operation,
+          providerCode: e.providerCode,
+          updatedAt: new Date().toISOString(),
+        }))
+      }
       setError(
         e instanceof Error
           ? e.message
-          : 'Issue登録失敗。作業承認とGitHub設定を確認してください。',
+          : 'Issue登録失敗。処理状況を確認してください。',
       )
     } finally {
       setBusy(false)
@@ -616,8 +704,84 @@ function App() {
                             }
                             onClick={() => void exportSyntheticUat()}
                           >
-                            承認済み合成作業をGitHub Issueへ登録
+                            {busy ? '登録処理中…' : '承認済み合成作業をGitHub Issueへ登録'}
                           </button>
+                          {uatExportStatus &&
+                            uatExportStatus.state !== 'NotStarted' && (
+                              <div
+                                className="uat-progress"
+                                role="status"
+                                aria-live="polite"
+                              >
+                                <b>
+                                  {uatExportStatus.state === 'Failed'
+                                    ? '登録処理に失敗しました'
+                                    : uatStageLabels[uatExportStatus.stage ?? ''] ??
+                                      '登録状況を確認中'}
+                                </b>
+                                <ol>
+                                  {uatStages.map(([stage, label]) => {
+                                    const currentIndex = uatStages.findIndex(
+                                      ([key]) => key === uatExportStatus.stage,
+                                    )
+                                    const index = uatStages.findIndex(
+                                      ([key]) => key === stage,
+                                    )
+                                    const state =
+                                      uatExportStatus.state === 'Failed' &&
+                                      uatExportStatus.stage === stage
+                                        ? 'failed'
+                                        : uatExportStatus.state === 'Exported' &&
+                                            stage === 'completed'
+                                          ? 'complete'
+                                          : index < currentIndex
+                                            ? 'complete'
+                                            : index === currentIndex
+                                              ? 'active'
+                                              : 'pending'
+                                    return (
+                                      <li
+                                        className={`uat-step uat-step-${state}`}
+                                        key={stage}
+                                      >
+                                        {label}
+                                      </li>
+                                    )
+                                  })}
+                                </ol>
+                                {uatExportStatus.state === 'Failed' && (
+                                  <p className="uat-diagnostic">
+                                    失敗段階:{' '}
+                                    {uatStageLabels[uatExportStatus.stage ?? ''] ??
+                                      uatExportStatus.stage ??
+                                      '不明'}
+                                    {' ／ '}分類:{' '}
+                                    {failureCategoryLabels[
+                                      uatExportStatus.errorCategory ?? ''
+                                    ] ?? uatExportStatus.errorCategory ?? '未取得'}
+                                    {uatExportStatus.errorHttpStatus !== null &&
+                                      ` ／ GitHub通信 HTTP ${uatExportStatus.errorHttpStatus}`}
+                                    {uatExportStatus.operation &&
+                                      ` ／ 操作 ${uatExportStatus.operation}`}
+                                    {uatExportStatus.providerCode &&
+                                      ` ／ GitHubコード ${uatExportStatus.providerCode}`}
+                                    {uatExportStatus.correlationId &&
+                                      ` ／ 照会ID ${uatExportStatus.correlationId}`}
+                                  </p>
+                                )}
+                                {uatExportStatus.issueUrl && (
+                                  <p>
+                                    <a
+                                      href={uatExportStatus.issueUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                    >
+                                      作成済みIssueを開く
+                                    </a>
+                                  </p>
+                                )}
+                              </div>
+                            )}
                         </div>
                       )}
                     {current.validationErrors.length > 0 && (
@@ -659,9 +823,9 @@ function App() {
                           </small>
                         )}
                         <small>
-                          GitHub Project進捗:{' '}
-                          {projectProgress.find((p) => p.workItemId === w.id)
-                            ?.status ?? '未同期'}
+                          {current.event.trackingId === syntheticUatTrackingId
+                            ? `合成UAT登録状態: ${uatExportStatus?.state === 'Exported' ? '登録済み' : uatExportStatus?.state === 'Failed' ? '失敗' : uatExportStatus?.stage ? uatStageLabels[uatExportStatus.stage] ?? '処理中' : '未開始'}`
+                            : `GitHub Project進捗: ${projectProgress.find((p) => p.workItemId === w.id)?.status ?? '未同期'}`}
                         </small>
                         <p>
                           開始 {w.plannedStartDate ?? '未確定'} ／ 完了{' '}
