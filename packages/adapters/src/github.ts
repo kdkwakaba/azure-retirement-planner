@@ -46,9 +46,8 @@ function throwGraphQLErrors(errors: unknown, operation: string): void {
     })
     .join(' ')
   const providerCode =
-    codes
-      .split(/\s+/)
-      .find((code) => /^[A-Z][A-Z0-9_]{0,63}$/.test(code)) ?? null
+    codes.split(/\s+/).find((code) => /^[A-Z][A-Z0-9_]{0,63}$/.test(code)) ??
+    null
   let category: SafeFailureCategory = 'Unknown'
   if (/FORBIDDEN|RESOURCE_NOT_ACCESSIBLE/.test(codes)) category = 'Forbidden'
   else if (/UNAUTHORIZED/.test(codes)) category = 'Unauthorized'
