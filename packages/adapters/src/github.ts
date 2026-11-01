@@ -713,7 +713,7 @@ export class GitHubClient {
         .parse(
           await this.request('/graphql', {
             query:
-              'query($id:ID!,$cursor:String){node(id:$id){...on ProjectV2{items(first:100,after:$cursor){nodes{id content{...on Issue{id}}}pageInfo{hasNextPage endCursor}}}}}',
+              'query($id:ID!,$cursor:String){node(id:$id){...on ProjectV2{items(first:100,after:$cursor){nodes{id content{__typename ...on Issue{id}}}pageInfo{hasNextPage endCursor}}}}}',
             variables: { id: projectId, cursor },
           }),
         )

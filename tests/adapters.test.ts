@@ -911,7 +911,8 @@ test('Project item reconciliation reuses existing item instead of creating dupli
     'fetch',
     async (_input: RequestInfo | URL, init?: RequestInit) => {
       const payload = JSON.parse(String(init?.body)) as { query: string }
-      if (payload.query.startsWith('query('))
+      if (payload.query.startsWith('query(')) {
+        assert.ok(payload.query.includes('content{__typename ...on Issue{id}}'))
         return Response.json({
           data: {
             node: {
@@ -927,6 +928,7 @@ test('Project item reconciliation reuses existing item instead of creating dupli
             },
           },
         })
+      }
       mutations++
       return Response.json({
         data: { addProjectV2ItemById: { item: { id: 'unexpected' } } },
