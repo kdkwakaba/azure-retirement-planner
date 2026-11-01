@@ -29,6 +29,7 @@ import {
 import { assessSnapshot, config, synchronize } from './service.ts'
 import {
   createSyntheticUatAssessment,
+  hasCompleteSyntheticUatIssueHierarchy,
   isSyntheticUatAssessment,
 } from './uat.ts'
 
@@ -291,7 +292,10 @@ app.http('api', {
             row = await store.table.getEntity(partitionKey, rowKey)
           }
           uatFailureTarget = { partitionKey, rowKey, store }
-          if (row.state === 'Exported' && typeof row.issueUrl === 'string')
+          const alreadyExported =
+            row.state === 'Exported' &&
+            safeGitHubIssueUrl(row.issueUrl) !== null
+          if (hasCompleteSyntheticUatIssueHierarchy(row))
             return reply(200, {
               issueUrl: row.issueUrl,
               parentIssueUrl:
@@ -485,7 +489,7 @@ app.http('api', {
             issueUrl: found.url,
             parentIssueUrl: parentIssue.url,
             phaseIssueUrl: phaseIssue.url,
-            alreadyExported: false,
+            alreadyExported,
           })
         }
         if (path === 'translate-evidence') {

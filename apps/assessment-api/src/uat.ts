@@ -93,3 +93,33 @@ export function isSyntheticUatAssessment(assessment: Assessment): boolean {
     assessment.workItems[0]?.title.startsWith('[SYNTHETIC UAT]') === true
   )
 }
+
+/**
+ * Exported UAT rows created before parent/phase issue tracking was added can
+ * still be reconciled. Only skip the export pipeline when all three managed
+ * issue links have been persisted.
+ */
+export function hasCompleteSyntheticUatIssueHierarchy(
+  row: Record<string, unknown>,
+): boolean {
+  const isGitHubIssueUrl = (value: unknown): value is string => {
+    if (typeof value !== 'string') return false
+    try {
+      const url = new URL(value)
+      return (
+        url.protocol === 'https:' &&
+        url.hostname === 'github.com' &&
+        /^\/[^/]+\/[^/]+\/issues\/\d+$/.test(url.pathname)
+      )
+    } catch {
+      return false
+    }
+  }
+
+  return (
+    row.state === 'Exported' &&
+    isGitHubIssueUrl(row.issueUrl) &&
+    isGitHubIssueUrl(row.parentIssueUrl) &&
+    isGitHubIssueUrl(row.phaseIssueUrl)
+  )
+}
