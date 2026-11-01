@@ -218,7 +218,7 @@ export class GitHubClient {
     const contentStart = start + managedStart.length
     const previousContent = body
       .slice(contentStart, end)
-      .replace(/^\\n|\\n$/g, '')
+      .replace(/^\n|\n$/g, '')
     const nextContent = managedIssueContent(item)
     const currentHash = hash(previousContent)
     if (
@@ -231,11 +231,7 @@ export class GitHubClient {
       )
     if (previousContent === nextContent) return currentHash
     const updatedBody =
-      body.slice(0, contentStart) +
-      '\\n' +
-      nextContent +
-      '\\n' +
-      body.slice(end)
+      body.slice(0, contentStart) + '\n' + nextContent + '\n' + body.slice(end)
     const updated = z
       .object({
         data: z.object({

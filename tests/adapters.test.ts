@@ -548,7 +548,7 @@ test('managed Issue updates preserve manual text and reject edits inside the man
     oldContent,
     '<!-- arp:managed:end -->',
     manualSuffix,
-  ].join('\\n')
+  ].join('\n')
   let mutationBody = ''
   t.mock.method(
     globalThis,
@@ -566,6 +566,13 @@ test('managed Issue updates preserve manual text and reject edits inside the man
       })
     },
   )
+  const initialHash = await client.updateManagedIssue(
+    'synthetic-issue',
+    item,
+    null,
+  )
+  assert.equal(initialHash, hash(oldContent))
+  assert.equal(mutationBody, '')
   const updatedHash = await client.updateManagedIssue(
     'synthetic-issue',
     revised,
