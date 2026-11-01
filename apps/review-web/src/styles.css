@@ -96,18 +96,18 @@ small {
   margin: 6px 0;
   font-size: 12px;
 }
-.priority-caption {
+.summary-caption {
   display: flex;
   align-items: center;
   gap: 6px;
 }
-.priority-help-container {
+.help-tip-container {
   position: relative;
   display: inline-flex;
   flex: 0 0 auto;
   vertical-align: middle;
 }
-.priority-help {
+.help-tip-button {
   display: inline-flex;
   width: 22px;
   min-width: 22px;
@@ -124,11 +124,11 @@ small {
   line-height: 1;
   cursor: pointer;
 }
-.priority-help:focus-visible {
+.help-tip-button:focus-visible {
   outline: 2px solid #126b5d;
   outline-offset: 2px;
 }
-.priority-tooltip {
+.help-tip-tooltip {
   position: absolute;
   z-index: 20;
   top: calc(100% + 8px);
@@ -150,31 +150,31 @@ small {
   pointer-events: none;
   transition: opacity 120ms ease;
 }
-.priority-tooltip-item {
+.help-tip-item {
   display: grid;
   grid-template-columns: 30px 1fr;
   gap: 8px;
 }
-.priority-tooltip-item strong {
+.help-tip-item strong {
   color: #b8e8dc;
 }
-.priority-help-container--left .priority-tooltip {
+.help-tip-container--left .help-tip-tooltip {
   right: auto;
   left: 0;
 }
-.priority-help-container:hover .priority-tooltip,
-.priority-help-container:focus-within .priority-tooltip,
-.priority-help-container[data-open='true'] .priority-tooltip {
+.help-tip-container:hover .help-tip-tooltip,
+.help-tip-container:focus-within .help-tip-tooltip,
+.help-tip-container[data-open='true'] .help-tip-tooltip {
   visibility: visible;
   opacity: 1;
 }
 @media (prefers-reduced-motion: reduce) {
-  .priority-tooltip {
+  .help-tip-tooltip {
     transition: none;
   }
 }
 @media (max-width: 480px) {
-  .priority-help-container .priority-tooltip {
+  .help-tip-container .help-tip-tooltip {
     position: fixed;
     top: 50%;
     right: auto;

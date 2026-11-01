@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useState, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { assessmentSchema, type Assessment } from '@arp/contracts'
 import './styles.css'
@@ -65,23 +65,28 @@ const priorityDescriptions: Record<string, string> = {
   P3: '通常の変更計画へ組み込み、進捗を確認します。GitHubラベルはMediumです。',
   P4: '影響が限定的で余裕がある状態です。経過観察または将来計画として扱います。GitHubラベルはLowです。',
 }
-function PriorityHelp({
+function HelpTip({
+  label,
   placement = 'left',
+  children,
 }: {
+  label: string
   placement?: 'left' | 'right'
+  children: ReactNode
 }) {
   const tooltipId = useId()
   const [open, setOpen] = useState(false)
   return (
     <span
-      className={`priority-help-container priority-help-container--${placement}`}
+      className={`help-tip-container help-tip-container--${placement}`}
       data-open={open}
     >
       <button
-        className="priority-help"
+        className="help-tip-button"
         type="button"
-        aria-label="P1からP4の優先度の説明を表示"
+        aria-label={label}
         aria-describedby={tooltipId}
+        aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
         onKeyDown={(event) => {
           if (event.key === 'Escape') {
@@ -92,16 +97,39 @@ function PriorityHelp({
       >
         ?
       </button>
-      <span className="priority-tooltip" id={tooltipId} role="tooltip">
-        {Object.entries(priorityDescriptions).map(([priority, description]) => (
-          <span className="priority-tooltip-item" key={priority}>
-            <strong>{priority}</strong>
-            <span>{description}</span>
-          </span>
-        ))}
+      <span className="help-tip-tooltip" id={tooltipId} role="tooltip">
+        {children}
       </span>
     </span>
   )
+}
+
+function PriorityHelp({
+  placement = 'left',
+}: {
+  placement?: 'left' | 'right'
+}) {
+  return (
+    <HelpTip label="P1からP4の優先度の説明を表示" placement={placement}>
+      <span className="help-tip-summary">この件数はP1とP2の合計です。</span>
+      {Object.entries(priorityDescriptions).map(([priority, description]) => (
+        <span className="help-tip-item" key={priority}>
+          <strong>{priority}</strong>
+          <span>{description}</span>
+        </span>
+      ))}
+    </HelpTip>
+  )
+}
+
+function SummaryHelp({
+  label,
+  children,
+}: {
+  label: string
+  children: ReactNode
+}) {
+  return <HelpTip label={label}>{children}</HelpTip>
 }
 
 const syntheticUatTrackingId = 'ARP-SYNTHETIC-UAT-001'
@@ -426,17 +454,28 @@ function App() {
               <strong>{summary.totalRecords}</strong>
             </article>
             <article>
-              <small>人間確認が必要</small>
+              <small className="summary-caption">
+                人間確認が必要
+                <SummaryHelp label="人間確認が必要の件数について">
+                  この件数は、人間レビューが不要と明示されていない評価レコードです。判断の不確実性や高リスクの確認を示し、作業項目の承認済み件数ではありません。
+                </SummaryHelp>
+              </small>
               <strong>{summary.humanReviewRequired}</strong>
             </article>
             <article>
-              <small className="priority-caption">
-                P1・P2 <PriorityHelp placement="right" />
+              <small className="summary-caption">
+                優先度 <PriorityHelp placement="right" />
               </small>
               <strong>{summary.highPriority}</strong>
             </article>
             <article>
-              <small>調査不完全・未確認</small>
+              <small className="summary-caption">
+                調査不完全・未確認
+                <SummaryHelp label="調査不完全・未確認の件数について">
+                  この件数は、Resource
+                  Graphなどによる影響調査の取得範囲が完全と確認できていない評価レコードです。該当リソースがないことや、影響がないことを意味しません。
+                </SummaryHelp>
+              </small>
               <strong>{summary.incompleteDiscovery}</strong>
             </article>
           </div>
