@@ -49,6 +49,7 @@ import {
   recordDependencyFailure,
   recordModelInvocation,
 } from '@arp/adapters'
+import { applySyntheticUatDecision } from './uat.ts'
 
 export function config() {
   return {
@@ -81,6 +82,98 @@ export function decisionRevision(limit: number): string | null {
     modelVersion,
     promptVersion: PROMPT_VERSION,
   })
+}
+
+export async function evaluateSyntheticUat(
+  source: Assessment,
+): Promise<Assessment> {
+  const settings = config()
+  const store = new AzureStore(settings.account)
+  const endpoint = process.env.DECISION_ENDPOINT
+  const deployment = process.env.DECISION_DEPLOYMENT
+  if (!endpoint || !deployment)
+    throw new Error('Decision-1 is not configured for synthetic UAT')
+
+  const assessmentId = hash({ syntheticUatDecisionRun: randomUUID() })
+  const asOf = new Date().toISOString().slice(0, 10)
+  const startedAt = Date.now()
+  let requestStarted = false
+  try {
+    await store.reserveModelCall(settings.modelCalls)
+    requestStarted = true
+    const grounding = groundedInput(
+      source.event,
+      source.resources,
+      source.workloadId,
+    )
+    const output = await decide(
+      endpoint,
+      deployment,
+      required('DECISION_MODEL_VERSION'),
+      {
+        ...grounding.state,
+        missingInformation: [
+          ...source.missingInformation,
+          '合成UATデータであり、Microsoft公式通知・実期限・実環境の事実ではありません',
+        ],
+        asOf,
+      },
+      (raw) =>
+        store.put(
+          'model-raw',
+          hash({ id: assessmentId, stage: 'decision' }),
+          raw,
+        ),
+    )
+    await store.put(
+      'model-results',
+      hash({ id: assessmentId, stage: 'decision' }),
+      output,
+    )
+    const decisionInvocation = emitModelInvocation({
+      stage: 'Decision',
+      assessmentId,
+      deployment,
+      modelVersion: output.decision.modelVersion,
+      promptVersion: output.decision.promptVersion,
+      status: 'Succeeded',
+      durationMs: Date.now() - startedAt,
+      failureCategory: null,
+      httpStatus: null,
+    })
+    const explanationInvocation = emitModelInvocation({
+      stage: 'Explanation',
+      assessmentId,
+      deployment: process.env.EXPLANATION_DEPLOYMENT,
+      modelVersion: null,
+      promptVersion: null,
+      status: 'NotRequired',
+      durationMs: null,
+      failureCategory: null,
+      httpStatus: null,
+    })
+    return applySyntheticUatDecision(
+      source,
+      output.decision,
+      [decisionInvocation, explanationInvocation],
+      assessmentId,
+      asOf,
+    )
+  } catch (error) {
+    const failure = modelFailure(error)
+    emitModelInvocation({
+      stage: 'Decision',
+      assessmentId,
+      deployment,
+      modelVersion: process.env.DECISION_MODEL_VERSION ?? null,
+      promptVersion: PROMPT_VERSION,
+      status: requestStarted ? 'Failed' : 'NotStarted',
+      durationMs: Date.now() - startedAt,
+      failureCategory: failure.category,
+      httpStatus: failure.httpStatus,
+    })
+    throw error
+  }
 }
 function emitModelInvocation(input: {
   stage: ModelInvocation['stage']
