@@ -29,6 +29,7 @@ import {
 import {
   assessSnapshot,
   config,
+  evaluateSyntheticUat,
   processDecisionReevaluation,
   synchronize,
 } from './service.ts'
@@ -148,7 +149,7 @@ app.http('api', {
         const item = assessment.workItems.find(
           (candidate) =>
             candidate.id === query.itemId &&
-            candidate.title === '[SYNTHETIC UAT] GitHub Issue連携を確認',
+            candidate.title.startsWith('[SYNTHETIC UAT]'),
         )
         if (!item) return reply(404, { error: 'Synthetic UAT item not found' })
         const logicalId = hash({
@@ -301,14 +302,33 @@ app.http('api', {
             workloadId: sample.workloadId,
           })
           const prior = await store.head(logicalId)
+          let source = sample
           if (prior) {
             const existing = await store.assessment(prior.assessmentId)
             if (!isSyntheticUatAssessment(existing))
               return reply(409, { error: 'Synthetic UAT identity conflict' })
-            return reply(200, { assessmentId: existing.id, created: false })
+            if (
+              existing.modelInvocations?.some(
+                (invocation) =>
+                  invocation.stage === 'Decision' &&
+                  invocation.status === 'Succeeded',
+              )
+            )
+              return reply(200, {
+                assessmentId: existing.id,
+                created: false,
+                decisionStatus: existing.decision.status,
+              })
+            source = existing
           }
-          await store.commitAssessment(sample, null)
-          return reply(201, { assessmentId: sample.id, created: true })
+          processingStage = 'synthetic-uat-decision'
+          const evaluated = await evaluateSyntheticUat(source)
+          await store.commitAssessment(evaluated, prior)
+          return reply(201, {
+            assessmentId: evaluated.id,
+            created: true,
+            decisionStatus: evaluated.decision.status,
+          })
         }
         if (path === 'uat/export') {
           requireUserRole(principal, apiRolePolicy.review)
@@ -336,9 +356,17 @@ app.http('api', {
           const item = assessment.workItems.find(
             (candidate) => candidate.id === body.itemId,
           )
-          if (!item || item.title !== '[SYNTHETIC UAT] GitHub Issue連携を確認')
+          if (!item || !item.title.startsWith('[SYNTHETIC UAT]'))
             return reply(400, {
-              error: 'Only the fixed synthetic UAT item can be exported',
+              error: 'Only a synthetic UAT work item can be exported',
+            })
+          if (
+            assessment.modelInvocations?.find(
+              (invocation) => invocation.stage === 'Decision',
+            )?.status !== 'Succeeded'
+          )
+            return reply(409, {
+              error: 'Decision-1 evaluation must succeed before UAT export',
             })
           const logicalId = hash({
             eventId: assessment.event.id,
