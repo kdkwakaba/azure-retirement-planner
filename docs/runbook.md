@@ -87,7 +87,12 @@ Readerは評価対象Subscription範囲のみで、APIのシステム割り当�
 - 外部Issue作成の成否が不明でOutboxが`Sending`の場合、Queue再試行で`<!-- arp:<Work Item ID> -->`をIssue一覧から照合する。見つかった場合のみ既存Issue IDを保存してProject追加へ進み、見つからない／一覧検索が不完全な場合は状態を`Sending`のまま保留し、新規Issueを作成しない。検索可能範囲・権限エラーを確認し、安易にOutboxを`Pending`へ戻さない。Issueが`IssueCreated`でProject追加だけ失敗した場合は保存済みIDからProject追加を再試行する。
 - 日付は人間が公式情報を確認して訂正画面へ入力。4マイルストーンを分離し、適用期限・必要日数で余裕と優先度を再計算する。訂正は新版になり旧承認は使えない。原モデル判断・説明は原出力として別欄に残る。
 - 個人の非公開Projectを作成し、GitHub Tokenの最小権限をSP-05で試験。RepositoryのIssue作成権限と個人Projectの追加権限は別。`GITHUB_OWNER/REPOSITORY/PROJECT_ID`を設定し、モデルの意味的根拠と作業をレビューした後に外部登録を有効化する。
-- 現在のIssueは相関ID・分類・優先度・日程・Evidence IDのみを送り、自由文・実Resource IDを複製しない。詳細は認証画面で確認する。ProjectのStatusフィールドは15分ごとに任意同期できる。`PROJECT_PROGRESS_SYNC_ENABLED`は既定でfalse。設定済みStatus field IDだけを読み、Issueと対応する内部Outboxへ外部Status名・option ID・取得時刻を別属性として保存する。承認・評価状態・Issue本文は変更せず、ProjectのDoneだけで自動クローズしない。認証済み`GET /api/project-progress`とレビュー画面の各作業項目で取得済みStatusを確認できる。未同期は完了を意味しない。
+- 承認済み作業Issueは作業項目のタイトル、説明、完了条件、前提、依存ID、担当候補、日程、根拠IDを日本語で表示し、対象Resource IDとメールアドレスは本文から伏せる。自由文はGitHubへ複製されるため、Issueは非公開Repositoryを使い、公開前に出力範囲を確認する。人が編集する本文領域は管理領域の外に残す。
+- Issue階層は「Retirement×Workloadの親Issue → 影響確認／設計／変更／テストのフェーズIssue → 承認済みWork Item Issue」。作業カテゴリとフェーズの対応表は`packages/adapters/src/github.ts`を参照する。作業がないフェーズIssueは作らない。親・フェーズIssueは作業Issueと同じRepository／Projectへ追加する。Projectで親子関係を見せる場合は`Parent issue`と`Sub-issues progress`も表示する。
+- 優先度ラベルはP1=`Priority: High`、P2/P3=`Priority: Medium`、P4=`Priority: Low`。未確定はラベルを付けない。ARPが必要なRepositoryラベルを不足時に作成し、Issueへ追加する。Projectの単一選択Priorityフィールド（P1〜P4）は別属性として従来通り同期する。ProjectのLabels列を表示すると優先度ラベルを確認できる。
+- 親・フェーズIssueにも安定相関マーカーを付け、Table OutboxへIssue ID、数値ID、Issue番号、URLを保存する。`Sending`中に作成応答が不明になった場合はマーカー検索で再照合し、見つからなければ再作成せず保留する。Sub-Issue追加とProject登録は毎回既存関係／Project itemを照合してから実行する。親またはフェーズIssueのCloseだけでWork Itemを完了扱いしない。
+- 現在、GitHub Issue labelの読取・追加・削除、Repository label作成、Sub-Issue参照・作成にRepositoryのIssues writeが必要。Project登録・項目更新は別途Project writeが必要。PoCのclassic PATは現行の`repo`／`project`権限で必要範囲を含む。実運用GitHub Appには対象RepositoryのIssues writeとProject writeを設定する。
+- ProjectのStatusフィールドは15分ごとに任意同期できる。`PROJECT_PROGRESS_SYNC_ENABLED`は既定でfalse。設定済みStatus field IDだけを読み、Issueと対応する内部Outboxへ外部Status名・option ID・取得時刻を別属性として保存する。承認・評価状態・Issue本文は変更せず、ProjectのDoneだけで自動クローズしない。認証済み`GET /api/project-progress`とレビュー画面の各作業項目で取得済みStatusを確認できる。未同期は完了を意味しない。
 
 ## 5. リリースと障害対応
 

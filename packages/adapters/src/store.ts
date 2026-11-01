@@ -5,6 +5,14 @@ import type { Assessment, Approval } from '@arp/contracts'
 import { assessmentSchema, approvalSchema } from '@arp/contracts'
 import { hash, verifyApproval } from '@arp/domain'
 import { credential } from './azure.ts'
+import {
+  type GitHubIssueReference,
+  type GitHubIssueGroupInput,
+  GitHubClient,
+  parentIssueInput,
+  parentIssueKey,
+  phaseIssueInput,
+} from './github.ts'
 
 export interface Head {
   partitionKey: string
@@ -75,6 +83,125 @@ export class AzureStore {
       if ((e as { statusCode?: number }).statusCode === 404) return null
       throw e
     }
+  }
+  async ensureParentIssue(
+    github: GitHubClient,
+    assessment: Assessment,
+  ): Promise<GitHubIssueReference> {
+    const input = parentIssueInput(assessment)
+    return this.ensureManagedIssueRecord(
+      github,
+      assessment,
+      'parent-issue:' + parentIssueKey(assessment),
+      input,
+    )
+  }
+  async ensurePhaseIssue(
+    github: GitHubClient,
+    assessment: Assessment,
+    item: import('@arp/contracts').WorkItem,
+  ): Promise<GitHubIssueReference> {
+    const input = phaseIssueInput(assessment, item)
+    const key = hash(input.marker)
+    return this.ensureManagedIssueRecord(
+      github,
+      assessment,
+      'phase-issue:' + key,
+      input,
+    )
+  }
+  private async ensureManagedIssueRecord(
+    github: GitHubClient,
+    assessment: Assessment,
+    rowKey: string,
+    input: GitHubIssueGroupInput,
+  ): Promise<GitHubIssueReference> {
+    const partitionKey =
+      'assessment:' +
+      hash({ eventId: assessment.event.id, workloadId: assessment.workloadId })
+    const markerId = input.marker
+    let row: Record<string, unknown>
+    try {
+      row = await this.table.getEntity(partitionKey, rowKey)
+    } catch (error) {
+      if ((error as { statusCode?: number }).statusCode !== 404) throw error
+      try {
+        await this.table.createEntity({
+          partitionKey,
+          rowKey,
+          entityKind: 'parent-issue-outbox',
+          state: 'Pending',
+          markerId,
+        })
+      } catch (createError) {
+        if ((createError as { statusCode?: number }).statusCode !== 409)
+          throw createError
+      }
+      row = await this.table.getEntity(partitionKey, rowKey)
+    }
+    const savedReference = (): GitHubIssueReference | null => {
+      if (
+        typeof row.issueId !== 'string' ||
+        typeof row.databaseId !== 'number' ||
+        typeof row.issueNumber !== 'number' ||
+        typeof row.issueUrl !== 'string'
+      )
+        return null
+      return {
+        id: row.issueId,
+        databaseId: row.databaseId,
+        number: row.issueNumber,
+        url: row.issueUrl,
+      }
+    }
+    const save = async (reference: GitHubIssueReference) => {
+      await this.table.updateEntity(
+        {
+          partitionKey,
+          rowKey,
+          entityKind: 'parent-issue-outbox',
+          state: 'IssueCreated',
+          markerId,
+          issueId: reference.id,
+          databaseId: reference.databaseId,
+          issueNumber: reference.number,
+          issueUrl: reference.url,
+        },
+        'Merge',
+      )
+    }
+    if (row.state === 'IssueCreated') {
+      const reference = savedReference()
+      if (!reference)
+        throw new Error('Saved grouping Issue reference is incomplete')
+      return reference
+    }
+    if (row.state === 'Sending') {
+      const recovered = await github.findGroupIssue(markerId)
+      if (!recovered)
+        throw new Error(
+          'Ambiguous grouping Issue creation; manual reconciliation required',
+        )
+      await save(recovered)
+      return recovered
+    }
+    if (row.state !== 'Pending')
+      throw new Error('Grouping Issue outbox state is invalid')
+    await this.table.updateEntity(
+      {
+        partitionKey,
+        rowKey,
+        entityKind: 'parent-issue-outbox',
+        state: 'Sending',
+        markerId,
+      },
+      'Merge',
+      { etag: row.etag as string },
+    )
+    const found = await github.findGroupIssue(markerId)
+    const reference = found ?? (await github.createGroupIssue(input))
+    await save(reference)
+    return reference
   }
   async list(): Promise<Assessment[]> {
     const results: Assessment[] = []

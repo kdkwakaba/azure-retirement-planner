@@ -59,12 +59,36 @@ const failureCategoryLabels: Record<string, string> = {
   DailyLimit: '日次呼出上限',
   StorageFailure: '監査保存失敗',
 }
+const priorityDescriptions: Record<string, string> = {
+  P1: '至急判断・着手。期限内に対応できるか、またはリスクを受容するかを至急確定します。P1は本番変更の即時実行を意味しません。GitHubラベルはHighです。',
+  P2: '早期に計画を確定し、調査・設計・体制確保を開始します。GitHubラベルはMediumです。',
+  P3: '通常の変更計画へ組み込み、進捗を確認します。GitHubラベルはMediumです。',
+  P4: '影響が限定的で余裕がある状態です。経過観察または将来計画として扱います。GitHubラベルはLowです。',
+}
+function PriorityHelp() {
+  const description = Object.entries(priorityDescriptions)
+    .map(([priority, text]) => `${priority}: ${text}`)
+    .join('\n\n')
+  return (
+    <span
+      className="priority-help"
+      role="img"
+      tabIndex={0}
+      aria-label="P1からP4の優先度の説明"
+      title={description}
+    >
+      i
+    </span>
+  )
+}
 
 const syntheticUatTrackingId = 'ARP-SYNTHETIC-UAT-001'
 type UatExportStatus = {
   state: string
   stage: string | null
   issueUrl: string | null
+  parentIssueUrl: string | null
+  phaseIssueUrl: string | null
   errorCategory: string | null
   errorHttpStatus: number | null
   correlationId: string | null
@@ -73,10 +97,15 @@ type UatExportStatus = {
   updatedAt: string | null
 }
 const uatStages = [
-  ['finding-or-creating-issue', 'Issueを確認中'],
+  ['finding-or-creating-parent', '親Issueを確認中'],
+  ['adding-parent-to-project', '親IssueをProjectに登録中'],
+  ['finding-or-creating-phase', '作業フェーズを確認中'],
+  ['linking-phase-to-parent', 'フェーズを親Issueに登録中'],
+  ['finding-or-creating-issue', '作業Issueを確認中'],
   ['creating-issue', 'Issueを作成中'],
   ['updating-issue', 'Issue内容を更新中'],
   ['verifying-issue', 'Issueを確認中'],
+  ['linking-sub-issue', '親IssueのSub-Issueに登録中'],
   ['adding-to-project', 'Projectに登録中'],
   ['updating-project-fields', 'Project項目を更新中'],
   ['completed', '登録完了'],
@@ -241,7 +270,7 @@ function App() {
     if (!item) return
     if (
       !window.confirm(
-        '合成UATの承認済み作業1件をGitHub IssueとProjectへ登録します。実環境の作業ではありません。続けますか？',
+        '合成UATの承認済み作業1件について、親Issue・作業フェーズIssue・作業Issueを作成し、Sub-Issue関係とProject登録を行います。実環境の作業ではありません。続けますか？',
       )
     )
       return
@@ -251,8 +280,10 @@ function App() {
     setUatIssueUrl('')
     setUatExportStatus({
       state: 'Processing',
-      stage: 'finding-or-creating-issue',
+      stage: 'finding-or-creating-parent',
       issueUrl: null,
+      parentIssueUrl: null,
+      phaseIssueUrl: null,
       errorCategory: null,
       errorHttpStatus: null,
       correlationId: null,
@@ -274,16 +305,22 @@ function App() {
               state: 'Exported',
               stage: 'completed',
               issueUrl: result.issueUrl,
+              parentIssueUrl: result.parentIssueUrl,
+              phaseIssueUrl: result.phaseIssueUrl,
             }
           : status,
       )
-      setNotice('合成UAT IssueをGitHub Projectへ登録しました。')
+      setNotice(
+        '合成UATの親Issue・フェーズIssue・作業IssueをProjectへ登録しました。',
+      )
     } catch (e) {
       if (e instanceof ApiRequestError) {
         setUatExportStatus((status) => ({
           state: 'Failed',
           stage: e.stage ?? status?.stage ?? null,
           issueUrl: status?.issueUrl ?? null,
+          parentIssueUrl: status?.parentIssueUrl ?? null,
+          phaseIssueUrl: status?.phaseIssueUrl ?? null,
           errorCategory: e.category,
           errorHttpStatus: e.upstreamHttpStatus,
           correlationId: e.correlationId,
@@ -371,7 +408,9 @@ function App() {
               <strong>{summary.humanReviewRequired}</strong>
             </article>
             <article>
-              <small>P1・P2</small>
+              <small className="priority-caption">
+                P1・P2 <PriorityHelp />
+              </small>
               <strong>{summary.highPriority}</strong>
             </article>
             <article>
@@ -391,6 +430,29 @@ function App() {
             <a href={uatIssueUrl} target="_blank" rel="noopener noreferrer">
               作成した合成UAT Issueを開く
             </a>
+          </p>
+        )}
+        {uatExportStatus?.parentIssueUrl && (
+          <p>
+            <a
+              href={uatExportStatus.parentIssueUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              合成UATの親Issueを開く
+            </a>
+            {uatExportStatus.phaseIssueUrl && (
+              <>
+                {' · '}
+                <a
+                  href={uatExportStatus.phaseIssueUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  フェーズIssueを開く
+                </a>
+              </>
+            )}
           </p>
         )}
         <div className="layout">
@@ -472,7 +534,9 @@ function App() {
                         </strong>
                       </article>
                       <article>
-                        <small>暫定優先度</small>
+                        <small className="priority-caption">
+                          暫定優先度 <PriorityHelp />
+                        </small>
                         <strong>{current.effectivePriority ?? '未確定'}</strong>
                       </article>
                     </div>
@@ -850,8 +914,8 @@ function App() {
                           <b>{w.title}</b>
                         </label>
                         <p>
-                          {w.category} · {w.necessity} ·{' '}
-                          {w.priority ?? '未確定'}
+                          {w.category} · {w.necessity} · 優先度{' '}
+                          {w.priority ?? '未確定'} <PriorityHelp />
                         </p>
                         <p>{w.description}</p>
                         {w.description.includes(

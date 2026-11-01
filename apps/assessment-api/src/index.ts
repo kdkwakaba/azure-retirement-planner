@@ -137,6 +137,8 @@ app.http('api', {
             state: typeof row.state === 'string' ? row.state : 'Unknown',
             stage: typeof row.stage === 'string' ? row.stage : null,
             issueUrl,
+            parentIssueUrl: safeGitHubIssueUrl(row.parentIssueUrl),
+            phaseIssueUrl: safeGitHubIssueUrl(row.phaseIssueUrl),
             errorCategory:
               typeof row.errorCategory === 'string' ? row.errorCategory : null,
             errorHttpStatus:
@@ -161,6 +163,8 @@ app.http('api', {
             state: 'NotStarted',
             stage: null,
             issueUrl: null,
+            parentIssueUrl: null,
+            phaseIssueUrl: null,
             errorCategory: null,
             errorHttpStatus: null,
             operation: null,
@@ -290,6 +294,14 @@ app.http('api', {
           if (row.state === 'Exported' && typeof row.issueUrl === 'string')
             return reply(200, {
               issueUrl: row.issueUrl,
+              parentIssueUrl:
+                typeof row.parentIssueUrl === 'string'
+                  ? row.parentIssueUrl
+                  : null,
+              phaseIssueUrl:
+                typeof row.phaseIssueUrl === 'string'
+                  ? row.phaseIssueUrl
+                  : null,
               alreadyExported: true,
             })
           const saveUatStage = async (
@@ -316,13 +328,76 @@ app.http('api', {
               'Merge',
             )
           }
-          await saveUatStage('finding-or-creating-issue', 'Processing')
+          await saveUatStage('finding-or-creating-parent', 'Processing')
 
           const github = new GitHubClient(
             required('GITHUB_OWNER'),
             required('GITHUB_REPOSITORY'),
             required('GITHUB_TOKEN'),
           )
+          const parentIssue = await store.ensureParentIssue(github, assessment)
+          await github.syncParentLabels(parentIssue.number, assessment)
+          await saveUatStage('adding-parent-to-project', 'Processing', {
+            parentIssueId: parentIssue.id,
+            parentIssueUrl: parentIssue.url,
+          })
+          const projectId = required('GITHUB_PROJECT_ID')
+          const projectConfig = {
+            statusFieldId: process.env.GITHUB_PROJECT_STATUS_FIELD_ID,
+            todoOptionId: process.env.GITHUB_PROJECT_STATUS_TODO_OPTION_ID,
+            priorityFieldId: process.env.GITHUB_PROJECT_PRIORITY_FIELD_ID,
+            priorityOptionIds: process.env.GITHUB_PROJECT_PRIORITY_FIELD_ID
+              ? {
+                  P1: process.env.GITHUB_PROJECT_PRIORITY_P1_OPTION_ID,
+                  P2: process.env.GITHUB_PROJECT_PRIORITY_P2_OPTION_ID,
+                  P3: process.env.GITHUB_PROJECT_PRIORITY_P3_OPTION_ID,
+                  P4: process.env.GITHUB_PROJECT_PRIORITY_P4_OPTION_ID,
+                }
+              : undefined,
+            dueDateFieldId: process.env.GITHUB_PROJECT_DUE_DATE_FIELD_ID,
+          }
+          const parentProjectItem = await github.ensureProjectItem(
+            projectId,
+            parentIssue.id,
+          )
+          await github.updateProjectParentFields(
+            projectId,
+            parentProjectItem.id,
+            assessment.effectivePriority,
+            projectConfig,
+            parentProjectItem.created,
+          )
+          await saveUatStage('finding-or-creating-phase', 'Processing', {
+            parentIssueId: parentIssue.id,
+            parentIssueUrl: parentIssue.url,
+          })
+          const phaseIssue = await store.ensurePhaseIssue(
+            github,
+            assessment,
+            item,
+          )
+          await saveUatStage('linking-phase-to-parent', 'Processing', {
+            parentIssueId: parentIssue.id,
+            parentIssueUrl: parentIssue.url,
+            phaseIssueId: phaseIssue.id,
+            phaseIssueUrl: phaseIssue.url,
+          })
+          await github.ensureSubIssue(parentIssue.number, phaseIssue.databaseId)
+          const phaseProjectItem = await github.ensureProjectItem(
+            projectId,
+            phaseIssue.id,
+          )
+          await github.updateProjectParentFields(
+            projectId,
+            phaseProjectItem.id,
+            null,
+            projectConfig,
+            phaseProjectItem.created,
+          )
+          await saveUatStage('finding-or-creating-issue', 'Processing', {
+            parentIssueId: parentIssue.id,
+            parentIssueUrl: parentIssue.url,
+          })
           const issueId = await ensureIssueForExport(
             github,
             item,
@@ -367,35 +442,37 @@ app.http('api', {
             issueId,
             issueUrl: found.url,
             managedContentHash,
+            parentIssueId: parentIssue.id,
+            parentIssueUrl: parentIssue.url,
           })
-          const projectItem = await github.ensureProjectItem(
-            required('GITHUB_PROJECT_ID'),
+          const projectItem = await github.ensureProjectItem(projectId, issueId)
+          const childIssue = await github.getIssueReference(issueId)
+          await github.syncWorkItemLabels(childIssue.number, item)
+          await saveUatStage('linking-sub-issue', 'IssueCreated', {
             issueId,
-          )
+            issueUrl: found.url,
+            parentIssueId: parentIssue.id,
+            parentIssueUrl: parentIssue.url,
+            phaseIssueId: phaseIssue.id,
+            phaseIssueUrl: phaseIssue.url,
+            managedContentHash,
+          })
+          await github.ensureSubIssue(phaseIssue.number, childIssue.databaseId)
           await saveUatStage('updating-project-fields', 'ProjectItemAdded', {
             issueId,
             issueUrl: found.url,
             projectItemId: projectItem.id,
             managedContentHash,
+            parentIssueId: parentIssue.id,
+            parentIssueUrl: parentIssue.url,
+            phaseIssueId: phaseIssue.id,
+            phaseIssueUrl: phaseIssue.url,
           })
           await github.updateProjectFields(
-            required('GITHUB_PROJECT_ID'),
+            projectId,
             projectItem.id,
             item,
-            {
-              statusFieldId: process.env.GITHUB_PROJECT_STATUS_FIELD_ID,
-              todoOptionId: process.env.GITHUB_PROJECT_STATUS_TODO_OPTION_ID,
-              priorityFieldId: process.env.GITHUB_PROJECT_PRIORITY_FIELD_ID,
-              priorityOptionIds: process.env.GITHUB_PROJECT_PRIORITY_FIELD_ID
-                ? {
-                    P1: process.env.GITHUB_PROJECT_PRIORITY_P1_OPTION_ID,
-                    P2: process.env.GITHUB_PROJECT_PRIORITY_P2_OPTION_ID,
-                    P3: process.env.GITHUB_PROJECT_PRIORITY_P3_OPTION_ID,
-                    P4: process.env.GITHUB_PROJECT_PRIORITY_P4_OPTION_ID,
-                  }
-                : undefined,
-              dueDateFieldId: process.env.GITHUB_PROJECT_DUE_DATE_FIELD_ID,
-            },
+            projectConfig,
             projectItem.created,
           )
           await saveUatStage('completed', 'Exported', {
@@ -406,6 +483,8 @@ app.http('api', {
           })
           return reply(200, {
             issueUrl: found.url,
+            parentIssueUrl: parentIssue.url,
+            phaseIssueUrl: phaseIssue.url,
             alreadyExported: false,
           })
         }
