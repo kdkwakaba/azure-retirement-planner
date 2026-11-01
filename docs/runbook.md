@@ -144,6 +144,15 @@ ServiceHealthResourcesの`LastUpdateTime`は数値で返る場合がある。ARG
 
 `[foundry-resource-name-removed]` に `arp-decision-1`（Microsoft-Decision-1 version 1、DataZoneStandard、capacity 500）を配置し、Runningを確認した。Deploymentのサービスレートは500 requests/minute・500,000 tokens/minuteで、要求ごとの生成トークン上限ではない。API endpoint／deployment／model versionをBicepへ設定し、API Managed IdentityへFoundryアカウント範囲のCognitive Services Userを付与した。実通知の1評価でversion 1の有効応答（Abstained）を確認し、合成3事例×3回も9/9契約検証を通過した。後者は精度保証ではなく、結果詳細は`docs/spike-and-testing.md`に記録する。CLI利用者へはCognitive Services UserをFoundryアカウント範囲で付与した。Unknownや不確実性を解消せず、すべての作業項目は引き続き人間承認を要する。説明用LLMは未設定。モデル呼出枠は200/日、要求単位Token capなし。利用者がPoC累計20,000円をCost Managementで確認し、アプリ側の金額ハード停止は実装しない。Cost Managementのbudgetは通知用で、課金停止機能ではなく反映に遅延がある。
 
+## テストモードと実通知1件のDecision再評価
+
+- `ARP_TEST_MODE_ENABLED`、`ARP_SYNTHETIC_UAT_ENABLED`、`ARP_DECISION_REEVALUATION_ENABLED`はRepository Variablesで指定し、すべて未設定時false。合成UATとDecision再評価の各操作は、共通の`ARP_TEST_MODE_ENABLED=true`に加えて個別フラグもtrueの場合だけ画面へ表示される。変更はBicep経由の手動CDが必要。
+- Decision再評価はGovernance App roleのユーザーだけが実行可能。最新の実Service Health評価レコード1件（通知・Workload単位）を指定し、理由を入力する。合成UAT、対象外、非Current、調査範囲Snapshotのない旧レコードは拒否する。
+- キュー処理は保存済みAssessmentのResource/Evidence/scopeを読み、Decision-1のみ最大1回呼ぶ。ARG再取得、評価対象変更、Explanation LLM、作業承認、GitHub登録は実行しない。日次モデル呼出枠を使用する。結果は新Assessmentとして保存し、旧承認は再利用できない。
+- 同じAssessmentに対する並列再評価はTable lockで防止する。処理が20分以上停止した場合は失敗状態として記録し、自動でモデル再実行はしない。必要なら画面から新しい理由で明示的に再依頼する。
+- 実施前に`MAX_MODEL_CALLS_PER_DAY`とPoC累計予算の残額を確認する。PoC上限のCost Management確認と無断増額禁止は従来どおり。呼出上限到達・モデル失敗は実行記録に失敗理由を残す。
+- 表示専用のテストモードであり、データ分離や削除は行わない。フラグを無効化すると合成UAT関連画面は通常一覧・集計から隠れるが、記録自体は保持される。
+
 ## GitHub Project フィールド同期
 
 - PoCのGitHub Project設定はRepository VariablesからBicepへ渡す。`ARP_GITHUB_OWNER`、`ARP_GITHUB_REPOSITORY`、`ARP_GITHUB_PROJECT_ID`、`ARP_GITHUB_PROJECT_STATUS_FIELD_ID`、`ARP_GITHUB_PROJECT_STATUS_TODO_OPTION_ID`を設定し、GitHub TokenはAzure Key Vaultの`github-token` secretにのみ保存する。`ARP_EXPORT_ENABLED=true`はレビュー済み作業からIssue／Project itemを作るための明示的な有効化で、未設定時はfalseとして扱う。`ARP_PROJECT_PROGRESS_SYNC_ENABLED=true`は15分ごとのStatus読取を有効化する。デプロイworkflowは外部登録／進捗同期が有効な場合に必須設定を事前検査する。

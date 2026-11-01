@@ -36,7 +36,9 @@ param syncEnabled bool = false
 param projectProgressSyncEnabled bool = false
 param ingestEnabled bool = false
 param exportEnabled bool = false
+param testModeEnabled bool = false
 param syntheticUatEnabled bool = false
+param decisionReevaluationEnabled bool = false
 param processingFailureAlertsEnabled bool = false
 param processingFailureAlertActionGroupId string = ''
 
@@ -184,7 +186,9 @@ resource functions 'Microsoft.Web/sites@2024-11-01' = [for (name,i) in ['api','e
         { name: 'TRANSLATOR_REGION', value: location }
         { name: 'MAX_MODEL_CALLS_PER_DAY', value: string(maxModelCallsPerDay) }
         { name: 'EXPORT_ENABLED', value: toLower(string(exportEnabled)) }
+        { name: 'TEST_MODE_ENABLED', value: toLower(string(testModeEnabled)) }
         { name: 'SYNTHETIC_UAT_ENABLED', value: toLower(string(syntheticUatEnabled)) }
+        { name: 'DECISION_REEVALUATION_ENABLED', value: toLower(string(decisionReevaluationEnabled)) }
         { name: 'SYNC_ENABLED', value: toLower(string(syncEnabled)) }
         { name: 'PROJECT_PROGRESS_SYNC_ENABLED', value: toLower(string(projectProgressSyncEnabled)) }
         { name: 'INGEST_ENABLED', value: toLower(string(ingestEnabled)) }

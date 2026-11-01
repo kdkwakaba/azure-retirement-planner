@@ -7,6 +7,7 @@ import { EvidenceCard, safeOfficialEvidenceUrl } from './EvidenceFact.tsx'
 import { summarizeAssessments } from './summary.ts'
 
 import { ApiRequestError, request, syncFeedback } from './api.ts'
+import { syntheticUatTrackingId, visibleAssessments } from './visibility.ts'
 
 const discoveryOutcomeLabels: Record<string, string> = {
   CandidatesFound: '影響候補あり',
@@ -132,7 +133,6 @@ function SummaryHelp({
   return <HelpTip label={label}>{children}</HelpTip>
 }
 
-const syntheticUatTrackingId = 'ARP-SYNTHETIC-UAT-001'
 type UatExportStatus = {
   state: string
   stage: string | null
@@ -145,6 +145,35 @@ type UatExportStatus = {
   operation: string | null
   providerCode: string | null
   updatedAt: string | null
+}
+type FeatureStatus = {
+  testModeEnabled: boolean
+  syntheticUatEnabled: boolean
+  decisionReevaluationEnabled: boolean
+  canReevaluate: boolean
+}
+type DecisionReevaluationStatus = {
+  runId: string
+  assessmentId: string
+  state: 'Pending' | 'Queued' | 'Processing' | 'Completed' | 'Failed'
+  resultAssessmentId: string | null
+  error: string | null
+}
+const reevaluationStateLabels: Record<string, string> = {
+  Pending: '再評価を待機中',
+  Queued: '再評価をキューに登録中',
+  Processing: 'Decision-1で再評価中',
+  Completed: '再評価が完了しました',
+  Failed: '再評価に失敗しました',
+}
+const reevaluationErrorLabels: Record<string, string> = {
+  StaleAssessment: '選択した評価は最新ではありません。画面を更新してください。',
+  MissingSnapshot:
+    '保存済みの調査情報がありません。Azure情報を再取得してください。',
+  ModelUnavailable:
+    'Decision-1を利用できませんでした。モデル設定と実行記録を確認してください。',
+  DailyLimit: '本日のモデル呼び出し上限に達しました。',
+  ProcessingFailed: '処理に失敗しました。照会記録から原因を確認してください。',
 }
 const uatStages = [
   ['finding-or-creating-parent', '親Issueを確認中'],
@@ -196,7 +225,13 @@ function App() {
     [checked, setChecked] = useState<string[]>([]),
     [reason, setReason] = useState(''),
     [notice, setNotice] = useState(''),
-    [uatEnabled, setUatEnabled] = useState(false),
+    [testModeEnabled, setTestModeEnabled] = useState(false),
+    [syntheticUatEnabled, setSyntheticUatEnabled] = useState(false),
+    [decisionReevaluationEnabled, setDecisionReevaluationEnabled] =
+      useState(false),
+    [canReevaluate, setCanReevaluate] = useState(false),
+    [reevaluationStatus, setReevaluationStatus] =
+      useState<DecisionReevaluationStatus | null>(null),
     [uatIssueUrl, setUatIssueUrl] = useState(''),
     [uatExportStatus, setUatExportStatus] = useState<UatExportStatus | null>(
       null,
@@ -212,9 +247,22 @@ function App() {
       const data = assessmentSchema
         .array()
         .parse(await request('assessments', 'GET'))
-      setItems(data)
-      const uat = await request('uat/status', 'GET')
-      setUatEnabled(uat.enabled === true)
+      const uat = (await request('uat/status', 'GET')) as FeatureStatus
+      const showSynthetic = uat.testModeEnabled && uat.syntheticUatEnabled
+      const visible = visibleAssessments(
+        data,
+        uat.testModeEnabled,
+        uat.syntheticUatEnabled,
+      )
+      setItems(visible)
+      setTestModeEnabled(uat.testModeEnabled)
+      setSyntheticUatEnabled(showSynthetic)
+      setDecisionReevaluationEnabled(
+        uat.testModeEnabled && uat.decisionReevaluationEnabled,
+      )
+      setCanReevaluate(uat.canReevaluate)
+      if (selected && !visible.some((item) => item.id === selected))
+        setSelected(null)
       const progress = await request('project-progress', 'GET')
       setProjectProgress(
         Array.isArray(progress)
@@ -247,7 +295,7 @@ function App() {
         candidate.title === '[SYNTHETIC UAT] GitHub Issue連携を確認',
     )
     if (
-      !uatEnabled ||
+      !syntheticUatEnabled ||
       current?.event.trackingId !== syntheticUatTrackingId ||
       !current ||
       !item
@@ -282,7 +330,40 @@ function App() {
       active = false
       window.clearInterval(timer)
     }
-  }, [selected, uatEnabled, busy])
+  }, [selected, syntheticUatEnabled, busy])
+  useEffect(() => {
+    if (
+      !reevaluationStatus ||
+      !['Pending', 'Queued', 'Processing'].includes(reevaluationStatus.state)
+    )
+      return
+    let active = true
+    const poll = async () => {
+      try {
+        const status = (await request(
+          `decision-reevaluation-status?runId=${encodeURIComponent(reevaluationStatus.runId)}`,
+          'GET',
+        )) as DecisionReevaluationStatus
+        if (!active) return
+        setReevaluationStatus(status)
+        if (status.state === 'Completed' && status.resultAssessmentId) {
+          await refresh()
+          setSelected(status.resultAssessmentId)
+        }
+      } catch (e) {
+        if (active)
+          setError(
+            e instanceof Error ? e.message : '再評価状況を取得できません',
+          )
+      }
+    }
+    const timer = window.setInterval(() => void poll(), 2000)
+    void poll()
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [reevaluationStatus?.runId, reevaluationStatus?.state])
   async function sync() {
     setBusy(true)
     setError('')
@@ -310,6 +391,34 @@ function App() {
       )
     } catch (e) {
       setError(e instanceof Error ? e.message : '合成UAT作成失敗')
+    } finally {
+      setBusy(false)
+    }
+  }
+  async function reevaluateCurrentNotice() {
+    if (!current || current.event.trackingId === syntheticUatTrackingId) return
+    const reason = window.prompt(
+      '再評価理由を入力してください（10〜500文字）。保存済みのAzure調査スナップショットを使い、Decision-1を1回だけ実行します。',
+    )
+    if (!reason?.trim() || reason.trim().length < 10) return
+    if (
+      !window.confirm(
+        '選択中の実通知・ワークロード1件だけを再評価します。Azure情報の再取得、対象リソースの変更、Issue登録は行いません。新しい評価版を作成し、従来の承認は引き継ぎません。続けますか？',
+      )
+    )
+      return
+    setBusy(true)
+    setError('')
+    setNotice('1件限定のDecision-1再評価を依頼しています。')
+    try {
+      const result = (await request('decision-reevaluation', 'POST', {
+        assessmentId: current.id,
+        runId: crypto.randomUUID(),
+        reason: reason.trim(),
+      })) as DecisionReevaluationStatus
+      setReevaluationStatus(result)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '再評価の依頼に失敗しました')
     } finally {
       setBusy(false)
     }
@@ -436,11 +545,12 @@ function App() {
           <button disabled={busy} onClick={() => void refresh()}>
             評価結果を更新
           </button>
-          {uatEnabled && (
+          {syntheticUatEnabled && (
             <button disabled={busy} onClick={() => void seedSyntheticUat()}>
               合成UATを作成
             </button>
           )}
+          {testModeEnabled && <span className="notice">テストモード</span>}
           <span>評価対象は読み取り専用</span>
         </div>
         <section className="operations-summary" aria-labelledby="summary-title">
@@ -486,14 +596,14 @@ function App() {
           </div>
         )}
         {notice && <p role="status">{notice}</p>}
-        {uatIssueUrl && (
+        {syntheticUatEnabled && uatIssueUrl && (
           <p>
             <a href={uatIssueUrl} target="_blank" rel="noopener noreferrer">
               作成した合成UAT Issueを開く
             </a>
           </p>
         )}
-        {uatExportStatus?.parentIssueUrl && (
+        {syntheticUatEnabled && uatExportStatus?.parentIssueUrl && (
           <p>
             <a
               href={uatExportStatus.parentIssueUrl}
@@ -555,6 +665,51 @@ function App() {
                 <p>
                   Workload: {current.workloadId} ／ 評価基準日: {current.asOf}
                 </p>
+                {decisionReevaluationEnabled &&
+                  canReevaluate &&
+                  current.event.trackingId !== syntheticUatTrackingId && (
+                    <div
+                      className="notice"
+                      role="region"
+                      aria-label="テスト用再評価"
+                    >
+                      <b>テスト用：実通知1件を再評価</b>
+                      <p>
+                        保存済みの実リソース調査結果を使い、選択中の通知・WorkloadだけをDecision-1で再評価します。Azure再取得、対象環境への変更、作業承認、GitHub登録は行いません。再評価は新しい版として記録され、既存の承認は引き継がれません。
+                      </p>
+                      <button
+                        disabled={
+                          busy ||
+                          (reevaluationStatus?.assessmentId === current.id &&
+                            ['Pending', 'Queued', 'Processing'].includes(
+                              reevaluationStatus.state,
+                            ))
+                        }
+                        onClick={() => void reevaluateCurrentNotice()}
+                      >
+                        {busy
+                          ? '処理中…'
+                          : reevaluationStatus?.assessmentId === current.id &&
+                              ['Pending', 'Queued', 'Processing'].includes(
+                                reevaluationStatus.state,
+                              )
+                            ? reevaluationStateLabels[reevaluationStatus.state]
+                            : 'この1件を再評価'}
+                      </button>
+                      {reevaluationStatus?.assessmentId === current.id && (
+                        <p role="status" aria-live="polite">
+                          {reevaluationStateLabels[reevaluationStatus.state] ??
+                            reevaluationStatus.state}
+                          {reevaluationStatus.error
+                            ? ` — ${reevaluationErrorLabels[reevaluationStatus.error] ?? reevaluationStatus.error}`
+                            : ''}
+                          {reevaluationStatus.resultAssessmentId
+                            ? ` ／ 評価ID ${reevaluationStatus.resultAssessmentId}`
+                            : ''}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 {current.humanContext?.scopeDisposition === 'OutOfScope' && (
                   <div role="status" className="notice">
                     <b>人間確認済み・対象外</b>
@@ -854,7 +1009,7 @@ function App() {
                 ) : (
                   <>
                     <h3>作業案・部分承認</h3>
-                    {uatEnabled &&
+                    {syntheticUatEnabled &&
                       current.event.trackingId === syntheticUatTrackingId && (
                         <div className="notice">
                           <b>合成UAT専用</b>

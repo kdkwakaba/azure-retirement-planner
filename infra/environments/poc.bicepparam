@@ -14,6 +14,8 @@ param githubProjectId = readEnvironmentVariable('ARP_GITHUB_PROJECT_ID', '')
 param githubProjectStatusFieldId = readEnvironmentVariable('ARP_GITHUB_PROJECT_STATUS_FIELD_ID', '')
 param githubProjectStatusTodoOptionId = readEnvironmentVariable('ARP_GITHUB_PROJECT_STATUS_TODO_OPTION_ID', '')
 param exportEnabled = toLower(readEnvironmentVariable('ARP_EXPORT_ENABLED', 'false')) == 'true'
+param testModeEnabled = toLower(readEnvironmentVariable('ARP_TEST_MODE_ENABLED', 'false')) == 'true'
 param syntheticUatEnabled = toLower(readEnvironmentVariable('ARP_SYNTHETIC_UAT_ENABLED', 'false')) == 'true'
+param decisionReevaluationEnabled = toLower(readEnvironmentVariable('ARP_DECISION_REEVALUATION_ENABLED', 'false')) == 'true'
 param projectProgressSyncEnabled = toLower(readEnvironmentVariable('ARP_PROJECT_PROGRESS_SYNC_ENABLED', 'false')) == 'true'
 param maxModelCallsPerDay = 200
