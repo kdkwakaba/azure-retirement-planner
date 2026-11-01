@@ -227,6 +227,7 @@ function App() {
     [notice, setNotice] = useState(''),
     [testModeEnabled, setTestModeEnabled] = useState(false),
     [syntheticUatEnabled, setSyntheticUatEnabled] = useState(false),
+    [confirmingUatExport, setConfirmingUatExport] = useState(false),
     [decisionReevaluationEnabled, setDecisionReevaluationEnabled] =
       useState(false),
     [canReevaluate, setCanReevaluate] = useState(false),
@@ -430,12 +431,7 @@ function App() {
     if (!current || current.event.trackingId !== syntheticUatTrackingId) return
     const item = current.workItems[0]
     if (!item) return
-    if (
-      !window.confirm(
-        '合成UATの承認済み作業1件について、親Issue・作業フェーズIssue・作業Issueを作成し、Sub-Issue関係とProject登録を行います。実環境の作業ではありません。続けますか？',
-      )
-    )
-      return
+    setConfirmingUatExport(false)
     setBusy(true)
     setError('')
     setNotice('')
@@ -1024,7 +1020,7 @@ function App() {
                             disabled={
                               busy || current.validationErrors.length > 0
                             }
-                            onClick={() => void exportSyntheticUat()}
+                            onClick={() => setConfirmingUatExport(true)}
                           >
                             {busy
                               ? '登録処理中…'
@@ -1263,6 +1259,64 @@ function App() {
           </section>
         </div>
       </main>
+      {confirmingUatExport && (
+        <div
+          className="confirmation-backdrop"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape' && !busy) setConfirmingUatExport(false)
+            if (event.key === 'Tab') {
+              const buttons = event.currentTarget.querySelectorAll('button')
+              const first = buttons.item(0)
+              const last = buttons.item(buttons.length - 1)
+              if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault()
+                last.focus()
+              } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault()
+                first.focus()
+              }
+            }
+          }}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !busy)
+              setConfirmingUatExport(false)
+          }}
+        >
+          <section
+            aria-labelledby="uat-export-confirmation-title"
+            aria-modal="true"
+            className="confirmation-dialog"
+            role="dialog"
+          >
+            <h2 id="uat-export-confirmation-title">
+              GitHub Issueへの登録を確認
+            </h2>
+            <p>
+              合成UATの承認済み作業1件について、親Issue・作業フェーズIssue・作業Issueを作成し、Sub-Issue関係とProject登録を行います。
+            </p>
+            <p>
+              この通知とリソースは合成データです。実環境の作業やAzureリソースの変更は行いません。
+            </p>
+            <div className="confirmation-actions">
+              <button
+                autoFocus
+                disabled={busy}
+                onClick={() => setConfirmingUatExport(false)}
+                type="button"
+              >
+                キャンセル
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => void exportSyntheticUat()}
+                type="button"
+              >
+                IssueとProjectに登録
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </>
   )
 }
