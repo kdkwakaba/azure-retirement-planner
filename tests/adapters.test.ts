@@ -10,12 +10,17 @@ import {
   explicitResourceIds,
   issueText,
   managedIssueContent,
+  priorityIssueLabel,
+  parentIssueKey,
+  parentIssueText,
+  parentIssueTitle,
+  workItemPhase,
   translateOfficialHtmlToJapanese,
 } from '@arp/adapters'
 import { credential } from '../packages/adapters/src/azure.ts'
 import { fixture, tenant, resourceId } from './fixtures.ts'
 import { hash } from '@arp/domain'
-import type { Approval } from '@arp/contracts'
+import { categorySchema, type Approval } from '@arp/contracts'
 
 test('official evidence translation uses the managed-identity Translator contract', async () => {
   let requestBody = ''
@@ -355,43 +360,213 @@ test('GitHub registration uses safe text and persists Issue separately from Proj
     'synthetic-token',
   )
   const item = fixture().workItems[0]!
-  item.description = 'synthetic-private-description'
+  item.description = `Review the target ${resourceId} with engineer@example.com`
   const text = issueText(item)
   assert.ok(text.includes('カテゴリ: 影響確認'))
   assert.ok(text.includes('対象ワークロード（匿名化）:'))
-  assert.ok(
-    text.includes(
-      ['カテゴリ: 影響確認', '対象ワークロード（匿名化）:'].join('\n\n'),
-    ),
-  )
+  assert.ok(text.includes('カテゴリ: 影響確認'))
+  assert.ok(text.includes('作業フェーズ: 影響確認'))
   assert.ok(!text.includes(resourceId))
-  assert.ok(!text.includes(item.description))
+  assert.ok(text.includes('Review the target [リソースIDはレビュー画面を参照]'))
+  assert.ok(text.includes('[メールアドレス省略]'))
+  assert.ok(text.includes('完了条件'))
+  assert.ok(text.includes('Confirm evidence'))
+  assert.ok(text.includes('作業フェーズ: 影響確認'))
   const posts: string[] = []
+  const createPayloads: Array<Record<string, unknown>> = []
   t.mock.method(
     globalThis,
     'fetch',
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input))
       assert.equal(url.hostname, 'api.github.com')
-      if (init?.method === 'GET') return Response.json([])
+      if (init?.method === 'GET')
+        return url.pathname.includes('/labels/')
+          ? Response.json({
+              name: decodeURIComponent(url.pathname.split('/').at(-1)!),
+            })
+          : Response.json([])
       posts.push(url.pathname)
-      if (url.pathname.endsWith('/issues'))
+      if (url.pathname.endsWith('/issues')) {
+        createPayloads.push(
+          JSON.parse(String(init?.body)) as Record<string, unknown>,
+        )
         return Response.json({
           node_id: 'synthetic-issue',
           html_url:
             'https://github.com/synthetic-owner/synthetic-repo/issues/1',
         })
+      }
       return Response.json({ errors: [{ message: 'synthetic-project-error' }] })
     },
   )
   assert.equal(await client.find(item.id), null)
   const issue = await client.create(item)
   assert.equal(issue.id, 'synthetic-issue')
+  assert.deepEqual(createPayloads[0]?.labels, [
+    'Priority: Medium',
+    'Phase: 影響確認',
+  ])
+  assert.match(String(createPayloads[0]?.title), /Synthetic verification/)
   await assert.rejects(client.addToProject('synthetic-project', issue.id))
   assert.deepEqual(posts, [
     '/repos/synthetic-owner/synthetic-repo/issues',
     '/graphql',
   ])
+})
+
+test('parent Issue groups a retirement and workload with safe stable identity', () => {
+  const assessment = fixture()
+  const key = parentIssueKey(assessment)
+  assert.equal(key, parentIssueKey(fixture()))
+  assert.ok(
+    parentIssueTitle(assessment).includes(
+      'SYNTHETIC Basic Load Balancer retirement',
+    ),
+  )
+  assert.ok(parentIssueText(assessment).includes(`<!-- arp-parent:${key} -->`))
+  assert.ok(parentIssueText(assessment).includes('匿名化'))
+  assert.ok(!parentIssueText(assessment).includes(resourceId))
+})
+
+test('GitHub priority labels map P1 to High, P2/P3 to Medium, and P4 to Low', () => {
+  assert.deepEqual(
+    ['P1', 'P2', 'P3', 'P4'].map((priority) =>
+      priorityIssueLabel(priority as 'P1' | 'P2' | 'P3' | 'P4'),
+    ),
+    ['Priority: High', 'Priority: Medium', 'Priority: Medium', 'Priority: Low'],
+  )
+  assert.equal(priorityIssueLabel(null), null)
+})
+
+test('every supported work category maps to one of the four Sub-Issue phases', () => {
+  assert.deepEqual(
+    categorySchema.options.map((category) => workItemPhase(category)),
+    [
+      '影響確認',
+      '影響確認',
+      '設計',
+      '設計',
+      '設計',
+      '変更',
+      '変更',
+      '変更',
+      '設計',
+      'テスト',
+      '変更',
+      '変更',
+      'テスト',
+      'テスト',
+      '変更',
+      '変更',
+      '変更',
+      '変更',
+      '影響確認',
+      '影響確認',
+      '設計',
+      '設計',
+      '設計',
+      '設計',
+    ],
+  )
+})
+
+test('Sub-Issue linking is idempotent and preserves the GitHub hierarchy', async (t) => {
+  const client = new GitHubClient(
+    'synthetic-owner',
+    'synthetic-repo',
+    'synthetic-token',
+  )
+  let linked = false
+  const writes: Array<{ path: string; body: unknown }> = []
+  t.mock.method(
+    globalThis,
+    'fetch',
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input))
+      if (init?.method === 'GET')
+        return Response.json(linked ? [{ id: 42 }] : [])
+      writes.push({ path: url.pathname, body: JSON.parse(String(init?.body)) })
+      linked = true
+      return Response.json({ id: 42 })
+    },
+  )
+  await client.ensureSubIssue(7, 42)
+  await client.ensureSubIssue(7, 42)
+  assert.deepEqual(writes, [
+    {
+      path: '/repos/synthetic-owner/synthetic-repo/issues/7/sub_issues',
+      body: { sub_issue_id: 42 },
+    },
+  ])
+})
+
+test('parent Issue outbox persists its identity and does not create duplicates', async (t) => {
+  const store = new AzureStore('syntheticstore')
+  const rows = new Map<string, Record<string, unknown>>()
+  store.table = {
+    getEntity: async (partitionKey: string, rowKey: string) => {
+      const row = rows.get(`${partitionKey}/${rowKey}`)
+      if (!row) throw Object.assign(new Error('not found'), { statusCode: 404 })
+      return { ...row }
+    },
+    createEntity: async (entity: Record<string, unknown>) => {
+      const key = `${entity.partitionKey}/${entity.rowKey}`
+      if (rows.has(key))
+        throw Object.assign(new Error('exists'), { statusCode: 409 })
+      rows.set(key, { ...entity, etag: 'etag-1' })
+    },
+    updateEntity: async (
+      entity: Record<string, unknown>,
+      _mode: string,
+      options?: { etag?: string },
+    ) => {
+      const key = `${entity.partitionKey}/${entity.rowKey}`
+      const current = rows.get(key)
+      if (!current)
+        throw Object.assign(new Error('not found'), { statusCode: 404 })
+      if (options?.etag && options.etag !== current.etag)
+        throw Object.assign(new Error('conflict'), { statusCode: 412 })
+      rows.set(key, { ...current, ...entity, etag: 'etag-next' })
+    },
+  } as unknown as typeof store.table
+  const assessment = fixture()
+  const github = new GitHubClient(
+    'synthetic-owner',
+    'synthetic-repo',
+    'synthetic-token',
+  )
+  let issueCreates = 0
+  t.mock.method(
+    globalThis,
+    'fetch',
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input))
+      if (init?.method === 'GET')
+        return url.pathname.includes('/labels/')
+          ? Response.json({
+              name: decodeURIComponent(url.pathname.split('/').at(-1)!),
+            })
+          : Response.json([])
+      if (url.pathname.endsWith('/issues')) {
+        issueCreates++
+        return Response.json({
+          node_id: 'parent-node-id',
+          id: 700,
+          number: 7,
+          html_url:
+            'https://github.com/synthetic-owner/synthetic-repo/issues/7',
+        })
+      }
+      return Response.json({})
+    },
+  )
+  const first = await store.ensureParentIssue(github, assessment)
+  const second = await store.ensureParentIssue(github, assessment)
+  assert.deepEqual(second, first)
+  assert.equal(issueCreates, 1)
+  assert.ok(rows.size === 1)
+  assert.equal([...rows.values()][0]?.state, 'IssueCreated')
 })
 test('TST-22: Project retry reuses the persisted Issue instead of creating another', async (t) => {
   const client = new GitHubClient(
@@ -409,7 +584,12 @@ test('TST-22: Project retry reuses the persisted Issue instead of creating anoth
     'fetch',
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input))
-      if (init?.method !== 'POST') return Response.json([])
+      if (init?.method !== 'POST')
+        return url.pathname.includes('/labels/')
+          ? Response.json({
+              name: decodeURIComponent(url.pathname.split('/').at(-1)!),
+            })
+          : Response.json([])
       if (url.pathname.endsWith('/issues')) {
         issueCreates++
         return Response.json({

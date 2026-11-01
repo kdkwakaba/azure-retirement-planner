@@ -113,6 +113,7 @@ Advisor Workbookと重複する公式情報のみの画面を中心にせず、�
 | FR-018 | 6分類ごとに理由、不足属性、Evidenceを保持し、リソース単位の結果を表示する |
 | FR-019 | 作業候補の生成・集約・担当・順序・承認条件を設定可能にし、根拠と設定版を記録する |
 | FR-020 | 評価レビューと作業確定・外部登録の承認を別々に管理し、定型結果だけ評価レビューを省略可能にする |
+| FR-021 | GitHubへ登録する作業を作業内容が読めるタイトル／本文にし、Workload親Issue・4フェーズIssue・承認済み作業Sub-Issueとして冪等に関連付け、P1/P2/P3/P4をHigh/Medium/Medium/Lowラベルへ対応させる |
 
 ## 11. Non-Functional Requirements
 
@@ -421,7 +422,7 @@ flowchart TD
 
 原本とReceipt永続化後に受信成功を返す。Queue投入失敗はOutbox再走査で回復。同一イベントはETagと期限付きリース。QueueはID参照のみ。一時失敗は原則5試行、429は待機指示を優先。403・未対応Schemaは無限Retryしない。
 
-外部Issue作成後の応答喪失は`Sending`状態で相関マーカーを検索し、見つかれば`IssueCreated`へ回復する。未発見または検索不完全ならIssueを再作成せず保留する。Exactly Onceを保証とはしない。Project追加だけ失敗した場合は保存済みIssue IDから再開し、Issue再作成をしない。障害中も公式ポータルと保存入力から手動評価できるRunbookを用意する。
+外部Issue作成後の応答喪失は`Sending`状態で相関マーカーを検索し、見つかれば`IssueCreated`へ回復する。親Issue、必要なフェーズIssue、作業Issueをそれぞれ安定マーカー・Table Outboxで照合する。Sub-Issue関係追加とProject登録も再試行前に既存関係を照合し、未発見または検索不完全なら再作成せず保留する。Exactly Onceを保証とはしない。障害中も公式ポータルと保存入力から手動評価できるRunbookを用意する。
 
 ## 23. Observability
 
@@ -489,16 +490,17 @@ sequenceDiagram
   R->>S: 選択版の承認
   S->>S: Hash・Outbox保存
   O->>S: 現行版・根拠・承認照合
-  O->>I: 相関IDで既存確認
-  O->>I: 未登録なら作成／承認更新
-  O->>S: Issue ID保存
-  O->>P: 追加・フィールド更新
-  O->>S: Item ID・同期状態保存
+  O->>I: Retirement×Workload親Issueを照合／作成
+  O->>I: 必要なフェーズIssueを照合／作成し親へ関連付け
+  O->>I: 承認済みWork Item Issueを作成しフェーズへ関連付け
+  O->>S: 各Issue ID・番号・成否状態を保存
+  O->>P: 親・フェーズ・作業Issueを追加／項目更新
+  O->>S: 各Project Item ID・同期状態を保存
 ```
 
 ## 29. Acceptance Criteria
 
-AC-001: 100回再送でも版・作業・Issueが増殖しない。AC-002: 通知から根拠・対象へ追跡可能。AC-003: 空結果を対象外にしない。AC-004: 取得欠落を明示。AC-005: 2軸判断・確率・ルール理由保存。AC-006: 主張・作業に根拠。AC-007: 架空ID・不正日付・DAG・無承認の外部通過0。AC-008: 訂正・部分承認・失効。AC-009: 外部成否不明を隔離。AC-010: Unknownと外部Closeだけで自動完了しない。AC-011: モデル停止時に手動評価。AC-012: Azure変更権限なし。AC-013: 復旧・再実行試験。AC-014: 品質・費用・未評価を報告。AC-015: 非Retirement分類の非推奨も選別し、未発表日付の補完・移行断定をしない。AC-016: 作成停止・サポート終了・廃止の適用範囲を分け、期限更新で再評価・再承認する。
+AC-001: 100回再送でも版・作業・Issueが増殖しない。AC-002: 通知から根拠・対象へ追跡可能。AC-003: 空結果を対象外にしない。AC-004: 取得欠落を明示。AC-005: 2軸判断・確率・ルール理由保存。AC-006: 主張・作業に根拠。AC-007: 架空ID・不正日付・DAG・無承認の外部通過0。AC-008: 訂正・部分承認・失効。AC-009: 外部成否不明を隔離。AC-010: Unknownと外部Closeだけで自動完了しない。AC-011: モデル停止時に手動評価。AC-012: Azure変更権限なし。AC-013: 復旧・再実行試験。AC-014: 品質・費用・未評価を報告。AC-015: 非Retirement分類の非推奨も選別し、未発表日付の補完・移行断定をしない。AC-016: 作成停止・サポート終了・廃止の適用範囲を分け、期限更新で再評価・再承認する。AC-017: 作業Issueにタイトル・説明・完了条件を表示し、親／フェーズ／作業のSub-Issue関係、優先度ラベル対応、再試行時の重複防止を維持する。
 
 ## 30. Recommended Next Steps
 
@@ -523,4 +525,7 @@ AC-001: 100回再送でも版・作業・Issueが増殖しない。AC-002: 通�
 - [Table設計](https://learn.microsoft.com/en-us/azure/storage/tables/table-storage-design)
 - [構造化出力](https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/structured-outputs)
 - [GitHub Projects API](https://docs.github.com/en/issues/planning-and-tracking-with-projects/automating-your-project/using-the-api-to-manage-projects)
+- [GitHub Sub-Issues API](https://docs.github.com/en/rest/issues/sub-issues)
+- [GitHub Issue Labels API](https://docs.github.com/en/rest/issues/labels)
+- [GitHub Sub-IssueのProject表示](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/adding-sub-issues)
 
