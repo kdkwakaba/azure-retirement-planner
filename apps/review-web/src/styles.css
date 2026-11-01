@@ -101,24 +101,87 @@ small {
   align-items: center;
   gap: 6px;
 }
+.priority-help-container {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  vertical-align: middle;
+}
 .priority-help {
   display: inline-flex;
-  width: 17px;
-  height: 17px;
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0;
   align-items: center;
   justify-content: center;
   border: 1px solid #54716e;
   border-radius: 50%;
   color: #315e57;
+  background: #fff;
   font-size: 11px;
   font-weight: 700;
   line-height: 1;
-  cursor: help;
-  vertical-align: middle;
+  cursor: pointer;
 }
 .priority-help:focus-visible {
   outline: 2px solid #126b5d;
   outline-offset: 2px;
+}
+.priority-tooltip {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  width: min(360px, calc(100vw - 32px));
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid #46666b;
+  border-radius: 8px;
+  background: #102c36;
+  box-shadow: 0 8px 24px rgb(16 44 54 / 24%);
+  color: #eff9f7;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+.priority-tooltip-item {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 8px;
+}
+.priority-tooltip-item strong {
+  color: #b8e8dc;
+}
+.priority-help-container--left .priority-tooltip {
+  right: auto;
+  left: 0;
+}
+.priority-help-container:hover .priority-tooltip,
+.priority-help-container:focus-within .priority-tooltip,
+.priority-help-container[data-open='true'] .priority-tooltip {
+  visibility: visible;
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .priority-tooltip {
+    transition: none;
+  }
+}
+@media (max-width: 480px) {
+  .priority-help-container .priority-tooltip {
+    position: fixed;
+    top: 50%;
+    right: auto;
+    left: 50%;
+    width: min(360px, calc(100vw - 32px));
+    transform: translate(-50%, -50%);
+  }
 }
 .metrics {
   display: flex;

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { assessmentSchema, type Assessment } from '@arp/contracts'
 import './styles.css'
@@ -65,19 +65,41 @@ const priorityDescriptions: Record<string, string> = {
   P3: '通常の変更計画へ組み込み、進捗を確認します。GitHubラベルはMediumです。',
   P4: '影響が限定的で余裕がある状態です。経過観察または将来計画として扱います。GitHubラベルはLowです。',
 }
-function PriorityHelp() {
-  const description = Object.entries(priorityDescriptions)
-    .map(([priority, text]) => `${priority}: ${text}`)
-    .join('\n\n')
+function PriorityHelp({
+  placement = 'left',
+}: {
+  placement?: 'left' | 'right'
+}) {
+  const tooltipId = useId()
+  const [open, setOpen] = useState(false)
   return (
     <span
-      className="priority-help"
-      role="img"
-      tabIndex={0}
-      aria-label="P1からP4の優先度の説明"
-      title={description}
+      className={`priority-help-container priority-help-container--${placement}`}
+      data-open={open}
     >
-      i
+      <button
+        className="priority-help"
+        type="button"
+        aria-label="P1からP4の優先度の説明を表示"
+        aria-describedby={tooltipId}
+        onClick={() => setOpen((current) => !current)}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            setOpen(false)
+            event.currentTarget.blur()
+          }
+        }}
+      >
+        ?
+      </button>
+      <span className="priority-tooltip" id={tooltipId} role="tooltip">
+        {Object.entries(priorityDescriptions).map(([priority, description]) => (
+          <span className="priority-tooltip-item" key={priority}>
+            <strong>{priority}</strong>
+            <span>{description}</span>
+          </span>
+        ))}
+      </span>
     </span>
   )
 }
@@ -409,7 +431,7 @@ function App() {
             </article>
             <article>
               <small className="priority-caption">
-                P1・P2 <PriorityHelp />
+                P1・P2 <PriorityHelp placement="right" />
               </small>
               <strong>{summary.highPriority}</strong>
             </article>
@@ -535,7 +557,7 @@ function App() {
                       </article>
                       <article>
                         <small className="priority-caption">
-                          暫定優先度 <PriorityHelp />
+                          暫定優先度 <PriorityHelp placement="right" />
                         </small>
                         <strong>{current.effectivePriority ?? '未確定'}</strong>
                       </article>
