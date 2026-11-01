@@ -1,8 +1,9 @@
-import type { WorkItem } from '@arp/contracts'
+import type { Assessment, Priority, WorkItem } from '@arp/contracts'
 import { hash } from '@arp/domain'
 import { z } from 'zod'
 import {
   GitHubGraphQLError,
+  RemoteError,
   jsonRequest,
   type SafeFailureCategory,
 } from './http.ts'
@@ -28,6 +29,91 @@ const categoryLabels: Record<string, string> = {
   'Documentation Update': 'ドキュメント更新',
   'CMDB Update': 'CMDB更新',
   'Policy and IaC Update': 'ポリシー・IaC更新',
+}
+const phaseLabels: Record<string, string> = {
+  'Impact Verification': '影響確認',
+  'Owner Confirmation': '影響確認',
+  'Migration Assessment': '設計',
+  'Architecture Design': '設計',
+  'Proof of Concept': '設計',
+  'Application Change': '変更',
+  'Infrastructure Change': '変更',
+  'Network Change': '変更',
+  'Security Review': '設計',
+  Test: 'テスト',
+  'Change Management': '変更',
+  'Production Migration': '変更',
+  Validation: 'テスト',
+  'Rollback Preparation': 'テスト',
+  'Legacy Resource Removal': '変更',
+  'Documentation Update': '変更',
+  'CMDB Update': '変更',
+  'Policy and IaC Update': '変更',
+  'Customer Communication': '影響確認',
+  'Cross-Team Coordination': '影響確認',
+  'Vendor Assessment': '設計',
+  'Cost Assessment': '設計',
+  'Budget Approval': '設計',
+  'Contract Review': '設計',
+}
+const priorityLabels: Record<Priority, string> = {
+  P1: 'Priority: High',
+  P2: 'Priority: Medium',
+  P3: 'Priority: Medium',
+  P4: 'Priority: Low',
+}
+const issueLabelColors: Record<string, string> = {
+  'Priority: High': 'd73a4a',
+  'Priority: Medium': 'fbca04',
+  'Priority: Low': '0e8a16',
+  'Phase: 影響確認': '1d76db',
+  'Phase: 設計': '5319e7',
+  'Phase: 変更': 'e99695',
+  'Phase: テスト': 'bfd4f2',
+  'ARP: Retirement': '0052cc',
+}
+export function workItemPhase(category: string): string {
+  const phase = phaseLabels[category]
+  if (!phase) throw new Error('Unsupported work item category for Issue phase')
+  return phase
+}
+function phaseLabel(category: string): string {
+  return `Phase: ${workItemPhase(category)}`
+}
+export function priorityIssueLabel(priority: Priority | null): string | null {
+  return priority ? priorityLabels[priority] : null
+}
+function issueSafeText(value: string): string {
+  return value
+    .replace(
+      /\/subscriptions\/[^\s`<>\])}]+/gi,
+      '[リソースIDはレビュー画面を参照]',
+    )
+    .replace(
+      /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
+      '[メールアドレス省略]',
+    )
+}
+function boundedTitle(value: string): string {
+  return issueSafeText(value)
+    .replace(/[\r\n]+/g, ' ')
+    .slice(0, 180)
+    .trim()
+}
+function priorityOf(assessment: Assessment): Priority | null {
+  return assessment.effectivePriority
+}
+export type GitHubIssueReference = {
+  id: string
+  databaseId: number
+  number: number
+  url: string
+}
+export type GitHubIssueGroupInput = {
+  marker: string
+  title: string
+  body: string
+  labels: string[]
 }
 function graphQLOperation(query: string): string {
   if (query.includes('addProjectV2ItemById')) return 'ProjectAdd'
@@ -69,7 +155,7 @@ function japaneseCategory(category: string): string {
   return categoryLabels[category] ?? category
 }
 export function managedIssueContent(item: WorkItem): string {
-  // 外部には最小限の管理属性のみ送信し、本文の手編集領域と分離する。
+  // Work Itemの承認済み作業内容を転記し、Resource ID・メールは外部へ複製しない。
   return [
     ...(item.title.startsWith('[SYNTHETIC UAT]')
       ? [
@@ -77,13 +163,31 @@ export function managedIssueContent(item: WorkItem): string {
         ]
       : []),
     `カテゴリ: ${japaneseCategory(item.category)}`,
+    `作業フェーズ: ${workItemPhase(item.category)}`,
     `対象ワークロード（匿名化）: ${hash(item.workloadId).slice(0, 12)}`,
     `優先度: ${item.priority ?? '未確定'}`,
+    `優先度ラベル: ${priorityIssueLabel(item.priority) ?? '未設定'}`,
     `対応開始日: ${item.plannedStartDate ?? '未確定'}`,
     `対応期限: ${item.dueDate ?? '未確定'}`,
+    `担当チーム候補: ${item.ownerTeam ?? '未設定'}`,
+    `必要性: ${item.necessity === 'Required' ? '必須作業' : '推奨作業'}`,
+    '## 作業内容',
+    issueSafeText(item.description).slice(0, 8000),
+    '## 完了条件',
+    ...item.completionCriteria.map(
+      (criterion) => `- ${issueSafeText(criterion).slice(0, 1000)}`,
+    ),
+    '## 前提・依存作業',
+    ...(item.prerequisites.length
+      ? item.prerequisites.map(
+          (value) => `- ${issueSafeText(value).slice(0, 1000)}`,
+        )
+      : ['- なし']),
+    `依存Work Item ID: ${item.dependencyIds.join(', ') || 'なし'}`,
+    `対象リソース数: ${item.resourceIds.length}（識別子は認証済みレビュー画面を参照）`,
     `根拠ID: ${item.evidenceIds.join(', ')}`,
     `承認済み作業項目ID: ${item.id}`,
-    '詳細説明と完了条件は、認証済みレビュー画面を参照してください。',
+    '根拠の詳細と個別リソース情報は、認証済みレビュー画面を参照してください。',
   ].join('\n\n')
 }
 export function issueText(item: WorkItem): string {
@@ -94,6 +198,80 @@ export function issueText(item: WorkItem): string {
     managedIssueContent(item),
     managedEnd,
   ].join('\n')
+}
+export function parentIssueKey(assessment: Assessment): string {
+  return hash({
+    eventId: assessment.event.id,
+    workloadId: assessment.workloadId,
+  })
+}
+export function parentIssueInput(
+  assessment: Assessment,
+): GitHubIssueGroupInput {
+  const title = boundedTitle(assessment.event.title)
+  const priority = priorityOf(assessment)
+  const marker = `arp-parent:${parentIssueKey(assessment)}`
+  return {
+    marker,
+    title:
+      `[ARP][リタイアメント対応] ${title} — Workload ${hash(assessment.workloadId).slice(0, 8)}`.slice(
+        0,
+        256,
+      ),
+    body: [
+      `<!-- ${marker} -->`,
+      '',
+      '> Azureのライフサイクル通知に対する対応を、ワークロード単位で追跡する親Issueです。',
+      '',
+      `通知: ${issueSafeText(assessment.event.title).slice(0, 1000)}`,
+      `Tracking ID: ${issueSafeText(assessment.event.trackingId).slice(0, 200)}`,
+      `対象ワークロード（匿名化）: ${hash(assessment.workloadId).slice(0, 12)}`,
+      '優先度ラベルは親Issueのラベルを参照してください。',
+      '',
+      '## 対応タスク',
+      '影響確認・設計・変更・テストの各フェーズで、承認済み作業をSub-Issueとして管理します。',
+      '',
+      '個別リソース情報と根拠の詳細は、認証済みレビュー画面を参照してください。',
+    ].join('\n'),
+    labels: [
+      'ARP: Retirement',
+      ...(priority ? [priorityLabels[priority]] : []),
+    ],
+  }
+}
+export function parentIssueText(assessment: Assessment): string {
+  return parentIssueInput(assessment).body
+}
+export function parentIssueTitle(assessment: Assessment): string {
+  return parentIssueInput(assessment).title
+}
+export function phaseIssueInput(
+  assessment: Assessment,
+  item: WorkItem,
+): GitHubIssueGroupInput {
+  const phase = workItemPhase(item.category)
+  const key = hash({ parentKey: parentIssueKey(assessment), phase })
+  const label = `Phase: ${phase}`
+  return {
+    marker: `arp-phase:${key}`,
+    title:
+      `[ARP][${phase}] ${boundedTitle(assessment.event.title)} — Workload ${hash(assessment.workloadId).slice(0, 8)}`.slice(
+        0,
+        256,
+      ),
+    body: [
+      `<!-- arp-phase:${key} -->`,
+      '',
+      `親Issue配下で「${phase}」フェーズの承認済み作業をまとめます。`,
+      '',
+      `通知: ${issueSafeText(assessment.event.title).slice(0, 1000)}`,
+      `Tracking ID: ${issueSafeText(assessment.event.trackingId).slice(0, 200)}`,
+      `対象ワークロード（匿名化）: ${hash(assessment.workloadId).slice(0, 12)}`,
+      '',
+      'このフェーズに属する個別タスクはSub-Issueとして登録されます。',
+    ].join('\n'),
+    labels: ['ARP: Retirement', label],
+  }
 }
 export type ProjectFieldConfig = {
   statusFieldId?: string
@@ -113,9 +291,13 @@ export class GitHubClient {
     this.repo = repo
     this.token = token
   }
-  async request(path: string, body?: unknown) {
+  async request(
+    path: string,
+    body?: unknown,
+    method?: 'GET' | 'POST' | 'DELETE',
+  ) {
     const result = await jsonRequest('https://api.github.com' + path, {
-      method: body === undefined ? 'GET' : 'POST',
+      method: method ?? (body === undefined ? 'GET' : 'POST'),
       headers: {
         Authorization: `Bearer ${this.token}`,
         Accept: 'application/vnd.github+json',
@@ -144,13 +326,20 @@ export class GitHubClient {
     }
     return result
   }
-  async find(itemId: string): Promise<{ id: string; url: string } | null> {
+  async find(itemId: string): Promise<{
+    id: string
+    url: string
+    databaseId?: number
+    number?: number
+  } | null> {
     // 検索索引の反映待ちを避けRepositoryの全Issueをページング。上限到達は不明として停止。
     for (let page = 1; page <= 50; page++) {
       const items = z
         .array(
           z.object({
             node_id: z.string(),
+            id: z.number().int().positive().optional(),
+            number: z.number().int().positive().optional(),
             body: z.string().nullable(),
             html_url: z.url(),
           }),
@@ -164,29 +353,268 @@ export class GitHubClient {
         i.body?.includes(`<!-- arp:${itemId} -->`),
       )
       if (found.length > 1) throw new Error('Duplicate external work item')
-      if (found[0]) return { id: found[0].node_id, url: found[0].html_url }
+      if (found[0])
+        return {
+          id: found[0].node_id,
+          url: found[0].html_url,
+          ...(found[0].id ? { databaseId: found[0].id } : {}),
+          ...(found[0].number ? { number: found[0].number } : {}),
+        }
       if (items.length < 100) return null
     }
     throw new Error('External reconciliation incomplete')
   }
-  async recoverAmbiguousCreate(
-    itemId: string,
-  ): Promise<{ id: string; url: string }> {
+  async recoverAmbiguousCreate(itemId: string): Promise<{
+    id: string
+    url: string
+    databaseId?: number
+    number?: number
+  }> {
     const found = await this.find(itemId)
     if (!found)
       throw new Error('Ambiguous external creation; issue not yet discoverable')
     return found
   }
   async create(item: WorkItem): Promise<{ id: string; url: string }> {
+    const labels = [
+      priorityIssueLabel(item.priority),
+      phaseLabel(item.category),
+    ].filter((label): label is string => Boolean(label))
+    await this.ensureLabels(labels)
     const result = z.object({ node_id: z.string(), html_url: z.url() }).parse(
       await this.request(`/repos/${this.owner}/${this.repo}/issues`, {
         title: item.title.startsWith('[SYNTHETIC UAT]')
-          ? `[ARP][SYNTHETIC UAT] ${item.id.slice(0, 8)}`
-          : `[ARP] ${japaneseCategory(item.category)} ${item.id.slice(0, 8)}`,
+          ? `[ARP][SYNTHETIC UAT][${japaneseCategory(item.category)}] ${boundedTitle(item.title)} (${item.id.slice(0, 8)})`.slice(
+              0,
+              256,
+            )
+          : `[ARP][${japaneseCategory(item.category)}] ${boundedTitle(item.title)} (${item.id.slice(0, 8)})`.slice(
+              0,
+              256,
+            ),
         body: issueText(item),
+        ...(labels.length ? { labels } : {}),
       }),
     )
     return { id: result.node_id, url: result.html_url }
+  }
+
+  async ensureLabels(labels: string[]): Promise<void> {
+    for (const name of [...new Set(labels)]) {
+      const color = issueLabelColors[name]
+      if (!color) throw new Error('Unsupported managed GitHub label')
+      const path = `/repos/${this.owner}/${this.repo}/labels/${encodeURIComponent(name)}`
+      try {
+        await this.request(path)
+      } catch (error) {
+        if (!(error instanceof RemoteError) || error.status !== 404) throw error
+        try {
+          await this.request(`/repos/${this.owner}/${this.repo}/labels`, {
+            name,
+            color,
+            description: `Azure Retirement Planner: ${name}`,
+          })
+        } catch (createError) {
+          // Concurrent registrations may create the same shared label first.
+          if (
+            !(createError instanceof RemoteError) ||
+            createError.status !== 422
+          )
+            throw createError
+          await this.request(path)
+        }
+      }
+    }
+  }
+
+  async findParent(
+    assessment: Assessment,
+  ): Promise<GitHubIssueReference | null> {
+    return this.findGroupIssue(`arp-parent:${parentIssueKey(assessment)}`)
+  }
+
+  async findGroupIssue(markerId: string): Promise<GitHubIssueReference | null> {
+    if (!/^arp-(parent|phase):[a-f0-9]{64}$/.test(markerId))
+      throw new Error('Invalid managed Issue marker')
+    const marker = `<!-- ${markerId} -->`
+    for (let page = 1; page <= 50; page++) {
+      const items = z
+        .array(
+          z.object({
+            node_id: z.string(),
+            id: z.number().int().positive(),
+            number: z.number().int().positive(),
+            body: z.string().nullable(),
+            html_url: z.url(),
+          }),
+        )
+        .parse(
+          await this.request(
+            `/repos/${this.owner}/${this.repo}/issues?state=all&per_page=100&page=${page}`,
+          ),
+        )
+      const found = items.filter((issue) => issue.body?.includes(marker))
+      if (found.length > 1) throw new Error('Duplicate parent Issue')
+      if (found[0])
+        return {
+          id: found[0].node_id,
+          databaseId: found[0].id,
+          number: found[0].number,
+          url: found[0].html_url,
+        }
+      if (items.length < 100) return null
+    }
+    throw new Error('Parent Issue reconciliation incomplete')
+  }
+
+  async createParent(assessment: Assessment): Promise<GitHubIssueReference> {
+    return this.createGroupIssue({
+      marker: `arp-parent:${parentIssueKey(assessment)}`,
+      title: parentIssueTitle(assessment),
+      body: parentIssueText(assessment),
+      labels: [
+        'ARP: Retirement',
+        ...(priorityIssueLabel(priorityOf(assessment))
+          ? [priorityIssueLabel(priorityOf(assessment))!]
+          : []),
+      ],
+    })
+  }
+
+  async createGroupIssue(
+    input: GitHubIssueGroupInput,
+  ): Promise<GitHubIssueReference> {
+    if (!/^arp-(parent|phase):[a-f0-9]{64}$/.test(input.marker))
+      throw new Error('Invalid managed Issue marker')
+    await this.ensureLabels(input.labels)
+    return z
+      .object({
+        node_id: z.string(),
+        id: z.number().int().positive(),
+        number: z.number().int().positive(),
+        html_url: z.url(),
+      })
+      .transform((issue) => ({
+        id: issue.node_id,
+        databaseId: issue.id,
+        number: issue.number,
+        url: issue.html_url,
+      }))
+      .parse(
+        await this.request(`/repos/${this.owner}/${this.repo}/issues`, {
+          title: input.title.slice(0, 256),
+          body: input.body,
+          labels: input.labels,
+        }),
+      )
+  }
+
+  async recoverAmbiguousParent(
+    assessment: Assessment,
+  ): Promise<GitHubIssueReference> {
+    const found = await this.findParent(assessment)
+    if (!found)
+      throw new Error(
+        'Ambiguous parent Issue creation; parent is not yet discoverable',
+      )
+    return found
+  }
+
+  async getIssueReference(issueId: string): Promise<GitHubIssueReference> {
+    const result = z
+      .object({
+        data: z.object({
+          node: z
+            .object({
+              id: z.string(),
+              databaseId: z.number().int().positive(),
+              number: z.number().int().positive(),
+              url: z.url(),
+            })
+            .nullable(),
+        }),
+        errors: z.unknown().optional(),
+      })
+      .parse(
+        await this.request('/graphql', {
+          query:
+            'query($id:ID!){node(id:$id){...on Issue{id databaseId number url}}}',
+          variables: { id: issueId },
+        }),
+      )
+    throwGraphQLErrors(result.errors, 'IssueRead')
+    if (!result.data.node) throw new Error('Issue reference unavailable')
+    return {
+      id: result.data.node.id,
+      databaseId: result.data.node.databaseId,
+      number: result.data.node.number,
+      url: result.data.node.url,
+    }
+  }
+
+  async ensureSubIssue(
+    parentIssueNumber: number,
+    childDatabaseId: number,
+  ): Promise<void> {
+    const path = `/repos/${this.owner}/${this.repo}/issues/${parentIssueNumber}/sub_issues`
+    const children = z
+      .array(z.object({ id: z.number().int().positive() }))
+      .parse(await this.request(path))
+    if (children.some((child) => child.id === childDatabaseId)) return
+    await this.request(path, { sub_issue_id: childDatabaseId })
+  }
+
+  async syncWorkItemLabels(issueNumber: number, item: WorkItem): Promise<void> {
+    const desired = [
+      priorityIssueLabel(item.priority),
+      phaseLabel(item.category),
+    ].filter((label): label is string => Boolean(label))
+    await this.ensureLabels(desired)
+    const path = `/repos/${this.owner}/${this.repo}/issues/${issueNumber}/labels`
+    const current = z
+      .array(z.object({ name: z.string() }))
+      .parse(await this.request(path))
+      .map((label) => label.name)
+    const obsolete = current.filter(
+      (name) =>
+        (name.startsWith('Priority: ') || name.startsWith('Phase: ')) &&
+        !desired.includes(name),
+    )
+    for (const name of obsolete)
+      await this.request(
+        `${path}/${encodeURIComponent(name)}`,
+        undefined,
+        'DELETE',
+      )
+    const missing = desired.filter((name) => !current.includes(name))
+    if (missing.length) await this.request(path, { labels: missing })
+  }
+
+  async syncParentLabels(
+    issueNumber: number,
+    assessment: Assessment,
+  ): Promise<void> {
+    const desired = [
+      'ARP: Retirement',
+      priorityIssueLabel(priorityOf(assessment)),
+    ].filter((label): label is string => Boolean(label))
+    await this.ensureLabels(desired)
+    const path = `/repos/${this.owner}/${this.repo}/issues/${issueNumber}/labels`
+    const current = z
+      .array(z.object({ name: z.string() }))
+      .parse(await this.request(path))
+      .map((label) => label.name)
+    const obsolete = current.filter(
+      (name) => name.startsWith('Priority: ') && !desired.includes(name),
+    )
+    for (const name of obsolete)
+      await this.request(
+        `${path}/${encodeURIComponent(name)}`,
+        undefined,
+        'DELETE',
+      )
+    const missing = desired.filter((name) => !current.includes(name))
+    if (missing.length) await this.request(path, { labels: missing })
   }
 
   async updateManagedIssue(
@@ -423,6 +851,30 @@ export class GitHubClient {
       await this.setProjectField(projectId, itemId, config.dueDateFieldId, {
         date: item.dueDate,
       })
+  }
+  async updateProjectParentFields(
+    projectId: string,
+    itemId: string,
+    priority: Priority | null,
+    config: ProjectFieldConfig,
+    initializeStatus: boolean,
+  ): Promise<void> {
+    if (Boolean(config.statusFieldId) !== Boolean(config.todoOptionId))
+      throw new Error('Project status field configuration incomplete')
+    if (initializeStatus && config.statusFieldId && config.todoOptionId)
+      await this.setProjectField(projectId, itemId, config.statusFieldId, {
+        singleSelectOptionId: config.todoOptionId,
+      })
+    if (Boolean(config.priorityFieldId) !== Boolean(config.priorityOptionIds))
+      throw new Error('Project priority field configuration incomplete')
+    if (config.priorityFieldId && config.priorityOptionIds && priority) {
+      const optionId = config.priorityOptionIds[priority]
+      if (!optionId)
+        throw new Error('Project priority option is not configured')
+      await this.setProjectField(projectId, itemId, config.priorityFieldId, {
+        singleSelectOptionId: optionId,
+      })
+    }
   }
   async setProjectField(
     projectId: string,
