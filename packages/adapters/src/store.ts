@@ -1,8 +1,16 @@
 import { BlobServiceClient } from '@azure/storage-blob'
 import { TableClient, type TransactionAction } from '@azure/data-tables'
 import { QueueServiceClient } from '@azure/storage-queue'
-import type { Assessment, Approval } from '@arp/contracts'
-import { assessmentSchema, approvalSchema } from '@arp/contracts'
+import type {
+  Assessment,
+  Approval,
+  DecisionReevaluationRun,
+} from '@arp/contracts'
+import {
+  assessmentSchema,
+  approvalSchema,
+  decisionReevaluationRunSchema,
+} from '@arp/contracts'
 import { hash, verifyApproval } from '@arp/domain'
 import { credential } from './azure.ts'
 import {
@@ -75,6 +83,261 @@ export class AzureStore {
   }
   async assessment(id: string): Promise<Assessment> {
     return assessmentSchema.parse(await this.get('assessments', id))
+  }
+  async createDecisionReevaluation(
+    run: DecisionReevaluationRun,
+  ): Promise<DecisionReevaluationRun> {
+    decisionReevaluationRunSchema.parse(run)
+    const { resultAssessmentId, error: runError, ...persistedRun } = run
+    const entity = {
+      partitionKey: 'decision-reevaluation',
+      rowKey: run.runId,
+      entityKind: 'decision-reevaluation',
+      ...persistedRun,
+      ...(resultAssessmentId ? { resultAssessmentId } : {}),
+      ...(runError ? { error: runError } : {}),
+    }
+    try {
+      await this.table.createEntity(entity)
+    } catch (error) {
+      if ((error as { statusCode?: number }).statusCode !== 409) throw error
+      const existing = await this.decisionReevaluation(run.runId)
+      if (
+        existing.assessmentId !== run.assessmentId ||
+        existing.requestedBy !== run.requestedBy ||
+        existing.reason !== run.reason
+      )
+        throw new Error('Reevaluation run ID conflict', { cause: error })
+      return existing
+    }
+    const lockKey = 'active:' + run.assessmentId
+    try {
+      await this.table.createEntity({
+        partitionKey: 'decision-reevaluation',
+        rowKey: lockKey,
+        entityKind: 'decision-reevaluation-lock',
+        runId: run.runId,
+        assessmentId: run.assessmentId,
+      })
+      return run
+    } catch (error) {
+      if ((error as { statusCode?: number }).statusCode !== 409) {
+        await this.table.deleteEntity('decision-reevaluation', run.runId)
+        throw error
+      }
+      const active = await this.table.getEntity<Record<string, unknown>>(
+        'decision-reevaluation',
+        lockKey,
+      )
+      const activeRunId = typeof active.runId === 'string' ? active.runId : null
+      if (activeRunId) {
+        const activeRun = await this.decisionReevaluation(activeRunId)
+        if (!['Completed', 'Failed'].includes(activeRun.state)) {
+          await this.table.deleteEntity('decision-reevaluation', run.runId)
+          return activeRun
+        }
+      }
+      try {
+        await this.table.deleteEntity('decision-reevaluation', lockKey, {
+          etag: active.etag as string,
+        })
+        await this.table.createEntity({
+          partitionKey: 'decision-reevaluation',
+          rowKey: lockKey,
+          entityKind: 'decision-reevaluation-lock',
+          runId: run.runId,
+          assessmentId: run.assessmentId,
+        })
+      } catch (retryError) {
+        if (
+          ![409, 412].includes(
+            (retryError as { statusCode?: number }).statusCode ?? 0,
+          )
+        )
+          throw retryError
+        await this.table.deleteEntity('decision-reevaluation', run.runId)
+        const currentLock = await this.table.getEntity<Record<string, unknown>>(
+          'decision-reevaluation',
+          lockKey,
+        )
+        if (typeof currentLock.runId !== 'string') throw retryError
+        return this.decisionReevaluation(currentLock.runId)
+      }
+      return run
+    }
+  }
+  async decisionReevaluation(runId: string): Promise<DecisionReevaluationRun> {
+    if (!/^[0-9a-f-]{36}$/i.test(runId)) throw new Error('Invalid run ID')
+    const row = await this.table.getEntity<Record<string, unknown>>(
+      'decision-reevaluation',
+      runId,
+    )
+    return decisionReevaluationRunSchema.parse({
+      runId: row.runId,
+      assessmentId: row.assessmentId,
+      state: row.state,
+      requestedBy: row.requestedBy,
+      requestedAt: row.requestedAt,
+      reason: row.reason,
+      resultAssessmentId: row.resultAssessmentId ?? null,
+      error: row.error ?? null,
+      updatedAt: row.updatedAt,
+    })
+  }
+  async dispatchDecisionReevaluations(): Promise<void> {
+    for await (const row of this.table.listEntities<Record<string, unknown>>({
+      queryOptions: {
+        filter:
+          "PartitionKey eq 'decision-reevaluation' and entityKind eq 'decision-reevaluation' and state eq 'Pending'",
+      },
+    })) {
+      if (typeof row.rowKey !== 'string')
+        throw new Error('Reevaluation key missing')
+      try {
+        await this.table.updateEntity(
+          {
+            partitionKey: 'decision-reevaluation',
+            rowKey: row.rowKey,
+            entityKind: 'decision-reevaluation',
+            state: 'Queued',
+            updatedAt: new Date().toISOString(),
+          },
+          'Merge',
+          { etag: row.etag as string },
+        )
+      } catch (error) {
+        if ((error as { statusCode?: number }).statusCode === 412) continue
+        throw error
+      }
+      try {
+        await this.queues.getQueueClient('assessments').sendMessage(
+          Buffer.from(
+            JSON.stringify({
+              kind: 'decision-reevaluation',
+              runId: row.rowKey,
+            }),
+          ).toString('base64'),
+        )
+      } catch (error) {
+        try {
+          const queued = await this.table.getEntity<Record<string, unknown>>(
+            'decision-reevaluation',
+            row.rowKey,
+          )
+          if (queued.state === 'Queued')
+            await this.table.updateEntity(
+              {
+                partitionKey: 'decision-reevaluation',
+                rowKey: row.rowKey,
+                entityKind: 'decision-reevaluation',
+                state: 'Pending',
+                updatedAt: new Date().toISOString(),
+              },
+              'Merge',
+              { etag: queued.etag as string },
+            )
+        } catch (restoreError) {
+          if ((restoreError as { statusCode?: number }).statusCode !== 412)
+            throw restoreError
+        }
+        throw error
+      }
+    }
+  }
+  async recoverStaleDecisionReevaluations(): Promise<void> {
+    const cutoff = Date.now() - 20 * 60_000
+    for await (const row of this.table.listEntities<Record<string, unknown>>({
+      queryOptions: {
+        filter:
+          "PartitionKey eq 'decision-reevaluation' and entityKind eq 'decision-reevaluation' and state eq 'Processing'",
+      },
+    })) {
+      const updatedAt =
+        typeof row.updatedAt === 'string' ? Date.parse(row.updatedAt) : NaN
+      if (
+        typeof row.rowKey === 'string' &&
+        Number.isFinite(updatedAt) &&
+        updatedAt < cutoff
+      )
+        await this.finishDecisionReevaluation(
+          row.rowKey,
+          'Failed',
+          null,
+          'ProcessingFailed',
+        )
+    }
+  }
+  async claimDecisionReevaluation(
+    runId: string,
+  ): Promise<DecisionReevaluationRun | null> {
+    const row = await this.table.getEntity<Record<string, unknown>>(
+      'decision-reevaluation',
+      runId,
+    )
+    if (row.state === 'Processing') {
+      const updatedAt =
+        typeof row.updatedAt === 'string' ? Date.parse(row.updatedAt) : NaN
+      if (Number.isFinite(updatedAt) && Date.now() - updatedAt > 20 * 60_000) {
+        await this.finishDecisionReevaluation(
+          runId,
+          'Failed',
+          null,
+          'ProcessingFailed',
+        )
+      }
+      return null
+    }
+    if (row.state !== 'Queued') return null
+    try {
+      await this.table.updateEntity(
+        {
+          partitionKey: 'decision-reevaluation',
+          rowKey: runId,
+          entityKind: 'decision-reevaluation',
+          state: 'Processing',
+          updatedAt: new Date().toISOString(),
+        },
+        'Merge',
+        { etag: row.etag as string },
+      )
+    } catch (error) {
+      if ((error as { statusCode?: number }).statusCode === 412) return null
+      throw error
+    }
+    return this.decisionReevaluation(runId)
+  }
+  async finishDecisionReevaluation(
+    runId: string,
+    state: 'Completed' | 'Failed',
+    resultAssessmentId: string | null,
+    error: DecisionReevaluationRun['error'],
+  ): Promise<void> {
+    await this.table.updateEntity(
+      {
+        partitionKey: 'decision-reevaluation',
+        rowKey: runId,
+        entityKind: 'decision-reevaluation',
+        state,
+        ...(resultAssessmentId ? { resultAssessmentId } : {}),
+        ...(error ? { error } : {}),
+        updatedAt: new Date().toISOString(),
+      },
+      'Merge',
+    )
+    const lockKey =
+      'active:' + (await this.decisionReevaluation(runId)).assessmentId
+    try {
+      const lock = await this.table.getEntity<Record<string, unknown>>(
+        'decision-reevaluation',
+        lockKey,
+      )
+      if (lock.runId === runId)
+        await this.table.deleteEntity('decision-reevaluation', lockKey, {
+          etag: lock.etag as string,
+        })
+    } catch (error) {
+      if ((error as { statusCode?: number }).statusCode !== 404) throw error
+    }
   }
   async head(logicalId: string): Promise<Head | null> {
     try {

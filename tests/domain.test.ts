@@ -5,6 +5,7 @@ import {
   approvalSchema,
   assessmentSchema,
   dateSchema,
+  decisionReevaluationRunSchema,
   resourceSchema,
 } from '@arp/contracts'
 import {
@@ -776,6 +777,30 @@ test('extra schema properties are rejected', () =>
     assessmentSchema.safeParse({ ...fixture(), unexpected: true }).success,
     false,
   ))
+test('decision reevaluation run requires bounded, explicit audit status', () => {
+  const run = {
+    runId: '8956a3aa-c691-4e0d-a717-4340dcb45b0f',
+    assessmentId: 'a'.repeat(64),
+    state: 'Queued',
+    requestedBy: 'user-object-id',
+    requestedAt: '2026-11-01T00:00:00.000Z',
+    reason: 'テスト用の再評価理由',
+    resultAssessmentId: null,
+    error: null,
+    updatedAt: '2026-11-01T00:00:00.000Z',
+  }
+  assert.equal(decisionReevaluationRunSchema.safeParse(run).success, true)
+  assert.equal(
+    decisionReevaluationRunSchema.safeParse({ ...run, unexpected: true })
+      .success,
+    false,
+  )
+  assert.equal(
+    decisionReevaluationRunSchema.safeParse({ ...run, state: 'Unknown' })
+      .success,
+    false,
+  )
+})
 for (const [impact, expected] of [
   ['Low', ['P1', 'P2', 'P2', 'P3', 'P3', 'P4']],
   ['Medium', ['P1', 'P2', 'P2', 'P3', 'P3', 'P3']],

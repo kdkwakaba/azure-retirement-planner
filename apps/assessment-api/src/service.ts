@@ -466,6 +466,101 @@ export async function assessSnapshot(message: unknown): Promise<void> {
     )
   }
 }
+
+export async function processDecisionReevaluation(
+  runId: string,
+): Promise<void> {
+  const settings = config()
+  const store = new AzureStore(settings.account)
+  const run = await store.claimDecisionReevaluation(runId)
+  if (!run) return
+  try {
+    if (
+      process.env.TEST_MODE_ENABLED !== 'true' ||
+      process.env.DECISION_REEVALUATION_ENABLED !== 'true'
+    )
+      throw new Error('Reevaluation feature disabled')
+    const source = await store.assessment(run.assessmentId)
+    const logicalId = hash({
+      eventId: source.event.id,
+      workloadId: source.workloadId,
+    })
+    const prior = await store.head(logicalId)
+    if (
+      !prior ||
+      prior.assessmentId !== source.id ||
+      source.event.trackingId === 'ARP-SYNTHETIC-UAT-001'
+    ) {
+      await store.finishDecisionReevaluation(
+        runId,
+        'Failed',
+        null,
+        'StaleAssessment',
+      )
+      return
+    }
+    if (!source.discoveryScope) {
+      await store.finishDecisionReevaluation(
+        runId,
+        'Failed',
+        null,
+        'MissingSnapshot',
+      )
+      return
+    }
+    const resultId = await assessWorkload(
+      store,
+      source.event,
+      source.resources,
+      [],
+      source.workloadId,
+      source.scopeComplete,
+      source.missingInformation,
+      settings.modelCalls,
+      source.impactDiscoveryOutcome ?? 'Incomplete',
+      source.discoveryScope,
+      {
+        runId,
+        sourceAssessmentId: source.id,
+        requestedBy: run.requestedBy,
+        requestedAt: run.requestedAt,
+        reason: run.reason,
+      },
+    )
+    if (!resultId) throw new Error('Reevaluation produced no assessment')
+    const result = await store.assessment(resultId)
+    const decisionInvocation = result.modelInvocations?.find(
+      (invocation) => invocation.stage === 'Decision',
+    )
+    if (decisionInvocation?.status !== 'Succeeded') {
+      const error =
+        decisionInvocation?.failureCategory === 'DailyLimit'
+          ? 'DailyLimit'
+          : 'ModelUnavailable'
+      await store.finishDecisionReevaluation(runId, 'Failed', resultId, error)
+      return
+    }
+    await store.finishDecisionReevaluation(runId, 'Completed', resultId, null)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : ''
+    const dailyLimit =
+      message.includes('Model calls disabled') ||
+      message.includes('Daily model call limit')
+    await store.finishDecisionReevaluation(
+      runId,
+      'Failed',
+      null,
+      dailyLimit
+        ? 'DailyLimit'
+        : message.includes('Decision-1')
+          ? 'ModelUnavailable'
+          : 'ProcessingFailed',
+    )
+    if (dailyLimit) return
+    throw error
+  }
+}
+
 async function assessWorkload(
   store: AzureStore,
   event: LifecycleEvent,
@@ -477,7 +572,8 @@ async function assessWorkload(
   limit: number,
   impactOutcome: NonNullable<Assessment['impactDiscoveryOutcome']>,
   discoveryScope: NonNullable<Assessment['discoveryScope']>,
-): Promise<void> {
+  reevaluation?: NonNullable<Assessment['reevaluation']>,
+): Promise<string | null> {
   const asOf = new Date().toISOString().slice(0, 10)
   const policyHash = hash(workflowPolicyData)
   const policyParsed = workflowPolicySchema.safeParse(workflowPolicyData)
@@ -502,6 +598,7 @@ async function assessWorkload(
       .sort((a, b) => a.id.localeCompare(b.id)),
     complete,
     decisionRevision: decisionRevision(limit),
+    ...(reevaluation ? { reevaluationRunId: reevaluation.runId } : {}),
   })
   const prior = await store.head(hash({ eventId: event.id, workloadId }))
   let previousAssessment: Assessment | null = null
@@ -509,7 +606,7 @@ async function assessWorkload(
     const current = await store.assessment(prior.assessmentId)
     previousAssessment = current
     const versionComparison = compareEventVersion(current.event, event)
-    if (versionComparison === 'IncomingStale') return
+    if (versionComparison === 'IncomingStale') return null
     if (versionComparison === 'Conflict') {
       complete = false
       missing = [
@@ -524,7 +621,7 @@ async function assessWorkload(
           prior,
         )
       }
-      return
+      return null
     }
   }
   const assessmentId = hash({ input: id, run: randomUUID() })
@@ -551,7 +648,7 @@ async function assessWorkload(
   let workItems: WorkItem[] = []
   const endpoint = process.env.DECISION_ENDPOINT,
     deployment = process.env.DECISION_DEPLOYMENT
-  if (deterministicNoReview) {
+  if (deterministicNoReview && !reevaluation) {
     modelInvocations.push(
       emitModelInvocation({
         stage: 'Decision',
@@ -659,7 +756,11 @@ async function assessWorkload(
   })
   const explanationEndpoint = process.env.EXPLANATION_ENDPOINT,
     explanationDeployment = process.env.EXPLANATION_DEPLOYMENT
-  if (deterministicNoReview || decision.status === 'Unavailable') {
+  if (
+    reevaluation ||
+    deterministicNoReview ||
+    decision.status === 'Unavailable'
+  ) {
     modelInvocations.push(
       emitModelInvocation({
         stage: 'Explanation',
@@ -872,6 +973,7 @@ async function assessWorkload(
   const assessment: Assessment = assessmentSchema.parse({
     id: assessmentId,
     sourceInputHash: id,
+    ...(reevaluation ? { reevaluation } : {}),
     workflowPolicyVersion: policyParsed.success
       ? policyParsed.data.version
       : 'Invalid',
@@ -887,6 +989,7 @@ async function assessWorkload(
     impactDiscoveryOutcome: impactOutcome,
     discoveryScope,
     humanReviewRequired:
+      Boolean(reevaluation) ||
       !deterministicNoReview ||
       !policyParsed.success ||
       routingErrors.length > 0,
@@ -895,7 +998,9 @@ async function assessWorkload(
     decision,
     effectivePriority: deterministicNoReview ? null : rules.priority,
     reviewReasons: deterministicNoReview
-      ? []
+      ? reevaluation
+        ? ['テスト用再評価結果のため、人間による確認が必要']
+        : []
       : [...rules.reviewReasons, ...routingErrors],
     explanation,
     workItems,
@@ -908,4 +1013,5 @@ async function assessWorkload(
     ? carryForwardHumanContext(assessment, previousAssessment)
     : assessment
   await store.commitAssessment(finalAssessment, prior)
+  return finalAssessment.id
 }
