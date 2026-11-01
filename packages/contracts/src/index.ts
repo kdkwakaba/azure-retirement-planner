@@ -356,6 +356,16 @@ export const assessmentSchema = z
   .object({
     id: z.string(),
     sourceInputHash: z.string().optional(),
+    reevaluation: z
+      .object({
+        runId: z.uuid(),
+        sourceAssessmentId: z.string().min(1),
+        requestedBy: z.string().min(1),
+        requestedAt: z.iso.datetime(),
+        reason: z.string().min(1).max(500),
+      })
+      .strict()
+      .optional(),
     workflowPolicyVersion: z.string().optional(),
     workflowPolicyHash: z.string().optional(),
     eventVersionId: z.string(),
@@ -398,6 +408,30 @@ export const assessmentSchema = z
     packageHash: z.string(),
   })
   .strict()
+export const decisionReevaluationRunSchema = z
+  .object({
+    runId: z.uuid(),
+    assessmentId: z.string().regex(/^[a-f0-9]{64}$/),
+    state: z.enum(['Pending', 'Queued', 'Processing', 'Completed', 'Failed']),
+    requestedBy: z.string().min(1),
+    requestedAt: z.iso.datetime(),
+    reason: z.string().min(1).max(500),
+    resultAssessmentId: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .nullable(),
+    error: z
+      .enum([
+        'StaleAssessment',
+        'MissingSnapshot',
+        'ModelUnavailable',
+        'DailyLimit',
+        'ProcessingFailed',
+      ])
+      .nullable(),
+    updatedAt: z.iso.datetime(),
+  })
+  .strict()
 export const approvalSchema = z
   .object({
     id: z.string(),
@@ -420,6 +454,9 @@ export type Decision = z.infer<typeof decisionSchema>
 export type Explanation = z.infer<typeof explanationSchema>
 export type WorkItem = z.infer<typeof workItemSchema>
 export type Assessment = z.infer<typeof assessmentSchema>
+export type DecisionReevaluationRun = z.infer<
+  typeof decisionReevaluationRunSchema
+>
 export type Approval = z.infer<typeof approvalSchema>
 export type Impact = z.infer<typeof impactSchema>
 export type Priority = z.infer<typeof prioritySchema>
