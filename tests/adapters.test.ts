@@ -28,6 +28,7 @@ test('official evidence translation uses the managed-identity Translator contrac
     {
       resourceId:
         '/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/arp/providers/Microsoft.CognitiveServices/accounts/arp-translate',
+      region: 'eastus',
       text: '<p>Retirement date</p>',
     },
     async () => ({
@@ -49,6 +50,11 @@ test('official evidence translation uses the managed-identity Translator contrac
         init?.headers && new Headers(init.headers).get('Ocp-Apim-ResourceId'),
         '/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/arp/providers/Microsoft.CognitiveServices/accounts/arp-translate',
       )
+      assert.equal(
+        init?.headers &&
+          new Headers(init.headers).get('Ocp-Apim-Subscription-Region'),
+        'eastus',
+      )
       requestBody = String(init?.body)
       return Response.json([
         { translations: [{ text: '<p>廃止日</p>', to: 'ja' }] },
@@ -67,7 +73,11 @@ test('official evidence translation rejects arbitrary resources and oversized te
   }
   await assert.rejects(
     translateOfficialHtmlToJapanese(
-      { resourceId: 'https://attacker.invalid', text: 'evidence' },
+      {
+        resourceId: 'https://attacker.invalid',
+        region: 'eastus',
+        text: 'evidence',
+      },
       async () => ({
         token: 'test-token',
         expiresOnTimestamp: Date.now() + 60_000,
@@ -81,6 +91,7 @@ test('official evidence translation rejects arbitrary resources and oversized te
       {
         resourceId:
           '/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/arp/providers/Microsoft.CognitiveServices/accounts/arp-translate',
+        region: 'eastus',
         text: 'x'.repeat(50_001),
       },
       async () => ({
