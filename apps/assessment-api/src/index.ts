@@ -26,7 +26,12 @@ import {
   withProcessingFailureLog,
   translateOfficialHtmlToJapanese,
 } from '@arp/adapters'
-import { assessSnapshot, config, synchronize } from './service.ts'
+import {
+  assessSnapshot,
+  config,
+  processDecisionReevaluation,
+  synchronize,
+} from './service.ts'
 import {
   createSyntheticUatAssessment,
   hasCompleteSyntheticUatIssueHierarchy,
@@ -97,11 +102,35 @@ app.http('api', {
         return reply(200, principal)
       if (request.method === 'GET' && path === 'uat/status')
         return reply(200, {
-          enabled: process.env.SYNTHETIC_UAT_ENABLED === 'true',
+          testModeEnabled: process.env.TEST_MODE_ENABLED === 'true',
+          syntheticUatEnabled:
+            process.env.TEST_MODE_ENABLED === 'true' &&
+            process.env.SYNTHETIC_UAT_ENABLED === 'true',
+          decisionReevaluationEnabled:
+            process.env.TEST_MODE_ENABLED === 'true' &&
+            process.env.DECISION_REEVALUATION_ENABLED === 'true',
+          canReevaluate:
+            principal.kind === 'User' && principal.roles.includes('Governance'),
         })
       const store = new AzureStore(config().account)
+      if (request.method === 'GET' && path === 'decision-reevaluation-status') {
+        requireUserRole(principal, apiRolePolicy.decisionReevaluation)
+        if (
+          process.env.TEST_MODE_ENABLED !== 'true' ||
+          process.env.DECISION_REEVALUATION_ENABLED !== 'true'
+        )
+          return reply(404, { error: 'Decision reevaluation is disabled' })
+        const query = z
+          .object({ runId: z.string().uuid() })
+          .strict()
+          .parse({ runId: request.query.get('runId') })
+        return reply(200, await store.decisionReevaluation(query.runId))
+      }
       if (request.method === 'GET' && path === 'uat/export-status') {
-        if (process.env.SYNTHETIC_UAT_ENABLED !== 'true')
+        if (
+          process.env.TEST_MODE_ENABLED !== 'true' ||
+          process.env.SYNTHETIC_UAT_ENABLED !== 'true'
+        )
           return reply(404, { error: 'Synthetic UAT is disabled' })
         const query = z
           .object({
@@ -196,9 +225,74 @@ app.http('api', {
         if (Buffer.byteLength(content) > 200000)
           return reply(413, { error: 'Request too large' })
         const payload: unknown = JSON.parse(content)
+        if (path === 'decision-reevaluation') {
+          requireUserRole(principal, apiRolePolicy.decisionReevaluation)
+          if (
+            process.env.TEST_MODE_ENABLED !== 'true' ||
+            process.env.DECISION_REEVALUATION_ENABLED !== 'true'
+          )
+            return reply(404, { error: 'Decision reevaluation is disabled' })
+          const body = z
+            .object({
+              assessmentId: z.string().regex(/^[a-f0-9]{64}$/),
+              runId: z.string().uuid(),
+              reason: z.string().trim().min(10).max(500),
+            })
+            .strict()
+            .parse(payload)
+          const assessment = await store.assessment(body.assessmentId)
+          if (
+            assessment.event.trackingId === 'ARP-SYNTHETIC-UAT-001' ||
+            assessment.event.classification === 'OutOfScope' ||
+            assessment.humanContext?.scopeDisposition === 'OutOfScope'
+          )
+            return reply(400, {
+              error: 'Only an in-scope real notice can be reevaluated',
+            })
+          if (!assessment.discoveryScope)
+            return reply(409, {
+              error: 'Stored discovery snapshot is missing; synchronize first',
+            })
+          const logicalId = hash({
+            eventId: assessment.event.id,
+            workloadId: assessment.workloadId,
+          })
+          const head = await store.head(logicalId)
+          if (!head || head.assessmentId !== assessment.id)
+            return reply(409, {
+              error: 'Assessment is not the current version',
+            })
+          const now = new Date().toISOString()
+          const run = await store.createDecisionReevaluation({
+            runId: body.runId,
+            assessmentId: assessment.id,
+            state: 'Pending',
+            requestedBy: principal.id,
+            requestedAt: now,
+            reason: body.reason,
+            resultAssessmentId: null,
+            error: null,
+            updatedAt: now,
+          })
+          if (run.state === 'Pending') {
+            try {
+              await store.dispatchDecisionReevaluations()
+            } catch (error) {
+              logProcessingFailure(
+                'decision-reevaluation-dispatch',
+                error,
+                correlationId,
+              )
+            }
+          }
+          return reply(202, run)
+        }
         if (path === 'uat/seed') {
           requireUserRole(principal, apiRolePolicy.review)
-          if (process.env.SYNTHETIC_UAT_ENABLED !== 'true')
+          if (
+            process.env.TEST_MODE_ENABLED !== 'true' ||
+            process.env.SYNTHETIC_UAT_ENABLED !== 'true'
+          )
             return reply(404, { error: 'Synthetic UAT is disabled' })
           z.object({}).strict().parse(payload)
           const sample = createSyntheticUatAssessment()
@@ -218,7 +312,10 @@ app.http('api', {
         }
         if (path === 'uat/export') {
           requireUserRole(principal, apiRolePolicy.review)
-          if (process.env.SYNTHETIC_UAT_ENABLED !== 'true')
+          if (
+            process.env.TEST_MODE_ENABLED !== 'true' ||
+            process.env.SYNTHETIC_UAT_ENABLED !== 'true'
+          )
             return reply(404, { error: 'Synthetic UAT is disabled' })
           const body = z
             .object({
@@ -746,7 +843,30 @@ app.storageQueue('assess', {
         message.kind === 'sync'
       ) {
         await synchronize()
+      } else if (
+        typeof message === 'object' &&
+        message !== null &&
+        'kind' in message &&
+        message.kind === 'decision-reevaluation'
+      ) {
+        const job = z
+          .object({
+            kind: z.literal('decision-reevaluation'),
+            runId: z.string().uuid(),
+          })
+          .strict()
+          .parse(message)
+        await processDecisionReevaluation(job.runId)
       } else await assessSnapshot(message)
+    }),
+})
+app.timer('decisionReevaluationDispatch', {
+  schedule: '0 */1 * * * *',
+  handler: async () =>
+    withProcessingFailureLog('decision-reevaluation-dispatch', async () => {
+      const store = new AzureStore(config().account)
+      await store.recoverStaleDecisionReevaluations()
+      await store.dispatchDecisionReevaluations()
     }),
 })
 app.timer('daily', {

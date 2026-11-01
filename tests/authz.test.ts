@@ -38,6 +38,24 @@ test('Governance can use all user APIs', () => {
   assert.doesNotThrow(() => requireUserRole(principal, apiRolePolicy.read))
   assert.doesNotThrow(() => requireUserRole(principal, apiRolePolicy.sync))
   assert.doesNotThrow(() => requireUserRole(principal, apiRolePolicy.review))
+  assert.doesNotThrow(() =>
+    requireUserRole(principal, apiRolePolicy.decisionReevaluation),
+  )
+})
+
+test('decision reevaluation is restricted to Governance users', () => {
+  assert.throws(() =>
+    requireUserRole(user('Reviewer'), apiRolePolicy.decisionReevaluation),
+  )
+  assert.throws(() =>
+    requireUserRole(user('Operator'), apiRolePolicy.decisionReevaluation),
+  )
+  assert.throws(() =>
+    requireUserRole(
+      { id: 'app', roles: ['Governance'], kind: 'Application' as const },
+      apiRolePolicy.decisionReevaluation,
+    ),
+  )
 })
 
 test('notification sender requires application identity', () => {
