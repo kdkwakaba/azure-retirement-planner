@@ -153,6 +153,14 @@ ServiceHealthResourcesの`LastUpdateTime`は数値で返る場合がある。ARG
 - 実施前に`MAX_MODEL_CALLS_PER_DAY`とPoC累計予算の残額を確認する。PoC上限のCost Management確認と無断増額禁止は従来どおり。呼出上限到達・モデル失敗は実行記録に失敗理由を残す。
 - 表示専用のテストモードであり、データ分離や削除は行わない。フラグを無効化すると合成UAT関連画面は通常一覧・集計から隠れるが、記録自体は保持される。
 
+### Decision-1を含む合成UAT
+
+- `ARP_TEST_MODE_ENABLED=true`と`ARP_SYNTHETIC_UAT_ENABLED=true`で有効化する。画面の「合成UATを作成・Decision-1評価」は最大1回のDecision-1推論を実行し、通常のモデル呼出枠を使用する。成功済みの合成評価がある場合は再利用し、二重推論しない。
+- `groundedInput`で架空Resource IDを別名化し、Service Health本番経路と同じ`decide`アダプター、Decision応答Schema、原応答／結果保存、Decision監査、ルールによる優先度適用を通す。イベントは`ARP-SYNTHETIC-UAT-001`、EvidenceはInternalのまま保持する。
+- Azure通知取得、Resource Graph実インベントリ取得、説明LLMはこの経路では行わない。説明LLMを`NotRequired`として記録し、Decision-1の型付き結果を合成作業項目・Issue本文へ表示する。これは実通知・実環境・公式事実の検証ではない。
+- 人間が合成UAT作業を承認するまでGitHub登録は拒否する。承認後も通常Outboxは使用せず、専用UAT Exporterで親／フェーズ／作業Issue、Sub-Issue関係、Project登録を実行する。Issue登録前にDecision呼出成功を検証する。
+- 合成UAT記録でのみGitHub接続確認を行う。実リソースや実通知と混同しない。標準手順と確認項目は[合成UAT手順](synthetic-uat.md)を参照する。
+
 ## GitHub Project フィールド同期
 
 - PoCのGitHub Project設定はRepository VariablesからBicepへ渡す。`ARP_GITHUB_OWNER`、`ARP_GITHUB_REPOSITORY`、`ARP_GITHUB_PROJECT_ID`、`ARP_GITHUB_PROJECT_STATUS_FIELD_ID`、`ARP_GITHUB_PROJECT_STATUS_TODO_OPTION_ID`を設定し、GitHub TokenはAzure Key Vaultの`github-token` secretにのみ保存する。`ARP_EXPORT_ENABLED=true`はレビュー済み作業からIssue／Project itemを作るための明示的な有効化で、未設定時はfalseとして扱う。`ARP_PROJECT_PROGRESS_SYNC_ENABLED=true`は15分ごとのStatus読取を有効化する。デプロイworkflowは外部登録／進捗同期が有効な場合に必須設定を事前検査する。

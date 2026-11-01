@@ -290,9 +290,8 @@ function App() {
     void refresh()
   }, [])
   useEffect(() => {
-    const item = current?.workItems.find(
-      (candidate) =>
-        candidate.title === '[SYNTHETIC UAT] GitHub Issue連携を確認',
+    const item = current?.workItems.find((candidate) =>
+      candidate.title.startsWith('[SYNTHETIC UAT]'),
     )
     if (
       !syntheticUatEnabled ||
@@ -383,11 +382,15 @@ function App() {
     setError('')
     setUatIssueUrl('')
     try {
-      const result = await request('uat/seed', 'POST', {})
+      const result = (await request('uat/seed', 'POST', {})) as {
+        assessmentId: string
+        created: boolean
+        decisionStatus: 'Proposed' | 'Abstained' | 'Unavailable'
+      }
       await refresh()
       setSelected(result.assessmentId)
       setNotice(
-        '合成UATを作成しました。実リソースは読み取らず、作業を選択して人間承認してください。',
+        `合成通知をDecision-1で評価しました（${result.decisionStatus}）。結果を確認し、人間承認後にGitHub Projectへ登録できます。`,
       )
     } catch (e) {
       setError(e instanceof Error ? e.message : '合成UAT作成失敗')
@@ -547,7 +550,7 @@ function App() {
           </button>
           {syntheticUatEnabled && (
             <button disabled={busy} onClick={() => void seedSyntheticUat()}>
-              合成UATを作成
+              合成UATを作成・Decision-1評価
             </button>
           )}
           {testModeEnabled && <span className="notice">テストモード</span>}
