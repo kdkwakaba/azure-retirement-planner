@@ -181,6 +181,7 @@ resource functions 'Microsoft.Web/sites@2024-11-01' = [for (name,i) in ['api','e
         { name: 'EXPLANATION_ENDPOINT', value: explanationEndpoint }
         { name: 'EXPLANATION_DEPLOYMENT', value: explanationDeployment }
         { name: 'TRANSLATOR_RESOURCE_ID', value: translator.id }
+        { name: 'TRANSLATOR_REGION', value: location }
         { name: 'MAX_MODEL_CALLS_PER_DAY', value: string(maxModelCallsPerDay) }
         { name: 'EXPORT_ENABLED', value: toLower(string(exportEnabled)) }
         { name: 'SYNTHETIC_UAT_ENABLED', value: toLower(string(syntheticUatEnabled)) }

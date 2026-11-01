@@ -15,6 +15,7 @@ export const credential = new PlatformIdentity()
 export async function translateOfficialHtmlToJapanese(
   input: {
     resourceId: string
+    region: string
     text: string
   },
   tokenProvider = () =>
@@ -25,6 +26,7 @@ export async function translateOfficialHtmlToJapanese(
     !/^\/subscriptions\/[0-9a-f-]{36}\/resourceGroups\/[^/]+\/providers\/Microsoft\.CognitiveServices\/accounts\/[^/]+$/i.test(
       input.resourceId,
     ) ||
+    !/^(?:global|[a-z0-9-]+)$/i.test(input.region) ||
     input.text.length === 0 ||
     input.text.length > 50_000
   )
@@ -39,6 +41,9 @@ export async function translateOfficialHtmlToJapanese(
     headers: {
       Authorization: `Bearer ${token.token}`,
       'Ocp-Apim-ResourceId': input.resourceId,
+      ...(input.region.toLowerCase() === 'global'
+        ? {}
+        : { 'Ocp-Apim-Subscription-Region': input.region }),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify([{ Text: input.text }]),

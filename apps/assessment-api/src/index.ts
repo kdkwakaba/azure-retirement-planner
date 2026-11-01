@@ -501,7 +501,8 @@ app.http('api', {
             .strict()
             .parse(payload)
           const resourceId = process.env.TRANSLATOR_RESOURCE_ID
-          if (!resourceId)
+          const region = process.env.TRANSLATOR_REGION
+          if (!resourceId || !region)
             return reply(503, {
               error: 'Japanese translation is not configured',
             })
@@ -541,6 +542,7 @@ app.http('api', {
           }
           const translatedText = await translateOfficialHtmlToJapanese({
             resourceId,
+            region,
             text: evidence.fact,
           })
           await store.put('translations', translationId, {
