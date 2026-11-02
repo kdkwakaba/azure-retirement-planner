@@ -91,6 +91,12 @@ const priorityDescriptions: Record<string, string> = {
   P3: '通常の変更計画へ組み込み、進捗を確認します。GitHubラベルはMediumです。',
   P4: '影響が限定的で余裕がある状態です。経過観察または将来計画として扱います。GitHubラベルはLowです。',
 }
+const impactDescriptions: Record<'未対応時' | '対応時・対応後', string> = {
+  未対応時:
+    'この通知への対応を行わない場合に想定される業務影響です。Azure構成だけでは確定できないため、Workload責任者が利用状況と業務影響を確認します。',
+  '対応時・対応後':
+    '対応作業の実施中と完了後に想定される業務影響です。停止時間や影響の有無は作業内容と業務担当者の確認が必要です。',
+}
 function HelpTip({
   label,
   placement = 'left',
@@ -144,6 +150,14 @@ function PriorityHelp({
           <span>{description}</span>
         </span>
       ))}
+    </HelpTip>
+  )
+}
+
+function ImpactHelp({ axis }: { axis: '未対応時' | '対応時・対応後' }) {
+  return (
+    <HelpTip label={`${axis}の業務影響について`}>
+      <span>{impactDescriptions[axis]}</span>
     </HelpTip>
   )
 }
@@ -272,6 +286,26 @@ function App() {
     >([])
   const current = items.find((a) => a.id === selected)
   const summary = summarizeAssessments(items)
+  const explanationSections = current
+    ? Object.entries(current.explanation).filter(
+        ([name, claims]) => name !== 'humanChecks' && claims.length > 0,
+      )
+    : []
+  const explanationClaimCount = explanationSections.reduce(
+    (count, [, claims]) => count + claims.length,
+    0,
+  )
+  const confirmationReasons = current
+    ? [...new Set([...current.reviewReasons, ...current.missingInformation])]
+    : []
+  const additionalHumanChecks = current
+    ? current.explanation.humanChecks.filter(
+        (claim) => !confirmationReasons.includes(claim.text),
+      )
+    : []
+  const confirmationReasonCount =
+    confirmationReasons.length +
+    new Set(additionalHumanChecks.map((claim) => claim.text)).size
   async function refresh() {
     setError('')
     try {
@@ -843,7 +877,9 @@ function App() {
                   <>
                     <div className="metrics">
                       <article>
-                        <small>未対応時</small>
+                        <small className="summary-caption">
+                          未対応時 <ImpactHelp axis="未対応時" />
+                        </small>
                         <strong>
                           {impactDisplay(
                             current.humanContext
@@ -854,7 +890,9 @@ function App() {
                         </strong>
                       </article>
                       <article>
-                        <small>対応時・対応後</small>
+                        <small className="summary-caption">
+                          対応時・対応後 <ImpactHelp axis="対応時・対応後" />
+                        </small>
                         <strong>
                           {impactDisplay(
                             current.humanContext
@@ -923,26 +961,40 @@ function App() {
                     setReason('')
                   }}
                 />
-                <h3>
-                  {current.humanReviewRequired === false
-                    ? '評価レビュー省略可能（定型結果）'
-                    : '人間による確認が必要'}
-                </h3>
-                {current.humanReviewRequired === false && (
-                  <p>
-                    評価レビューの省略は業務影響なしを意味しません。作業項目の承認・外部登録は別途人間の承認が必要です。
-                  </p>
-                )}
-                <ul>
-                  {[
-                    ...new Set([
-                      ...current.reviewReasons,
-                      ...current.missingInformation,
-                    ]),
-                  ].map((text) => (
-                    <li key={text}>{reviewReasonDisplay(text)}</li>
-                  ))}
-                </ul>
+                <details className="review-info-group">
+                  <summary>
+                    確認が必要な理由（{confirmationReasonCount}）
+                  </summary>
+                  {current.humanReviewRequired === false && (
+                    <p>
+                      評価レビューは省略可能な定型結果ですが、業務影響なしを意味しません。作業項目の承認・外部登録は別途人間の確認が必要です。
+                    </p>
+                  )}
+                  {confirmationReasons.length > 0 && (
+                    <ul>
+                      {confirmationReasons.map((text) => (
+                        <li key={text}>{reviewReasonDisplay(text)}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {additionalHumanChecks.length > 0 && (
+                    <>
+                      <h4>追加の確認事項</h4>
+                      {additionalHumanChecks.map((claim) => (
+                        <p key={claim.id}>
+                          {claim.text}
+                          <small>
+                            関連Evidence ID:{' '}
+                            {evidenceDisplay(claim.evidenceIds)}
+                          </small>
+                        </p>
+                      ))}
+                    </>
+                  )}
+                  {confirmationReasonCount === 0 && (
+                    <p>確認理由は登録されていません。</p>
+                  )}
+                </details>
                 <p>
                   重要Workload:{' '}
                   {criticalWorkloadDisplay(current.criticalWorkload)}
@@ -1074,31 +1126,46 @@ function App() {
                 </div>
                 <h3>
                   {current.humanContext?.scopeDisposition === 'OutOfScope'
-                    ? '対象外判定前の原評価・根拠'
-                    : '説明と根拠'}
+                    ? '対象外判定前の記録'
+                    : '評価内容と根拠'}
                 </h3>
-                {Object.entries(current.explanation).map(([name, claims]) => (
-                  <details key={name}>
-                    <summary>
-                      {explanationSectionDisplay(name)} ({claims.length})
-                    </summary>
-                    {claims.length === 0 && (
-                      <p>
-                        この区分の説明は生成されていません。根拠のない内容を補わず、上記の確認作業を実施してください。
-                      </p>
-                    )}
-                    {claims.map((c) => (
-                      <p key={c.id}>
-                        <b>{claimKindDisplay(c.kind)}</b> — {c.text}
-                        <small>
-                          Evidence: {evidenceDisplay(c.evidenceIds)}
-                        </small>
-                      </p>
-                    ))}
-                  </details>
-                ))}
-                <details>
-                  <summary>Evidence一覧</summary>
+                <details className="review-info-group">
+                  <summary>説明（{explanationClaimCount}）</summary>
+                  {explanationSections.length === 0 ? (
+                    <p>
+                      説明はありません。根拠のない内容は補わず、確認事項を参照してください。
+                    </p>
+                  ) : (
+                    explanationSections.map(([name, claims]) => (
+                      <section key={name} className="explanation-section">
+                        <h4>{explanationSectionDisplay(name)}</h4>
+                        {Array.from(
+                          new Set(claims.map((claim) => claim.kind)),
+                        ).map((kind) => (
+                          <div key={kind} className="explanation-claim-group">
+                            <h5>{claimKindDisplay(kind)}</h5>
+                            {claims
+                              .filter((claim) => claim.kind === kind)
+                              .map((claim) => (
+                                <p key={claim.id}>
+                                  {claim.text}
+                                  <small>
+                                    関連Evidence ID:{' '}
+                                    {evidenceDisplay(claim.evidenceIds)}
+                                  </small>
+                                </p>
+                              ))}
+                          </div>
+                        ))}
+                      </section>
+                    ))
+                  )}
+                </details>
+                <details className="review-info-group">
+                  <summary>根拠（{current.event.evidence.length}）</summary>
+                  {current.event.evidence.length === 0 && (
+                    <p>保存された根拠はありません。</p>
+                  )}
                   {current.event.evidence.map((e) => (
                     <article className="evidence-item" key={e.id}>
                       <div className="evidence-heading">
@@ -1118,15 +1185,24 @@ function App() {
                       />
                       {safeOfficialEvidenceUrl(e.officialUrl) && (
                         <p className="evidence-source-link">
+                          {e.sourceType === 'Microsoft' && (
+                            <b>Microsoft公式URL: </b>
+                          )}
                           <a
                             href={safeOfficialEvidenceUrl(e.officialUrl)!}
                             target="_blank"
                             rel="noopener noreferrer"
                           >
-                            公式参照を開く
+                            {safeOfficialEvidenceUrl(e.officialUrl)}
                           </a>
                         </p>
                       )}
+                      {e.sourceType === 'Microsoft' &&
+                        !safeOfficialEvidenceUrl(e.officialUrl) && (
+                          <p className="evidence-source-link">
+                            Microsoft公式URLを確認できません。保存済みEvidenceと公式通知の出典を確認してください。
+                          </p>
+                        )}
                       <details className="evidence-id">
                         <summary>Evidence ID</summary>
                         <code>{e.id}</code>
@@ -1134,6 +1210,11 @@ function App() {
                     </article>
                   ))}
                 </details>
+                {current.humanContext?.scopeDisposition === 'OutOfScope' && (
+                  <p>
+                    対象外判定前のモデル判断・説明・根拠は監査用に保持されています。現在の対応判断とは分けて確認してください。
+                  </p>
+                )}
                 {current.humanContext?.scopeDisposition === 'OutOfScope' ? (
                   <p>
                     対象外判定により作業案は取り下げられ、承認・登録できません。
