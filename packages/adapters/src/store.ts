@@ -539,6 +539,8 @@ export class AzureStore {
     approval: Approval,
     suppressExternalOutbox = false,
   ): Promise<void> {
+    const suppressOutbox =
+      suppressExternalOutbox || assessment.reevaluation !== undefined
     approvalSchema.parse(approval)
     if (
       new Set(approval.approvedItemIds).size !==
@@ -568,7 +570,7 @@ export class AzureStore {
       throw new Error('Stale approval')
     await this.put('approvals', approval.id, approval)
     const outboxActions: TransactionAction[] = []
-    if (!suppressExternalOutbox) {
+    if (!suppressOutbox) {
       for (const itemId of approval.approvedItemIds) {
         const rowKey = 'outbox:' + itemId
         let existing: Record<string, unknown> | null = null
