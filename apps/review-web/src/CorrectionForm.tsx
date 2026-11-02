@@ -1,6 +1,53 @@
 import { useState } from 'react'
 import type { Assessment, Correction } from '@arp/contracts'
 
+const initialWorkItemAdditions = (assessment: Assessment) => {
+  if (!assessment.event.title.toLowerCase().includes('foundry agent service'))
+    return []
+  return [
+    {
+      clientId: crypto.randomUUID(),
+      category: 'Impact Verification' as const,
+      title: 'Foundry Agent Service classic APIの利用有無を確認',
+      description:
+        '対象Workloadの構成・コード・利用者に確認し、classic APIを利用しているかを確認する。現時点では利用有無未確認のため、移行要否は判断しない。',
+      completionCriteria: [
+        '確認した構成・担当部署・根拠を記録し、利用有無を人が判断する',
+      ],
+      ownerTeam: null,
+    },
+    {
+      clientId: crypto.randomUUID(),
+      category: 'Cross-Team Coordination' as const,
+      title: '関係チームとの影響確認を調整',
+      description:
+        '社内外の利用者・関係チームと確認日程および回答を調整し、情報システム部門が窓口となる。',
+      completionCriteria: ['関係者、回答、未解決事項、次の確認日を記録する'],
+      ownerTeam: null,
+    },
+    {
+      clientId: crypto.randomUUID(),
+      category: 'Cost Assessment' as const,
+      title: '追加費用と予算確保の要否を確認',
+      description:
+        '選択肢と見積りを確認して追加費用の有無を整理し、必要な場合に情報システム部門が予算調整を行う。費用や予算の発生は未確定。',
+      completionCriteria: [
+        '費用の根拠または未確定理由と、予算調整の要否を記録する',
+      ],
+      ownerTeam: null,
+    },
+    {
+      clientId: crypto.randomUUID(),
+      category: 'Change Management' as const,
+      title: '承認要件と関係者調整を確認',
+      description:
+        '必要な社内承認・外部調整の有無を確認し、情報システム部門が調整する。承認者や承認結果は未確認のままとする。',
+      completionCriteria: ['必要な承認役割・調整事項・判断結果を記録する'],
+      ownerTeam: null,
+    },
+  ]
+}
+
 export function CorrectionForm({
   assessment,
   onRevised,
@@ -28,10 +75,14 @@ export function CorrectionForm({
           reason: '',
           workItemUpdates: assessment.workItems.map((w) => ({
             id: w.id,
+            title: w.title,
+            description: w.description,
+            completionCriteria: w.completionCriteria,
             ownerTeam: w.ownerTeam,
             plannedStartDate: w.plannedStartDate,
             dueDate: w.dueDate,
           })),
+          workItemAdditions: assessment.humanContext.workItemAdditions ?? [],
         }
       : {
           scopeDisposition: assessment.event.classification,
@@ -49,10 +100,14 @@ export function CorrectionForm({
           reason: '',
           workItemUpdates: assessment.workItems.map((w) => ({
             id: w.id,
+            title: w.title,
+            description: w.description,
+            completionCriteria: w.completionCriteria,
             ownerTeam: w.ownerTeam,
             plannedStartDate: w.plannedStartDate,
             dueDate: w.dueDate,
           })),
+          workItemAdditions: initialWorkItemAdditions(assessment),
         },
   )
   const [error, setError] = useState(''),
@@ -204,8 +259,58 @@ export function CorrectionForm({
       {form.workItemUpdates.map((item, i) => (
         <fieldset key={item.id}>
           <legend>
-            {assessment.workItems.find((w) => w.id === item.id)?.title}
+            {item.title ??
+              assessment.workItems.find((w) => w.id === item.id)?.title}
           </legend>
+          <label className="field">
+            作業名
+            <input
+              value={item.title ?? ''}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  workItemUpdates: form.workItemUpdates.map((v, j) =>
+                    j === i ? { ...v, title: e.target.value } : v,
+                  ),
+                })
+              }
+            />
+          </label>
+          <label className="field">
+            作業内容
+            <textarea
+              value={item.description ?? ''}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  workItemUpdates: form.workItemUpdates.map((v, j) =>
+                    j === i ? { ...v, description: e.target.value } : v,
+                  ),
+                })
+              }
+            />
+          </label>
+          <label className="field">
+            完了条件（1行に1項目）
+            <textarea
+              value={item.completionCriteria?.join('\n') ?? ''}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  workItemUpdates: form.workItemUpdates.map((v, j) =>
+                    j === i
+                      ? {
+                          ...v,
+                          completionCriteria: e.target.value
+                            .split('\n')
+                            .filter(Boolean),
+                        }
+                      : v,
+                  ),
+                })
+              }
+            />
+          </label>
           {(
             [
               ['ownerTeam', 'Owner Team', 'text'],
@@ -231,6 +336,146 @@ export function CorrectionForm({
           ))}
         </fieldset>
       ))}
+      <h3>追加する作業案</h3>
+      <p>
+        追加作業は推奨・未承認として登録されます。担当候補と調整候補はポリシーから提示し、承認時に再確認します。
+      </p>
+      {form.workItemAdditions.map((item, i) => (
+        <fieldset key={item.clientId}>
+          <legend>追加作業 {i + 1}</legend>
+          <label className="field">
+            カテゴリ
+            <select
+              value={item.category}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  workItemAdditions: form.workItemAdditions.map((v, j) =>
+                    j === i
+                      ? { ...v, category: e.target.value as typeof v.category }
+                      : v,
+                  ),
+                })
+              }
+            >
+              {[
+                'Impact Verification',
+                'Cross-Team Coordination',
+                'Customer Communication',
+                'Cost Assessment',
+                'Change Management',
+                'Vendor Assessment',
+                'Contract Review',
+                'Documentation Update',
+              ].map((category) => (
+                <option key={category}>{category}</option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            作業名
+            <input
+              value={item.title}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  workItemAdditions: form.workItemAdditions.map((v, j) =>
+                    j === i ? { ...v, title: e.target.value } : v,
+                  ),
+                })
+              }
+            />
+          </label>
+          <label className="field">
+            作業内容
+            <textarea
+              value={item.description}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  workItemAdditions: form.workItemAdditions.map((v, j) =>
+                    j === i ? { ...v, description: e.target.value } : v,
+                  ),
+                })
+              }
+            />
+          </label>
+          <label className="field">
+            完了条件
+            <textarea
+              value={item.completionCriteria.join('\n')}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  workItemAdditions: form.workItemAdditions.map((v, j) =>
+                    j === i
+                      ? {
+                          ...v,
+                          completionCriteria: e.target.value
+                            .split('\n')
+                            .filter(Boolean),
+                        }
+                      : v,
+                  ),
+                })
+              }
+            />
+          </label>
+          <label className="field">
+            Owner Team（未確定の場合は空欄）
+            <select
+              value={item.ownerTeam ?? ''}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  workItemAdditions: form.workItemAdditions.map((v, j) =>
+                    j === i ? { ...v, ownerTeam: e.target.value || null } : v,
+                  ),
+                })
+              }
+            >
+              <option value="">未確定</option>
+              <option value="インフラ部門">インフラ部門</option>
+              <option value="アプリ部門">アプリ部門</option>
+              <option value="情報システム部門">情報システム部門</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={() =>
+              setForm({
+                ...form,
+                workItemAdditions: form.workItemAdditions.filter(
+                  (_, j) => j !== i,
+                ),
+              })
+            }
+          >
+            この作業案を削除
+          </button>
+        </fieldset>
+      ))}
+      <button
+        type="button"
+        onClick={() =>
+          setForm({
+            ...form,
+            workItemAdditions: [
+              ...form.workItemAdditions,
+              {
+                clientId: crypto.randomUUID(),
+                category: 'Cross-Team Coordination',
+                title: '',
+                description: '',
+                completionCriteria: [''],
+                ownerTeam: null,
+              },
+            ],
+          })
+        }
+      >
+        作業案を追加
+      </button>
       <label>
         訂正の理由・確認した根拠
         <textarea
