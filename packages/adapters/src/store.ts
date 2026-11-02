@@ -4,12 +4,14 @@ import { QueueServiceClient } from '@azure/storage-queue'
 import type {
   Assessment,
   Approval,
+  BusinessContext,
   DecisionReevaluationRun,
 } from '@arp/contracts'
 import {
   assessmentSchema,
   approvalSchema,
   decisionReevaluationRunSchema,
+  businessContextSchema,
 } from '@arp/contracts'
 import { hash, verifyApproval } from '@arp/domain'
 import { credential } from './azure.ts'
@@ -84,6 +86,36 @@ export class AzureStore {
   }
   async assessment(id: string): Promise<Assessment> {
     return assessmentSchema.parse(await this.get('assessments', id))
+  }
+  async businessContext(workloadId: string): Promise<BusinessContext | null> {
+    try {
+      const entity = await this.table.getEntity<Record<string, unknown>>(
+        'business-context',
+        hash(workloadId),
+      )
+      if (typeof entity.contextHash !== 'string')
+        throw new Error('Business context revision is missing')
+      return businessContextSchema.parse(
+        await this.get('business-context', entity.contextHash),
+      )
+    } catch (error) {
+      if ((error as { statusCode?: number }).statusCode === 404) return null
+      throw error
+    }
+  }
+  async saveBusinessContext(value: BusinessContext): Promise<void> {
+    const context = businessContextSchema.parse(value)
+    const contextHash = hash(context)
+    await this.put('business-context', contextHash, context)
+    await this.table.upsertEntity(
+      {
+        partitionKey: 'business-context',
+        rowKey: hash(context.workloadId),
+        entityKind: 'business-context',
+        contextHash,
+      },
+      'Replace',
+    )
   }
   async createDecisionReevaluation(
     run: DecisionReevaluationRun,

@@ -43,6 +43,9 @@ jobs:
       ARP_LOCATION: ${{ vars.AZURE_LOCATION }}
       ARP_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
       ARP_DECISION_ENDPOINT: ${{ vars.DECISION_ENDPOINT }}
+      ARP_EXPLANATION_ENDPOINT: ${{ vars.EXPLANATION_ENDPOINT }}
+      ARP_EXPLANATION_DEPLOYMENT: ${{ vars.EXPLANATION_DEPLOYMENT }}
+      ARP_EXPLANATION_MODEL_VERSION: ${{ vars.EXPLANATION_MODEL_VERSION }}
       ARP_HOST_STORAGE_BLOB_ENDPOINT: ${{ vars.AZURE_HOST_STORAGE_BLOB_ENDPOINT }}
       ARP_GITHUB_OWNER: ${{ vars.ARP_GITHUB_OWNER }}
       ARP_GITHUB_REPOSITORY: ${{ vars.ARP_GITHUB_REPOSITORY }}
@@ -116,7 +119,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$ARP_RESOURCE_GROUP"
-          az deployment group what-if --resource-group "$ARP_RESOURCE_GROUP" --parameters infra/environments/poc.bicepparam --result-format FullResourcePayloads --output json --no-pretty-print > /tmp/what-if.json
+          az deployment group what-if --resource-group "$ARP_RESOURCE_GROUP" --parameters infra/environments/poc.bicepparam explanationEndpoint="$ARP_EXPLANATION_ENDPOINT" explanationDeployment="$ARP_EXPLANATION_DEPLOYMENT" explanationModelVersion="$ARP_EXPLANATION_MODEL_VERSION" --result-format FullResourcePayloads --output json --no-pretty-print > /tmp/what-if.json
           jq -S . /tmp/what-if.json > /tmp/what-if-canonical.json
           PLAN_HASH=$(sha256sum /tmp/what-if-canonical.json | cut -d' ' -f1)
           echo "Plan SHA256: $PLAN_HASH"
@@ -129,7 +132,7 @@ jobs:
       - name: Apply reviewed infrastructure
         id: apply-infrastructure
         if: inputs.phase == 'apply'
-        run: az deployment group create --resource-group "$ARP_RESOURCE_GROUP" --parameters infra/environments/poc.bicepparam --name arp-release --output json > /tmp/deployment.json
+        run: az deployment group create --resource-group "$ARP_RESOURCE_GROUP" --parameters infra/environments/poc.bicepparam explanationEndpoint="$ARP_EXPLANATION_ENDPOINT" explanationDeployment="$ARP_EXPLANATION_DEPLOYMENT" explanationModelVersion="$ARP_EXPLANATION_MODEL_VERSION" --name arp-release --output json > /tmp/deployment.json
       - name: Read target app names
         if: inputs.phase == 'apply'
         id: targets

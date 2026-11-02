@@ -13,6 +13,7 @@ param decisionDeployment string = ''
 param decisionModelVersion string = ''
 param explanationEndpoint string = ''
 param explanationDeployment string = ''
+param explanationModelVersion string = ''
 @allowed([
   'F0'
   'S1'
@@ -182,6 +183,7 @@ resource functions 'Microsoft.Web/sites@2024-11-01' = [for (name,i) in ['api','e
         { name: 'DECISION_MODEL_VERSION', value: decisionModelVersion }
         { name: 'EXPLANATION_ENDPOINT', value: explanationEndpoint }
         { name: 'EXPLANATION_DEPLOYMENT', value: explanationDeployment }
+        { name: 'EXPLANATION_MODEL_VERSION', value: explanationModelVersion }
         { name: 'TRANSLATOR_RESOURCE_ID', value: translator.id }
         { name: 'TRANSLATOR_REGION', value: location }
         { name: 'MAX_MODEL_CALLS_PER_DAY', value: string(maxModelCallsPerDay) }

@@ -40,6 +40,24 @@ export interface EvaluationScore {
   result: EvaluationCase
 }
 
+export interface ExplanationEvaluationCase {
+  caseId: string
+  knownEvidenceIds: string[]
+  knownDecisionRefs: string[]
+  explanation: import('@arp/contracts').Explanation
+}
+
+export interface ExplanationEvaluationReport {
+  schemaVersion: '1'
+  caseCount: number
+  claimCount: number
+  claimsWithoutGrounding: EvaluationRate
+  invalidEvidenceReferences: EvaluationRate
+  invalidDecisionReferences: EvaluationRate
+  nonEmptySectionCoverage: EvaluationRate
+  semanticSupportRequiresHumanReview: true
+}
+
 export interface SplitEvaluationResult {
   observationCount: number
   independentScenarioCount: number
@@ -322,6 +340,64 @@ export function evaluateCases(cases: EvaluationCase[]): EvaluationReport {
       expectedNotices,
       missRate: expectedNotices ? retirementMisses / expectedNotices : null,
     },
+  }
+}
+
+export function evaluateExplanations(
+  cases: ExplanationEvaluationCase[],
+): ExplanationEvaluationReport {
+  const ids = new Set<string>()
+  let claimCount = 0
+  let ungrounded = 0
+  let evidenceRefs = 0
+  let invalidEvidenceRefs = 0
+  let decisionRefs = 0
+  let invalidDecisionRefs = 0
+  let nonEmptySections = 0
+  let sectionCount = 0
+  const sections = [
+    'impact',
+    'increasingFactors',
+    'reducingFactors',
+    'startRationale',
+    'missingInformation',
+    'changeConditions',
+    'microsoftFacts',
+    'internalFacts',
+    'judgments',
+    'humanChecks',
+  ] as const
+  for (const item of cases) {
+    if (!item.caseId.trim() || ids.has(item.caseId))
+      throw new Error('Explanation evaluation case IDs must be unique')
+    ids.add(item.caseId)
+    for (const section of sections) {
+      sectionCount++
+      if (item.explanation[section].length) nonEmptySections++
+      for (const claim of item.explanation[section]) {
+        claimCount++
+        if (!claim.evidenceIds.length && !claim.decisionRefs.length)
+          ungrounded++
+        for (const id of claim.evidenceIds) {
+          evidenceRefs++
+          if (!item.knownEvidenceIds.includes(id)) invalidEvidenceRefs++
+        }
+        for (const id of claim.decisionRefs) {
+          decisionRefs++
+          if (!item.knownDecisionRefs.includes(id)) invalidDecisionRefs++
+        }
+      }
+    }
+  }
+  return {
+    schemaVersion: '1',
+    caseCount: cases.length,
+    claimCount,
+    claimsWithoutGrounding: rate(ungrounded, claimCount),
+    invalidEvidenceReferences: rate(invalidEvidenceRefs, evidenceRefs),
+    invalidDecisionReferences: rate(invalidDecisionRefs, decisionRefs),
+    nonEmptySectionCoverage: rate(nonEmptySections, sectionCount),
+    semanticSupportRequiresHumanReview: true,
   }
 }
 
