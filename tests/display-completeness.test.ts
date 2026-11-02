@@ -14,6 +14,7 @@ import {
   impactDisplay,
   milestoneDateDisplay,
   milestoneKindDisplay,
+  modelInvocationStatusDisplay,
   ownerDisplay,
   ownerTagDisplay,
   modelVersionDisplay,
@@ -73,6 +74,24 @@ test('known values remain visible without being replaced by fallback text', () =
   assert.equal(
     milestoneDateDisplay(null, '26 August 2026'),
     '公式原文の記載: 26 August 2026（日付の適用範囲を確認）',
+  )
+})
+
+test('explanation model status states clearly when no generated text is available', () => {
+  assert.match(
+    modelInvocationStatusDisplay({
+      stage: 'Explanation',
+      status: 'NotConfigured',
+    }),
+    /説明LLM未設定.*説明文は生成されていません/,
+  )
+  assert.match(
+    modelInvocationStatusDisplay({ stage: 'Explanation', status: 'Failed' }),
+    /説明生成失敗.*生成文は表示していません/,
+  )
+  assert.equal(
+    modelInvocationStatusDisplay({ stage: 'Decision', status: 'Failed' }),
+    '失敗',
   )
 })
 
