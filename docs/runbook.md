@@ -169,6 +169,24 @@ ServiceHealthResourcesの`LastUpdateTime`は数値で返る場合がある。ARG
 - 現在のPoCの`test-project`は個人所有Projectである。PoCではGitHubのSettings → Developer settings → Personal access tokens → Tokens (classic)から専用PATを人間が発行し、`repo`と`project`スコープを付ける。`repo`は対象Repositoryだけでなく、PAT所有者がアクセスできる非公開Repository全般への権限を含むため、短い有効期限を設定し、必要期間だけ使用してPoC終了後に失効させる。`gist`、`read:org`、`workflow`はこのアプリ連携には付与しない。Fine-grained PATは非公開RepositoryのIssue作成には使えるが、個人所有Project V2のREST APIに制約があるため、現行の個人Project構成ではclassic PATを使用する。
 - GitHub CLIで`gh auth status`が成功しても、それはCLIの認証確認であり、Azureアプリが使う`github-token` Secretの存在・値・権限を証明しない。CLI Tokenをアプリへ流用せず、専用PATを発行する。発行者がGitHub画面からToken値をコピーし、Azure PortalのKey Vault → Secrets → Generate/ImportでSecret name=`github-token`として登録する。既存Secretがある場合は新しいversionを作成する。値はこの手順書や運用記録に記載しない。
 - Key VaultのSecret登録後、APIのManaged IdentityによるSecret読取権限とFunction AppのKey Vault参照解決を確認する。GitHub Tokenを登録しただけではIssue登録は開始されない。`ARP_EXPORT_ENABLED`はfalseを維持し、Outboxの未配送件数・対象を確認してから、明示的に有効化する。既存の承認済みOutboxがある場合、trueへの変更でそれらも配送対象となり得るため、今回のテスト分だけに限定できる状態を先に確認する。
+
+### 未配送Outboxを確認する
+
+`ARP_EXPORT_ENABLED=true`を適用する前に、`ArpState`テーブルのPending Outboxを確認する。APIの承認処理は外部登録が無効な間もOutbox行を保存する。APIの5分タイマーは外部登録が有効ならPending行をすべてExporter Queueへ送るため、対象が今回の作業だけだと確認できるまで有効化しない。
+
+1. `az account set --subscription [subscription-id-removed]`で配置先Subscriptionを選び、`az account show --query '{subscription:id,tenant:tenantId,user:user.name}' --output json`でサインイン主体を確認する。
+2. `az functionapp config appsettings list --name arp-api-dxkm4fajusgd4 --resource-group [resource-group-name-removed] --query "[?name=='DATA_STORAGE_ACCOUNT'].value | [0]" --output tsv`でデータStorage Account名を取得する。現行名は`arpdatadxkm4fajusgd4`。
+3. 読取主体のObject IDを`az ad signed-in-user show --query id --output tsv`で取得する。`infra/bootstrap/outbox-table-reader.bicep`はそのユーザーに対し、`ArpState`テーブルだけをScopeとした`Storage Table Data Reader`を付与する。`az deployment group what-if --resource-group [resource-group-name-removed] --template-file infra/bootstrap/outbox-table-reader.bicep --parameters dataStorageName=<DATA_STORAGE_ACCOUNT> principalObjectId=<USER_OBJECT_ID>`で、追加されるRole Assignmentがこのテーブルとユーザーに限定されることを確認してから、同じ引数で`az deployment group create`を実行する。実行者にはこのScope以上で`Microsoft.Authorization/roleAssignments/write`が必要。通常CDのIdentityには付与しない。
+4. RBAC伝播を待ってから、次の読取クエリを実行する。`--query`はOutboxの確認に必要な列だけを表示する。
+
+   ```powershell
+   $dataStorageAccount = 'arpdatadxkm4fajusgd4'
+   az storage entity query --account-name $dataStorageAccount --table-name ArpState --auth-mode login --filter "entityKind eq 'outbox' and state eq 'Pending'" --query "items[].{state:state,assessmentId:assessmentId,itemId:itemId,approvalId:approvalId}" --output table
+   ```
+
+5. Pending件数と対象Work Itemを照合し、今回承認した1件だけであることを確認する。別の項目があれば、登録対象を整理してから進める。結果には内部IDが含まれるため、チャット、Issue、PR、CIログへ貼り付けない。
+6. 確認後も読み取り権限が不要なら、`az role assignment delete --scope <assignmentScope> --name <assignmentId>`で付与を取り消す。Object ID、Scope、Assignment IDはBicep出力で確認し、広いScopeで削除しない。
+
 - 本番運用では個人PATの常設を避け、対象Repositoryへ限定してインストールするGitHub Appへ移行する。Appの作成・権限承認・秘密鍵の初回登録は管理者が行い、アプリ側をInstallation Tokenの短期発行・更新方式へ改修する必要がある。これは現在の静的`github-token`方式では未実装。
 - 外部Issue／Projectへの登録は既定で無効のまま。実運用前にProjectのStatus、Priority、Due dateフィールドを用意し、field IDと各Status/Priority option IDを検証する。
 - IDは`GITHUB_PROJECT_*`のBicepパラメーター／Function App設定で管理する。Tokenや秘密はKey Vaultに置き、フィールドIDは機密情報として扱わない。既存Project itemの照合にはGitHub ProjectのRead権限（`read:project`相当）が必要で、Issue更新にはRepository Issues write、Project更新にはProject write権限が必要。
