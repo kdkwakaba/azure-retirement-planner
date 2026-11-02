@@ -151,6 +151,8 @@ type FeatureStatus = {
   syntheticUatEnabled: boolean
   decisionReevaluationEnabled: boolean
   canReevaluate: boolean
+  canSync: boolean
+  canReview: boolean
 }
 type DecisionReevaluationStatus = {
   runId: string
@@ -231,6 +233,9 @@ function App() {
     [decisionReevaluationEnabled, setDecisionReevaluationEnabled] =
       useState(false),
     [canReevaluate, setCanReevaluate] = useState(false),
+    [canSync, setCanSync] = useState(false),
+    [canReview, setCanReview] = useState(false),
+    [showNoAction, setShowNoAction] = useState(false),
     [reevaluationStatus, setReevaluationStatus] =
       useState<DecisionReevaluationStatus | null>(null),
     [uatIssueUrl, setUatIssueUrl] = useState(''),
@@ -247,13 +252,16 @@ function App() {
     try {
       const data = assessmentSchema
         .array()
-        .parse(await request('assessments', 'GET'))
+        .parse(
+          await request(`assessments?includeNoAction=${showNoAction}`, 'GET'),
+        )
       const uat = (await request('uat/status', 'GET')) as FeatureStatus
       const showSynthetic = uat.testModeEnabled && uat.syntheticUatEnabled
       const visible = visibleAssessments(
         data,
         uat.testModeEnabled,
         uat.syntheticUatEnabled,
+        showNoAction,
       )
       setItems(visible)
       setTestModeEnabled(uat.testModeEnabled)
@@ -262,6 +270,8 @@ function App() {
         uat.testModeEnabled && uat.decisionReevaluationEnabled,
       )
       setCanReevaluate(uat.canReevaluate)
+      setCanSync(uat.canSync)
+      setCanReview(uat.canReview)
       if (selected && !visible.some((item) => item.id === selected))
         setSelected(null)
       const progress = await request('project-progress', 'GET')
@@ -289,7 +299,7 @@ function App() {
   }
   useEffect(() => {
     void refresh()
-  }, [])
+  }, [showNoAction])
   useEffect(() => {
     const item = current?.workItems.find((candidate) =>
       candidate.title.startsWith('[SYNTHETIC UAT]'),
@@ -496,8 +506,43 @@ function App() {
       setBusy(false)
     }
   }
-  async function review(result: 'Approved' | 'Partial' | 'Returned' | 'Held') {
+  async function refreshCurrentResources() {
     if (!current) return
+    if (
+      !window.confirm(
+        '保存済みの通知内容を使い、Azure構成を再取得してこの通知のリソース候補を再評価します。新しい評価版が作成され、以前の承認は引き継がれません。続けますか？',
+      )
+    )
+      return
+    setBusy(true)
+    setError('')
+    try {
+      const result = await request('sync', 'POST', {
+        assessmentIds: [current.id],
+      })
+      const feedback = syncFeedback(result)
+      await refresh()
+      setNotice(
+        `${feedback.notice}${feedback.error ? ` ${feedback.error}` : ''}`,
+      )
+      if (feedback.error) setError(feedback.error)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '既存通知の再評価に失敗')
+    } finally {
+      setBusy(false)
+    }
+  }
+  async function review(
+    result: 'Approved' | 'Partial' | 'Returned' | 'Held' | 'NoAction',
+  ) {
+    if (!current) return
+    if (
+      result === 'NoAction' &&
+      !window.confirm(
+        'この通知を「対応不要」として通常一覧から非表示にします。通知本文・根拠・レビュー履歴は監査用に保持されます。よろしいですか？',
+      )
+    )
+      return
     setBusy(true)
     setError('')
     try {
@@ -512,7 +557,10 @@ function App() {
       })
       let exportNotice =
         'GitHub Issue／Projectへの外部登録は環境設定（ARP_EXPORT_ENABLED=falseまたは未設定）で無効です。有効化前に未配送Outboxを確認し、設定変更後に手動CDで再配置してください。'
-      if (response.exportEnabled)
+      if (result === 'NoAction')
+        exportNotice =
+          '対応不要の判断を記録し、通知を通常一覧から外しました。履歴から再表示できます。'
+      else if (response.exportEnabled)
         exportNotice = '承認済み作業を登録待ちへ送ります。'
       else if (current.event.trackingId === syntheticUatTrackingId)
         exportNotice =
@@ -545,6 +593,14 @@ function App() {
           <button disabled={busy} onClick={() => void refresh()}>
             評価結果を更新
           </button>
+          <label className="inline-toggle">
+            <input
+              type="checkbox"
+              checked={showNoAction}
+              onChange={(event) => setShowNoAction(event.target.checked)}
+            />
+            対応不要の通知も表示
+          </label>
           {syntheticUatEnabled && (
             <button disabled={busy} onClick={() => void seedSyntheticUat()}>
               合成UATを作成・Decision-1評価
@@ -631,7 +687,9 @@ function App() {
             <h2>ライフサイクル通知</h2>
             {!items.length && (
               <p>
-                評価結果はまだありません。設定・権限を確認してAzure情報を取得してください。サンプル結果は表示しません。
+                {showNoAction
+                  ? '表示できる通知履歴はありません。'
+                  : '表示中の通知はありません。対応不要とした通知は「対応不要の通知も表示」から確認できます。必要ならAzure情報を取得してください。'}
               </p>
             )}
             {items.map((item) => (
@@ -651,7 +709,9 @@ function App() {
                 <small>
                   {item.humanContext?.scopeDisposition === 'OutOfScope'
                     ? '人間確認済み・対象外'
-                    : `${item.createdAt} · 暫定／人間確認待ち`}
+                    : item.reviewDisposition === 'NoAction'
+                      ? '対応不要として非表示中の記録'
+                      : `${item.createdAt} · 暫定／人間確認待ち`}
                 </small>
               </button>
             ))}
@@ -662,9 +722,37 @@ function App() {
             ) : (
               <>
                 <h2>{current.event.title}</h2>
+                {current.reviewDisposition === 'NoAction' && (
+                  <div className="notice" role="status">
+                    <b>対応不要として一覧から外した履歴</b>
+                    <p>
+                      通知原本・根拠・以前のレビュー記録は保持されています。ここで新しいレビューを記録すると通常一覧に戻ります。
+                    </p>
+                  </div>
+                )}
                 <p>
                   Workload: {current.workloadId} ／ 評価基準日: {current.asOf}
                 </p>
+                {canSync &&
+                  current.event.trackingId !== syntheticUatTrackingId &&
+                  current.humanContext?.scopeDisposition !== 'OutOfScope' && (
+                    <div
+                      className="notice"
+                      role="region"
+                      aria-label="既存通知の再評価"
+                    >
+                      <b>既存通知を最新のAzure構成で再評価</b>
+                      <p>
+                        通知本文は保存済みのものを使い、Azure構成と明示影響対象を再取得します。新しい評価版をバックグラウンドで作成し、以前の承認は引き継ぎません。
+                      </p>
+                      <button
+                        disabled={busy}
+                        onClick={() => void refreshCurrentResources()}
+                      >
+                        {busy ? '処理中…' : 'リソース候補を再評価'}
+                      </button>
+                    </div>
+                  )}
                 {decisionReevaluationEnabled &&
                   canReevaluate &&
                   current.event.trackingId !== syntheticUatTrackingId && (
@@ -1223,12 +1311,13 @@ function App() {
                       />
                     </label>
                     <p role="note">
-                      承認は作業案の選択と判断理由が必要です。差し戻し・保留は判断理由を入力すると有効になります。検証不適合が表示されている間は承認できません。操作結果や失敗理由はこの画面上部に表示されます。
+                      承認・対応不要・保留には判断理由が必要です。対応不要を選ぶと通常一覧から非表示になりますが、通知・根拠・判断履歴は保持されます。検証不適合が表示されている間は作業を承認できません。
                     </p>
                     <div className="toolbar">
                       <button
                         disabled={
                           busy ||
+                          !canReview ||
                           !reason.trim() ||
                           !checked.length ||
                           !!current.validationErrors.length
@@ -1244,13 +1333,13 @@ function App() {
                         選択した作業を承認
                       </button>
                       <button
-                        disabled={busy || !reason.trim()}
-                        onClick={() => void review('Returned')}
+                        disabled={busy || !canReview || !reason.trim()}
+                        onClick={() => void review('NoAction')}
                       >
-                        差し戻し
+                        対応不要として一覧から外す
                       </button>
                       <button
-                        disabled={busy || !reason.trim()}
+                        disabled={busy || !canReview || !reason.trim()}
                         onClick={() => void review('Held')}
                       >
                         保留

@@ -102,6 +102,7 @@ export function syncFeedback(value: unknown) {
     .object({
       events: z.number().int().nonnegative(),
       resources: z.number().int().nonnegative(),
+      reassessedEvents: z.number().int().nonnegative().default(0),
       scopeComplete: z.boolean(),
       failures: z.array(z.string()),
       failureDetails: z.array(discoveryFailureSchema).optional().default([]),
@@ -130,7 +131,7 @@ export function syncFeedback(value: unknown) {
   )
   const failures = [...result.failures, ...details]
   return {
-    notice: `通知${result.events}件、構成${result.resources}件を取得しました。評価はバックグラウンドで実行されます。`,
+    notice: `通知${result.events}件、構成${result.resources}件を取得しました。${result.reassessedEvents ? `既存通知${result.reassessedEvents}件の再評価を受付けました。` : ''}評価はバックグラウンドで実行されます。`,
     error:
       result.scopeComplete && failures.length === 0
         ? ''
