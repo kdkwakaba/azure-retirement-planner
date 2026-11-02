@@ -120,6 +120,10 @@ PoCプロファイル候補はBasic Load Balancer、Storage GPv1、Application I
 
 Advisor／Service Healthにリソースが表示されないことだけをNot Impactedの根拠にしない。「該当リソースなし」は影響がないことや業務上No actionであることを意味しない。
 
+未対応時／対応時・対応後の影響度（Low／Medium／High／Critical／Unknown）と、利用者向けの影響説明文は別項目にする。現行の業務対応表がない場合は、Retirement／Support End／New Creation Blocked／Deprecationの通知区分と公式Evidenceに基づく一般的な条件付き説明を表示する。影響説明には通知条件、起こり得る機能・運用上の結果、情報不足による限界を含め、業務システム名・個別処理名・停止時間を創作しない。Support EndやNew Creation Blockedを既存Resourceの即時停止と表現しない。対応方法が不明な場合は停止有無を断定しない。Evidenceを参照できないときは一般説明を根拠付きであるかのように表示しない。
+
+将来、Azure構成とWorkload業務処理の対応情報が承認済みデータとして登録された場合は、その対応と適用条件を参照する個別説明を追加できる。現在の`businessContextProfiles`は合成用の粗い業務条件であり、本番Workloadの処理・依存関係の登録として扱わない。
+
 ## 人間レビューの省略・必須条件
 
 調査範囲と取得完了を確認できた「該当リソースなし」、および根拠の明確な定型Not Impacted判定は、評価レビューを省略可能とする。ただし、これは業務影響なし、最終レポート承認、作業承認、外部登録承認を意味しない。

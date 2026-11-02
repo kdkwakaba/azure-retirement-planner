@@ -21,7 +21,7 @@ export function impactDisplay(
   }
   return value
     ? `評価値: ${impactLabels[value] ?? value}`
-    : `人の判断待ち: ${axis}の業務影響をWorkload責任者が確認`
+    : `影響度は未確定（${axis}）`
 }
 
 export function environmentDisplay(environment: string | null): string {
@@ -56,6 +56,7 @@ export function claimKindDisplay(kind: string): string {
   const labels: Record<string, string> = {
     'Confirmed Fact': '確認済み事実',
     'Derived Fact': '根拠から導いた事実',
+    'General Impact': '一般的な影響想定',
     'Model Decision': 'モデル判断',
     Assumption: '仮定',
     Unknown: '根拠不足で不明',

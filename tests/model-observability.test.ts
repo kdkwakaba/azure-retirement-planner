@@ -29,7 +29,17 @@ test('empty model explanation receives evidence-safe required fallback claims', 
   }
   const fallback = explanationSchema.parse({
     ...empty,
-    impact: [claim],
+    impact: [
+      claim,
+      {
+        ...claim,
+        id: 'general-impact',
+        text: '通知の対象条件に該当する場合の一般的影響',
+        kind: 'General Impact',
+        evidenceIds: ['evidence-1'],
+        decisionRefs: ['impactIfUnaddressed'],
+      },
+    ],
     missingInformation: [{ ...claim, id: 'missing' }],
     microsoftFacts: [
       {
@@ -45,7 +55,7 @@ test('empty model explanation receives evidence-safe required fallback claims', 
 
   const completed = ensureExplanationCoverage(empty, fallback, true, true, true)
   assert.equal(completed.usedFallback, true)
-  assert.equal(completed.explanation.impact.length, 1)
+  assert.equal(completed.explanation.impact.length, 2)
   assert.equal(completed.explanation.missingInformation.length, 1)
   assert.equal(completed.explanation.microsoftFacts.length, 1)
   assert.equal(completed.explanation.humanChecks.length, 1)
@@ -76,4 +86,33 @@ test('model explanation with required grounded claims is kept unchanged', () => 
   )
   assert.equal(completed.usedFallback, false)
   assert.deepEqual(completed.explanation, generated)
+})
+
+test('deterministic general impact is retained over model generated general impact', () => {
+  const claim = {
+    id: 'model-general-impact',
+    text: 'モデルの影響説明',
+    kind: 'General Impact' as const,
+    evidenceIds: ['evidence-1'],
+    decisionRefs: ['impactIfUnaddressed'],
+  }
+  const generated = explanationSchema.parse({
+    ...Object.fromEntries(explanationFields.map((key) => [key, []])),
+    impact: [claim],
+  })
+  const fallback = explanationSchema.parse({
+    ...generated,
+    impact: [
+      { ...claim, id: 'deterministic-general-impact', text: '固定説明' },
+    ],
+  })
+  const completed = ensureExplanationCoverage(
+    generated,
+    fallback,
+    false,
+    false,
+    false,
+  )
+  assert.deepEqual(completed.explanation.impact, fallback.impact)
+  assert.equal(completed.usedFallback, true)
 })
