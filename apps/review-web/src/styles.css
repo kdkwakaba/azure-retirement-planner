@@ -64,6 +64,11 @@ a {
   flex-wrap: wrap;
   margin-bottom: 20px;
 }
+.inline-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
 .layout {
   display: grid;
   grid-template-columns: 320px 1fr;

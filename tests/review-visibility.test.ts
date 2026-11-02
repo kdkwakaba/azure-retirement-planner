@@ -17,3 +17,17 @@ test('synthetic UAT record is hidden unless both test-mode flags are enabled', (
   assert.deepEqual(visibleAssessments(records, false, true), [real])
   assert.deepEqual(visibleAssessments(records, true, true), records)
 })
+
+test('no-action assessments are hidden by default but can be reviewed from history', () => {
+  const active = fixture()
+  const dismissed = fixture()
+  dismissed.reviewDisposition = 'NoAction'
+
+  assert.deepEqual(visibleAssessments([active, dismissed], false, false), [
+    active,
+  ])
+  assert.deepEqual(
+    visibleAssessments([active, dismissed], false, false, true),
+    [active, dismissed],
+  )
+})

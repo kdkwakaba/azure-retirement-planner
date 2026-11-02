@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { request } from '../apps/review-web/src/api.ts'
+import { request, syncFeedback } from '../apps/review-web/src/api.ts'
 
 test('UI sync uses POST with JSON and CSRF marker even without a payload', async (t) => {
   t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit) => {
@@ -16,6 +16,21 @@ test('UI sync uses POST with JSON and CSRF marker even without a payload', async
   assert.deepEqual(await request('sync', 'POST'), { events: 0, resources: 0 })
 })
 
+test('UI can request a fresh inventory evaluation for selected existing notices', async (t) => {
+  const body = { assessmentIds: ['a'.repeat(64)] }
+  t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit) => {
+    assert.equal(url, '/api/sync')
+    assert.equal(init.method, 'POST')
+    assert.deepEqual(JSON.parse(String(init.body)), body)
+    return Response.json({ events: 0, resources: 5, reassessedEvents: 1 })
+  })
+  assert.deepEqual(await request('sync', 'POST', body), {
+    events: 0,
+    resources: 5,
+    reassessedEvents: 1,
+  })
+})
+
 test('UI assessment reads remain GET without a request body', async (t) => {
   t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit) => {
     assert.equal(url, '/api/assessments')
@@ -24,6 +39,19 @@ test('UI assessment reads remain GET without a request body', async (t) => {
     return Response.json([])
   })
   assert.deepEqual(await request('assessments', 'GET'), [])
+})
+
+test('sync feedback reports reprocessed existing notices', () => {
+  assert.match(
+    syncFeedback({
+      events: 0,
+      resources: 5,
+      reassessedEvents: 1,
+      scopeComplete: true,
+      failures: [],
+    }).notice,
+    /既存通知1件の再評価/,
+  )
 })
 
 test('UI writes preserve the approved payload', async (t) => {
