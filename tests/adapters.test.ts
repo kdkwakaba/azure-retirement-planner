@@ -17,7 +17,12 @@ import {
   workItemPhase,
   translateOfficialHtmlToJapanese,
 } from '@arp/adapters'
-import { credential } from '../packages/adapters/src/azure.ts'
+import {
+  applicableProfileIds,
+  credential,
+  matchProfile,
+  PROFILE_RESOURCE_TYPES,
+} from '../packages/adapters/src/azure.ts'
 import { fixture, tenant, resourceId } from './fixtures.ts'
 import { hash } from '@arp/domain'
 import { categorySchema, type Approval } from '@arp/contracts'
@@ -63,6 +68,33 @@ test('official evidence translation uses the managed-identity Translator contrac
   )
   assert.equal(requestBody, '[{"Text":"<p>Retirement date</p>"}]')
   assert.equal(translated, '<p>廃止日</p>')
+})
+
+test('Foundry retirement profile includes Foundry resource types and requires usage verification', () => {
+  const event = {
+    ...fixture().event,
+    title: 'Foundry Agent Service classic API retirement',
+  }
+  assert.ok(
+    PROFILE_RESOURCE_TYPES.includes('microsoft.cognitiveservices/accounts'),
+  )
+  assert.ok(
+    PROFILE_RESOURCE_TYPES.includes(
+      'microsoft.cognitiveservices/accounts/projects',
+    ),
+  )
+  assert.deepEqual(applicableProfileIds(event), [
+    'foundry-agent-service-classic',
+  ])
+  const resource = {
+    ...fixture().resources[0]!,
+    type: 'microsoft.machinelearningservices/workspaces',
+    properties: { kind: 'hub' },
+  }
+  const assessed = matchProfile(event, resource, new Set())
+  assert.equal(assessed.classification, 'Verification Required')
+  assert.equal(assessed.classificationReason, 'UsageRequiresVerification')
+  assert.equal(assessed.verificationRequired, true)
 })
 
 test('official evidence translation rejects arbitrary resources and oversized text before network access', async () => {
