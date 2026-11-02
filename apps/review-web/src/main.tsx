@@ -3,6 +3,31 @@ import { createRoot } from 'react-dom/client'
 import { assessmentSchema, type Assessment } from '@arp/contracts'
 import './styles.css'
 import { CorrectionForm } from './CorrectionForm.tsx'
+import {
+  approvalDisplay,
+  assessmentStatusDisplay,
+  claimKindDisplay,
+  coordinationDisplay,
+  criticalWorkloadDisplay,
+  decisionStatusDisplay,
+  environmentDisplay,
+  evidenceDisplay,
+  explanationSectionDisplay,
+  impactDisplay,
+  officialDeadlineDisplay,
+  milestoneDateDisplay,
+  milestoneKindDisplay,
+  ownerDisplay,
+  ownerTagDisplay,
+  modelVersionDisplay,
+  plannedDateDisplay,
+  priorityDisplay,
+  projectProgressDisplay,
+  reviewReasonDisplay,
+  routingDisplay,
+  sequenceDisplay,
+  workloadDisplay,
+} from './display-completeness.ts'
 import { EvidenceCard, safeOfficialEvidenceUrl } from './EvidenceFact.tsx'
 import { summarizeAssessments } from './summary.ts'
 
@@ -35,7 +60,7 @@ const modelStageLabels: Record<string, string> = {
 }
 const modelStatusLabels: Record<string, string> = {
   NotRequired: '実行対象外',
-  NotConfigured: '未設定',
+  NotConfigured: '構成なし（実行されていません）',
   NotStarted: '実行開始前に停止',
   Succeeded: '完了',
   SucceededWithFallback: '完了（必須説明を固定テンプレートで補完）',
@@ -704,14 +729,11 @@ function App() {
               >
                 <strong>{item.event.title}</strong>
                 <small>
-                  {item.workloadId} · {item.effectivePriority ?? '未確定'}
+                  {workloadDisplay(item.workloadId)} ·{' '}
+                  {priorityDisplay(item.effectivePriority)}
                 </small>
                 <small>
-                  {item.humanContext?.scopeDisposition === 'OutOfScope'
-                    ? '人間確認済み・対象外'
-                    : item.reviewDisposition === 'NoAction'
-                      ? '対応不要として非表示中の記録'
-                      : `${item.createdAt} · 暫定／人間確認待ち`}
+                  {item.createdAt} · {assessmentStatusDisplay(item)}
                 </small>
               </button>
             ))}
@@ -805,7 +827,7 @@ function App() {
                     <small>
                       Evidence:{' '}
                       {current.humanContext.reviewEvidenceIds?.join(', ') ??
-                        '根拠IDなし'}
+                        'Evidenceなし（対象外判定の根拠を追加してください）'}
                     </small>
                     <p>
                       この案件には優先度・移行作業がありません。判定を変更する場合は上の訂正欄から再評価してください。
@@ -822,32 +844,38 @@ function App() {
                       <article>
                         <small>未対応時</small>
                         <strong>
-                          {(current.humanContext
-                            ? current.humanContext.impactIfUnaddressed
-                            : current.decision.impactIfUnaddressed) ??
-                            '判断保留'}
+                          {impactDisplay(
+                            current.humanContext
+                              ? current.humanContext.impactIfUnaddressed
+                              : current.decision.impactIfUnaddressed,
+                            '未対応時',
+                          )}
                         </strong>
                       </article>
                       <article>
                         <small>対応時・対応後</small>
                         <strong>
-                          {(current.humanContext
-                            ? current.humanContext.impactDuringAndAfterChange
-                            : current.decision.impactDuringAndAfterChange) ??
-                            '判断保留'}
+                          {impactDisplay(
+                            current.humanContext
+                              ? current.humanContext.impactDuringAndAfterChange
+                              : current.decision.impactDuringAndAfterChange,
+                            '対応時・対応後',
+                          )}
                         </strong>
                       </article>
                       <article>
                         <small className="priority-caption">
                           暫定優先度 <PriorityHelp placement="right" />
                         </small>
-                        <strong>{current.effectivePriority ?? '未確定'}</strong>
+                        <strong>
+                          {priorityDisplay(current.effectivePriority)}
+                        </strong>
                       </article>
                     </div>
                     <p>
                       Model: {current.decision.model} /{' '}
-                      {current.decision.modelVersion} ·{' '}
-                      {current.decision.status}
+                      {modelVersionDisplay(current.decision.modelVersion)} ·{' '}
+                      {decisionStatusDisplay(current.decision.status)}
                     </p>
                     <details>
                       <summary>モデル呼び出しの監査記録</summary>
@@ -911,19 +939,22 @@ function App() {
                       ...current.missingInformation,
                     ]),
                   ].map((text) => (
-                    <li key={text}>{text}</li>
+                    <li key={text}>{reviewReasonDisplay(text)}</li>
                   ))}
                 </ul>
+                <p>
+                  重要Workload:{' '}
+                  {criticalWorkloadDisplay(current.criticalWorkload)}
+                </p>
                 <h3>公式期限</h3>
                 {!current.event.milestones.length ? (
-                  <p>
-                    適用期限は未確認です。非推奨開始日から廃止日を推測しません。
-                  </p>
+                  <p>{officialDeadlineDisplay()}</p>
                 ) : (
                   <ul>
                     {current.event.milestones.map((m) => (
                       <li key={m.id}>
-                        {m.kind}: {m.date ?? m.rawDateText ?? '未発表'} —{' '}
+                        {milestoneKindDisplay(m.kind)}:{' '}
+                        {milestoneDateDisplay(m.date, m.rawDateText)} —{' '}
                         {m.scope}
                       </li>
                     ))}
@@ -934,7 +965,7 @@ function App() {
                   調査結果:{' '}
                   {current.impactDiscoveryOutcome
                     ? discoveryOutcomeLabels[current.impactDiscoveryOutcome]
-                    : '旧データ／未記録'}
+                    : '過去評価（調査結果・範囲の記録なし。最新構成を再取得して再評価）'}
                   {' · '}取得範囲:{' '}
                   {current.scopeComplete ? '取得完了' : '一部取得失敗'}
                 </p>
@@ -1011,7 +1042,8 @@ function App() {
                       <tr>
                         <th>Resource ID</th>
                         <th>分類</th>
-                        <th>環境</th>
+                        <th>Environmentタグ</th>
+                        <th>OwnerTeamタグ</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1032,7 +1064,8 @@ function App() {
                                 : ''}
                             </small>
                           </td>
-                          <td>{r.environment ?? '不明'}</td>
+                          <td>{environmentDisplay(r.environment)}</td>
+                          <td>{ownerTagDisplay(r.ownerTeam)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1046,14 +1079,18 @@ function App() {
                 {Object.entries(current.explanation).map(([name, claims]) => (
                   <details key={name}>
                     <summary>
-                      {name} ({claims.length})
+                      {explanationSectionDisplay(name)} ({claims.length})
                     </summary>
+                    {claims.length === 0 && (
+                      <p>
+                        この区分の説明は生成されていません。根拠のない内容を補わず、上記の確認作業を実施してください。
+                      </p>
+                    )}
                     {claims.map((c) => (
                       <p key={c.id}>
-                        <b>{c.kind}</b> — {c.text}
+                        <b>{claimKindDisplay(c.kind)}</b> — {c.text}
                         <small>
-                          Evidence:{' '}
-                          {c.evidenceIds.join(', ') || 'なし／不明・仮定を確認'}
+                          Evidence: {evidenceDisplay(c.evidenceIds)}
                         </small>
                       </p>
                     ))}
@@ -1202,7 +1239,7 @@ function App() {
                         検証不適合のため承認できません。
                         <ul>
                           {current.validationErrors.map((e) => (
-                            <li key={e}>{e}</li>
+                            <li key={e}>{reviewReasonDisplay(e)}</li>
                           ))}
                         </ul>
                       </div>
@@ -1225,7 +1262,7 @@ function App() {
                         </label>
                         <p>
                           {w.category} · {w.necessity} · 優先度{' '}
-                          {w.priority ?? '未確定'} <PriorityHelp />
+                          {priorityDisplay(w.priority)} <PriorityHelp />
                         </p>
                         <p>{w.description}</p>
                         {w.description.includes(
@@ -1245,56 +1282,50 @@ function App() {
                           ) : (
                             <>
                               GitHub Project進捗:{' '}
-                              {projectProgress.find(
-                                (p) => p.workItemId === w.id,
-                              )?.status ?? '未同期'}
+                              {projectProgressDisplay(
+                                projectProgress.find(
+                                  (p) => p.workItemId === w.id,
+                                )?.status ?? null,
+                              )}
                             </>
                           )}
                         </small>
                         <p>
-                          開始 {w.plannedStartDate ?? '未確定'} ／ 完了{' '}
-                          {w.dueDate ?? '未確定'} ／ Owner{' '}
-                          {w.ownerTeam ?? '未確定'}
+                          {plannedDateDisplay(w.plannedStartDate, '開始日')} ／{' '}
+                          {plannedDateDisplay(w.dueDate, '完了日')} ／{' '}
+                          {ownerDisplay(w.ownerTeam, w.workflowRouting)}
                         </p>
-                        {w.workflowRouting && (
-                          <div className="notice">
-                            <b>
-                              企業ワークフロー候補（設定{' '}
-                              {w.workflowRouting.policyVersion}）
-                            </b>
+                        <div className="notice">
+                          <b>
+                            担当・調整・承認の進め方
+                            {w.workflowRouting
+                              ? `（設定 ${w.workflowRouting.policyVersion}）`
+                              : ''}
+                          </b>
+                          <p>{routingDisplay(w.workflowRouting)}</p>
+                          <p>
+                            調整部署:{' '}
+                            {w.workflowRouting
+                              ? coordinationDisplay(w.workflowRouting)
+                              : '情報システム部門（初動調整窓口）'}
+                          </p>
+                          <p>
+                            標準確認経路:{' '}
+                            {w.workflowRouting
+                              ? approvalDisplay(w.workflowRouting)
+                              : 'Workload責任者が業務影響・作業内容を確認 → ガバナンス責任者が方針・例外を確認'}
+                          </p>
+                          {w.workflowRouting && (
                             <p>
-                              担当チーム候補（複数可・未確定）:{' '}
-                              {w.workflowRouting.teamCandidates
-                                .map((r) => r.displayName)
-                                .join('、') || '未設定'}
+                              作業順序: {sequenceDisplay(w.workflowRouting)}
                             </p>
-                            <p>
-                              調整部署:{' '}
-                              {w.workflowRouting.coordinationCandidates
-                                .map((r) => r.displayName)
-                                .join('、') || '未設定'}
-                            </p>
-                            <p>
-                              設定上の承認段階:{' '}
-                              {w.workflowRouting.approvalStages
-                                .map((s) => s.title)
-                                .join(' → ') || '未設定'}
-                            </p>
-                            <p>
-                              作業順序:{' '}
-                              {w.workflowRouting.sequenceOrder ?? '未設定'} ／
-                              前提カテゴリ:{' '}
-                              {w.workflowRouting.dependsOnCategories.join(
-                                '、',
-                              ) || 'なし'}
-                            </p>
-                            {w.workflowRouting.unresolvedReasons.map(
-                              (reason) => (
-                                <p key={reason}>人間確認: {reason}</p>
-                              ),
-                            )}
-                          </div>
-                        )}
+                          )}
+                          {w.workflowRouting?.unresolvedReasons.map(
+                            (reason) => (
+                              <p key={reason}>人間確認: {reason}</p>
+                            ),
+                          )}
+                        </div>
                         <ul>
                           {w.completionCriteria.map((c) => (
                             <li key={c}>{c}</li>
@@ -1302,6 +1333,11 @@ function App() {
                         </ul>
                       </article>
                     ))}
+                    {current.workItems.length === 0 && (
+                      <p>
+                        この評価には作業案がありません。調査結果と確認事項を確認し、必要な作業はReviewerまたはGovernanceが根拠を添えて追加してください。
+                      </p>
+                    )}
                     <label>
                       判断理由
                       <textarea

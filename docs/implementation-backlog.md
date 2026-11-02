@@ -27,8 +27,9 @@
 | IMP-20 | Demo/UAT: 同一実環境で3分ライブ | 10,14–19 | 事前サインイン、実通知、判断→根拠→承認→登録 | リハーサル待ち。合成をライブ取得と偽らない | M / Presenter+QA / No |
 | IMP-21 | Cleanup: 作成台帳と専用資源・Project・秘密の撤去 | 04,15 | 削除対象照合、残存保持・残費用報告 | 専用Azure資源・Entra App・資格情報を作成済。撤去はPoC終了時に別途実行 | M / Cloud+Owner / No |
 | IMP-22 | UI: Microsoft公式Evidenceの日本語参考訳 | 03,13 | 原文保持、公式Source限定、MI、翻訳と判断根拠の分離、版付きCache | Service Health通知Evidenceの出所検証とUI/API対応はPR #46でmainへ反映済み。run #35はinfra-only applyでアプリZIP配置なし。PR #48により配置stepのoutcomeはJob Summaryへ表示。画面・実翻訳の確認は利用者指示により保留。2026-10-29にPR #56のアプリを再配置済み。API匿名ルート401、Exporterルート200を確認。認証済み画面での日本語表示UATとPoC Translator SKU/費用確認が残る | M / Dev+Cloud / Yes |
-| IMP-07a | Discovery: 保存済み通知の最新構成による再評価 | 07 | 既存Notice版を保持し、最新Inventoryで候補再抽出・新版保存 | `codex/resource-refresh-no-action`に実装済み。Operator／Governance限定APIから選択通知を再Queueできる。npm verify合格。PR・Azure再配置・実通知の再評価は未実施 | M / Dev / Yes |
-| IMP-14a | Human Review: 対応不要通知の一覧整理 | 14 | 理由付き判定・監査履歴保持・既定一覧から非表示・再表示 | `codex/resource-refresh-no-action`に実装済み。新しいAssessment版は再レビュー対象として一覧へ戻る。npm verify合格、認証画面UATは未実施 | S / Frontend+Dev / Yes |
+| IMP-07a | Discovery: 保存済み通知の最新構成による再評価 | 07 | 既存Notice版を保持し、最新Inventoryで候補再抽出・新版保存 | PR #94でmainへ反映・Azure配置済み。2026-11-02に実通知Foundry Agent Service noticeを最新Inventoryで再評価し、Storage候補からCognitive Services account／projectへ更新、scopeComplete=trueを確認。 | M / Dev / Yes |
+| IMP-14a | Human Review: 対応不要通知の一覧整理 | 14 | 理由付き判定・監査履歴保持・既定一覧から非表示・再表示 | PR #94でmainへ反映・Azure配置済み。NoAction実データがないため、実通知での選択・非表示UATは未実施。 | S / Frontend+Dev / Yes |
+| IMP-14b | Human Review: 実データ表示の欠落項目を明確化 | 14 | 未取得・未決項目に理由・次の作業・判断役割を示し、根拠なしの値を補完しない | 実装済み。値がある項目は確定値、欠落項目は状態・理由・初動窓口・判断役割を表示。計画日は根拠が揃うまで算定しない。`npm run verify`成功（180テスト）。PR作成中。main配置後の実データ画面UATは未実施。 | S / Frontend+Governance / Yes |
 
 ## 未確定情報と次のゲート
 
