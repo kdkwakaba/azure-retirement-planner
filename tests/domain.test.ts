@@ -714,8 +714,8 @@ test('resource uncertainty produces evidence-backed verification work without re
     eventEvidence: a.event.evidence,
     resources,
   })
-  assert.equal(work.length, 3)
-  assert.equal(new Set(work.map((item) => item.resourceIds[0])).size, 3)
+  assert.equal(work.length, 2)
+  assert.equal(new Set(work.flatMap((item) => item.resourceIds)).size, 3)
   const missingSku = work.find((item) => item.title.includes('sku.name'))!
   assert.deepEqual(missingSku.resourceIds, [`${resourceId}-missing-sku`])
   assert.ok(missingSku.description.includes('読み取り専用'))
@@ -725,8 +725,13 @@ test('resource uncertainty produces evidence-backed verification work without re
   assert.equal(missingSku.plannedStartDate, null)
   assert.equal(missingSku.dueDate, null)
   const noProfile = work.filter((item) => item.title.includes('プロファイル'))
-  assert.equal(noProfile.length, 2)
-  assert.ok(noProfile.every((item) => item.resourceIds.length === 1))
+  assert.equal(noProfile.length, 1)
+  assert.deepEqual(
+    new Set(noProfile[0]!.resourceIds),
+    new Set([`${resourceId}-unmapped-lb`, `${resourceId}-unmapped-storage`]),
+  )
+  assert.match(noProfile[0]!.description, /Microsoft\.Network\/loadBalancers/)
+  assert.match(noProfile[0]!.description, /Microsoft\.Storage\/storageAccounts/)
   assert.equal(noProfile[0]!.category, 'Impact Verification')
   assert.ok(noProfile[0]!.evidenceIds.includes(a.event.evidence[0]!.id))
   const lbId = `${resourceId}-unmapped-lb`
@@ -751,14 +756,13 @@ test('resource uncertainty produces evidence-backed verification work without re
       workloadId: a.workloadId,
     })),
   })
-  const lbWork = mixedWork.find((item) => item.resourceIds.includes(lbId))!
-  const storageWork = mixedWork.find((item) =>
-    item.resourceIds.includes(storageId),
-  )!
-  assert.ok(lbWork.evidenceIds.includes(lbEvidence.id))
-  assert.ok(!lbWork.evidenceIds.includes(storageEvidence.id))
-  assert.ok(storageWork.evidenceIds.includes(storageEvidence.id))
-  assert.ok(!storageWork.evidenceIds.includes(lbEvidence.id))
+  assert.equal(mixedWork.length, 1)
+  assert.deepEqual(
+    new Set(mixedWork[0]!.resourceIds),
+    new Set([lbId, storageId]),
+  )
+  assert.ok(mixedWork[0]!.evidenceIds.includes(lbEvidence.id))
+  assert.ok(mixedWork[0]!.evidenceIds.includes(storageEvidence.id))
   assert.ok(
     resourceVerificationWorkItems({
       eventId: a.event.id,
