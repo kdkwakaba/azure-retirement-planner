@@ -12,13 +12,19 @@ import type {
   WorkItem,
 } from '@arp/contracts'
 import { assessmentSchema, dateSchema, eventSchema } from '@arp/contracts'
-export { evaluateCases, evaluateManifest } from './evaluation.ts'
+export {
+  evaluateCases,
+  evaluateExplanations,
+  evaluateManifest,
+} from './evaluation.ts'
 export type {
   EvaluationBenchmarkReport,
   EvaluationCase,
   EvaluationRate,
   EvaluationReport,
   EvaluationScore,
+  ExplanationEvaluationCase,
+  ExplanationEvaluationReport,
   SplitEvaluationResult,
 } from './evaluation.ts'
 export { validateEvaluationManifest } from './evaluation-manifest.ts'

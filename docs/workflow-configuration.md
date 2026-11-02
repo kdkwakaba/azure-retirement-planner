@@ -66,6 +66,8 @@ PoCでは、設定ファイルをレビューして反映する方式までと�
 
 `config/examples/workflow-policy.demo.json` は登壇デモ専用の架空部署・承認経路例で、実行時の `config/workflow-policy.json` には適用しない。実データを使うデモでも、サンプル部署・ベンダー・契約・費用を実在する業務事実として表現しない。業務影響、ベンダー利用、追加費用の入力が未確認なら、費用や契約承認を確定作業として扱わない。
 
+実Workloadの業務条件は`POST /api/business-context`でGovernance利用者が登録できます。`workloadId`、`sourceSystem`、`sourceRecordId`、`sourceUpdatedAt`と構造化条件を必須とし、確認者と確認日時はAPIが記録します。変更版は不変Blobとして保存され、現在版Hashを`ArpState`に保持します。評価ではWorkload完全一致時だけ内部Evidenceとして使用し、変更は新しいAssessment版を生みます。これはCMDBとの自動同期ではなく、接続先の選定とマッピングが確定するまでの管理入力経路です。Read APIは通常のReader権限、Write APIはGovernanceロールに限定します。
+
 ### 作業の判定基準
 
 - 必須作業の基礎区分は影響調査、合意された対応に必要な準備、実作業、および作業後の影響確認。移行・変更自体は影響や代替手段が確認されるまで必須にしない。

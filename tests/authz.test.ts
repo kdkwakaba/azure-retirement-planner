@@ -26,6 +26,15 @@ test('Reviewer can read and review', () => {
   assert.throws(() => requireUserRole(principal, apiRolePolicy.sync))
 })
 
+test('business context writes are denied to non-Governance users', () => {
+  assert.throws(() =>
+    requireUserRole(user('Reviewer'), apiRolePolicy.businessContext),
+  )
+  assert.throws(() =>
+    requireUserRole(user('Operator'), apiRolePolicy.businessContext),
+  )
+})
+
 test('Operator can read and sync', () => {
   const principal = user('Operator')
   assert.doesNotThrow(() => requireUserRole(principal, apiRolePolicy.read))
@@ -38,6 +47,9 @@ test('Governance can use all user APIs', () => {
   assert.doesNotThrow(() => requireUserRole(principal, apiRolePolicy.read))
   assert.doesNotThrow(() => requireUserRole(principal, apiRolePolicy.sync))
   assert.doesNotThrow(() => requireUserRole(principal, apiRolePolicy.review))
+  assert.doesNotThrow(() =>
+    requireUserRole(principal, apiRolePolicy.businessContext),
+  )
   assert.doesNotThrow(() =>
     requireUserRole(principal, apiRolePolicy.decisionReevaluation),
   )
