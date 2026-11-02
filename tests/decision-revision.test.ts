@@ -1,6 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { decisionRevision } from '../apps/assessment-api/src/service.ts'
+import {
+  decisionRevision,
+  shouldInvokeDecisionModel,
+} from '../apps/assessment-api/src/service.ts'
 
 test('Decision configuration changes produce a new assessment revision', (t) => {
   const keys = [
@@ -27,4 +30,39 @@ test('Decision configuration changes produce a new assessment revision', (t) => 
   assert.equal(decisionRevision(0), null)
   process.env.DECISION_MODEL_VERSION = '2'
   assert.notEqual(decisionRevision(200), first)
+})
+
+test('empty resource candidate sets never invoke Decision-1', () => {
+  assert.equal(
+    shouldInvokeDecisionModel({
+      candidateResourceCount: 0,
+      deterministicNoReview: false,
+      reevaluation: false,
+    }),
+    false,
+  )
+  assert.equal(
+    shouldInvokeDecisionModel({
+      candidateResourceCount: 0,
+      deterministicNoReview: false,
+      reevaluation: true,
+    }),
+    false,
+  )
+  assert.equal(
+    shouldInvokeDecisionModel({
+      candidateResourceCount: 1,
+      deterministicNoReview: false,
+      reevaluation: false,
+    }),
+    true,
+  )
+  assert.equal(
+    shouldInvokeDecisionModel({
+      candidateResourceCount: 1,
+      deterministicNoReview: true,
+      reevaluation: true,
+    }),
+    true,
+  )
 })

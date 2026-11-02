@@ -313,7 +313,7 @@ export async function explicitResourceIds(
   }
   return { resourceIds: ids, complete, failures, failureDetails }
 }
-export const PROFILE_REGISTRY_VERSION = '2026-11-02.1'
+export const PROFILE_REGISTRY_VERSION = '2026-11-02.2'
 export const PROFILE_RESOURCE_TYPES = [
   'microsoft.network/loadbalancers',
   'microsoft.storage/storageaccounts',
@@ -474,6 +474,43 @@ export function applicableProfileIds(event: LifecycleEvent): string[] {
       (profile.id !== 'foundry-agent-service-classic' ||
         /classic|retir|deprecat|end of support/i.test(text)),
   ).map((profile) => profile.id)
+}
+export function resourceTypesForProfile(profileId: string): readonly string[] {
+  if (profileId === 'foundry-agent-service-classic')
+    return FOUNDRY_RESOURCE_TYPES
+  const profile = RESOURCE_PROFILES.find((item) => item.id === profileId)
+  return profile ? [profile.resourceType] : []
+}
+export function candidateResourcesForEvent(
+  event: LifecycleEvent,
+  resources: ResourceImpact[],
+  explicit: Set<string>,
+): ResourceImpact[] {
+  const profileIds = applicableProfileIds(event)
+  const explicitIds = new Set([...explicit].map((id) => id.toLowerCase()))
+  const applicableTypes = new Set(
+    profileIds.flatMap((profileId) => resourceTypesForProfile(profileId)),
+  )
+  return resources.filter((resource) => {
+    if (explicitIds.has(resource.id.toLowerCase())) return true
+    const type = resource.type.toLowerCase()
+    if (!applicableTypes.has(type)) return false
+    if (
+      profileIds.includes('foundry-agent-service-classic') &&
+      type === 'microsoft.cognitiveservices/accounts'
+    )
+      return (
+        String(resource.properties.kind ?? '').toLowerCase() === 'aiservices'
+      )
+    if (
+      profileIds.includes('foundry-agent-service-classic') &&
+      type === 'microsoft.machinelearningservices/workspaces'
+    )
+      return ['hub', 'project'].includes(
+        String(resource.properties.kind ?? '').toLowerCase(),
+      )
+    return true
+  })
 }
 export function matchProfile(
   event: LifecycleEvent,
