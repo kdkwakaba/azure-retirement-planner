@@ -156,7 +156,9 @@ export function CorrectionForm({
             })
           }
         >
-          <option value="ReviewRequired">未確定・確認が必要</option>
+          <option value="ReviewRequired">
+            確認中（対象範囲を判断する根拠の確認が必要）
+          </option>
           <option value="InScope">対象</option>
           <option value="OutOfScope">対象外</option>
         </select>
@@ -176,7 +178,9 @@ export function CorrectionForm({
                 setForm({ ...form, [key]: e.target.value || null })
               }
             >
-              <option value="">判断保留</option>
+              <option value="">
+                確認前（Workload責任者が業務影響を確認して選択）
+              </option>
               {['Low', 'Medium', 'High', 'Critical'].map((v) => (
                 <option key={v}>{v}</option>
               ))}
@@ -215,7 +219,7 @@ export function CorrectionForm({
             })
           }
         >
-          <option value="">未確定</option>
+          <option value="">公式期限の種類を確認後に選択</option>
           <option value="NewCreationBlocked">新規作成停止</option>
           <option value="SupportEnded">サポート終了</option>
           <option value="Retirement">廃止</option>
@@ -245,8 +249,13 @@ export function CorrectionForm({
             setForm({ ...form, criticalWorkload: e.target.checked })
           }
         />
-        Critical workload
+        Critical workload（チェック時のみ指定）
       </label>
+      <small>
+        {form.criticalWorkload
+          ? 'Criticalとして指定されています。根拠と業務責任者の確認を記録してください。'
+          : 'Critical指定なし（非該当の人間確認とは区別されます）。'}
+      </small>
       <label>
         <input
           type="checkbox"
@@ -321,6 +330,11 @@ export function CorrectionForm({
           ).map(([key, label, type]) => (
             <label className="field" key={key}>
               {label}
+              <small>
+                {key === 'ownerTeam'
+                  ? 'Azureタグ値だけでは実担当を確定しません。Workload責任者と担当部門を確認してください。'
+                  : '公式期限・工程期間・担当が根拠付きで確認できる場合に入力してください。'}
+              </small>
               <input
                 type={type}
                 value={item[key] ?? ''}
@@ -423,7 +437,7 @@ export function CorrectionForm({
             />
           </label>
           <label className="field">
-            Owner Team（未確定の場合は空欄）
+            Owner Team（Workload責任者と担当部門を確認して選択）
             <select
               value={item.ownerTeam ?? ''}
               onChange={(e) =>
@@ -435,7 +449,7 @@ export function CorrectionForm({
                 })
               }
             >
-              <option value="">未確定</option>
+              <option value="">担当確認後に選択</option>
               <option value="インフラ部門">インフラ部門</option>
               <option value="アプリ部門">アプリ部門</option>
               <option value="情報システム部門">情報システム部門</option>
