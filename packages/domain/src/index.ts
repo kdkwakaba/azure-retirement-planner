@@ -498,7 +498,6 @@ export function resourceVerificationWorkItems(input: {
       continue
     const missingAttributes = [...resource.missingAttributes].sort()
     const key = hash({
-      type: resource.type.toLowerCase(),
       ownerTeam: resource.ownerTeam,
       classification: resource.classification,
       reason: resource.classificationReason,
@@ -552,7 +551,7 @@ export function resourceVerificationWorkItems(input: {
         : sample.classificationReason === 'NoApplicableProfile'
           ? '影響確認: 判定プロファイルの適用範囲'
           : sample.classificationReason === 'NoMatchingProfileCondition'
-            ? `影響確認: 条件不一致 (${sample.type})`
+            ? `影響確認: 条件不一致 (${resourceTypes.join('、')})`
             : `影響確認: ${sample.classification}`
     return {
       id: hash({
