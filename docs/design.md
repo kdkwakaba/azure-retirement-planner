@@ -197,7 +197,7 @@ Functions Flex Consumption（Always Readyなし）、評価用と出力用の2 F
 | Storage Queue | 小規模非同期処理 | 採用 | 適合時継続 |
 | ARG / Advisor API | 標準情報。ARM個別取得は補完 | 採用／必要時 | 必要 |
 | Foundry / Decision-1 | 推論・型付き判断 | 原則必須 | 第一選択 |
-| 生成LLM | 説明・作業案。代替固定テンプレート | 採用 | 推奨 |
+| 生成LLM | 説明・作業案。未設定・失敗時は説明を生成せず監査状態を記録 | 採用 | 推奨 |
 | SQL / Cosmos DB | 複雑検索・整合性・分散。代替Table | 不採用 | 再評価 |
 | Blob / Table | 不変証跡・低コスト状態 | 採用 | 要件次第で継続 |
 | Key Vault | 秘密管理 | 採用 | 必須機能 |
@@ -302,7 +302,7 @@ DecisionInputとWorkItemはapplicableMilestoneIdsとapplicableDeadline（dateま
 
 Deterministicは構成・件数・日数・所属等、Human-maintainedは重要度・Owner・RTO/RPO・提供時間・廃止予定・体制等、Model-basedは影響・難易度等。構成だけから実到達性や冗長化の有効性を断定しない。
 
-原判断とルール後判断を別保存。最大確率0.80未満または上位差0.20未満は暫定レビュー強調条件。閾値は未校正であり高確率でも承認省略不可。Decision-1停止時は事実・ルール・人間、LLM停止時は固定テンプレートへ。指定モデル利用不可時は自動置換せず代替再検討。
+原判断とルール後判断を別保存。最大確率0.80未満または上位差0.20未満は暫定レビュー強調条件。閾値は未校正であり高確率でも承認省略不可。Decision-1停止時は事実・ルール・人間を用い、説明LLM停止時は説明文を生成せず監査状態を記録する。通知種別に基づく一般的影響説明と根拠付き確認作業は、説明LLMのフォールバックとは別に扱う。指定モデル利用不可時は自動置換せず代替再検討。
 
 ## 17. Explanation and Grounding Design
 
@@ -431,7 +431,7 @@ eventId／runId／workloadId／workItemId／correlationIdで追跡。受信・�
 
 Service Health通知、Resource Graphインベントリ、Service Health impacted resources、Advisor推奨、公式参照の失敗は、取得元、HTTP status、固定カテゴリ、照会IDをassessmentと画面に残す。複数取得元は独立して実行し、一方の失敗で他方の成功結果を捨てない。Application Insightsの`ExternalDependencyFailure`トレースから同じ照会IDを検索できる。
 
-Decision-1と説明生成LLMは別々の`ModelInvocation`を評価へ保存し、stage、deployment、model/prompt version、status、所要時間、照会ID、失敗カテゴリを記録する。プロンプト、入力、モデル応答、Resource ID、Subscription ID、例外メッセージは通常トレースに出さない。説明生成の必須項目が応答から欠けた場合は根拠付きの固定テンプレートで補い、`SucceededWithFallback`として表示する。Decision-1の棄権とモデル通信失敗は別の状態として扱う。
+Decision-1と説明生成LLMは別々の`ModelInvocation`を評価へ保存し、stage、deployment、model/prompt version、status、所要時間、照会ID、失敗カテゴリを記録する。プロンプト、入力、モデル応答、Resource ID、Subscription ID、例外メッセージは通常トレースに出さない。説明生成の必須項目が応答から欠けた場合も固定テンプレートで補完せず、説明生成の成否を監査記録する。説明LLMの未設定・失敗は業務上の確認理由へ追加しない。Decision-1の棄権とモデル通信失敗は別の状態として扱う。
 
 ARG残クォータ・Reset・ページングを扱い、固定クォータを仮定しない。無変更再推論、長文、再生成、同時実行、ログ量を制限。Azure予算通知だけを厳密な支出停止としない。保存・監査費用は推論停止後も残る。
 

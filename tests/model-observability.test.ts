@@ -1,118 +1,52 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { explanationSchema } from '@arp/contracts'
-import { ensureExplanationCoverage } from '../apps/assessment-api/src/service.ts'
+import { emptyExplanation } from '../apps/assessment-api/src/service.ts'
+import { fixture } from './fixtures.ts'
 
-const explanationFields = [
-  'impact',
-  'increasingFactors',
-  'reducingFactors',
-  'startRationale',
-  'missingInformation',
-  'changeConditions',
-  'microsoftFacts',
-  'internalFacts',
-  'judgments',
-  'humanChecks',
-] as const
+test('unavailable explanation generation does not produce template claims', () => {
+  const assessment = fixture()
+  const explanation = emptyExplanation(assessment.event, assessment.resources)
 
-test('empty model explanation receives evidence-safe required fallback claims', () => {
-  const empty = explanationSchema.parse(
-    Object.fromEntries(explanationFields.map((key) => [key, []])),
+  assert.deepEqual(explanationSchema.parse(explanation), explanation)
+  assert.deepEqual(explanation.increasingFactors, [])
+  assert.deepEqual(explanation.reducingFactors, [])
+  assert.deepEqual(explanation.startRationale, [])
+  assert.deepEqual(explanation.missingInformation, [])
+  assert.deepEqual(explanation.changeConditions, [])
+  assert.deepEqual(explanation.microsoftFacts, [])
+  assert.deepEqual(explanation.internalFacts, [])
+  assert.deepEqual(explanation.judgments, [])
+  assert.deepEqual(explanation.humanChecks, [])
+  assert.ok(
+    explanation.impact.every(
+      (claim) =>
+        claim.kind === 'General Impact' && claim.evidenceIds.length > 0,
+    ),
   )
-  const claim = {
-    id: 'unknown-impact',
-    text: '根拠不足のため確認が必要',
-    kind: 'Unknown' as const,
-    evidenceIds: [],
-    decisionRefs: [],
-  }
-  const fallback = explanationSchema.parse({
-    ...empty,
-    impact: [
-      claim,
-      {
-        ...claim,
-        id: 'general-impact',
-        text: '通知の対象条件に該当する場合の一般的影響',
-        kind: 'General Impact',
-        evidenceIds: ['evidence-1'],
-        decisionRefs: ['impactIfUnaddressed'],
-      },
-    ],
-    missingInformation: [{ ...claim, id: 'missing' }],
-    microsoftFacts: [
-      {
-        ...claim,
-        id: 'official',
-        text: '公式通知を取得済み',
-        kind: 'Confirmed Fact',
-        evidenceIds: ['evidence-1'],
-      },
-    ],
-    humanChecks: [{ ...claim, id: 'human-check' }],
-  })
-
-  const completed = ensureExplanationCoverage(empty, fallback, true, true, true)
-  assert.equal(completed.usedFallback, true)
-  assert.equal(completed.explanation.impact.length, 2)
-  assert.equal(completed.explanation.missingInformation.length, 1)
-  assert.equal(completed.explanation.microsoftFacts.length, 1)
-  assert.equal(completed.explanation.humanChecks.length, 1)
-  assert.equal(completed.explanation.judgments.length, 0)
+  assert.ok(
+    explanation.impact.every(
+      (claim) =>
+        !claim.text.includes('固定テンプレート') &&
+        !claim.text.includes('Decision-1の型付き判断'),
+    ),
+  )
 })
 
-test('model explanation with required grounded claims is kept unchanged', () => {
+test('model explanation schema accepts generated fields without fallback completion', () => {
+  const assessment = fixture()
   const claim = {
-    id: 'impact',
-    text: '判断材料が提示されている',
+    id: 'model-impact',
+    text: 'モデルが生成した根拠付き説明',
     kind: 'Derived Fact' as const,
-    evidenceIds: ['evidence-1'],
+    evidenceIds: [assessment.event.evidence[0]!.id],
     decisionRefs: [],
   }
-  const generated = explanationSchema.parse({
-    ...Object.fromEntries(explanationFields.map((key) => [key, []])),
-    impact: [claim],
-    missingInformation: [{ ...claim, id: 'missing' }],
-    microsoftFacts: [{ ...claim, id: 'official' }],
-    humanChecks: [{ ...claim, id: 'human-check' }],
-  })
-  const completed = ensureExplanationCoverage(
-    generated,
-    generated,
-    true,
-    true,
-    true,
-  )
-  assert.equal(completed.usedFallback, false)
-  assert.deepEqual(completed.explanation, generated)
-})
-
-test('deterministic general impact is retained over model generated general impact', () => {
-  const claim = {
-    id: 'model-general-impact',
-    text: 'モデルの影響説明',
-    kind: 'General Impact' as const,
-    evidenceIds: ['evidence-1'],
-    decisionRefs: ['impactIfUnaddressed'],
+  const generated = {
+    ...emptyExplanation(assessment.event, assessment.resources),
+    increasingFactors: [claim],
   }
-  const generated = explanationSchema.parse({
-    ...Object.fromEntries(explanationFields.map((key) => [key, []])),
-    impact: [claim],
-  })
-  const fallback = explanationSchema.parse({
-    ...generated,
-    impact: [
-      { ...claim, id: 'deterministic-general-impact', text: '固定説明' },
-    ],
-  })
-  const completed = ensureExplanationCoverage(
-    generated,
-    fallback,
-    false,
-    false,
-    false,
-  )
-  assert.deepEqual(completed.explanation.impact, fallback.impact)
-  assert.equal(completed.usedFallback, true)
+
+  assert.deepEqual(explanationSchema.parse(generated), generated)
+  assert.equal(generated.increasingFactors[0]?.text, claim.text)
 })

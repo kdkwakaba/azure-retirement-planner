@@ -3,7 +3,6 @@ import workflowPolicyData from '../../../config/workflow-policy.json' with { typ
 import { randomUUID } from 'node:crypto'
 import type {
   Assessment,
-  Decision,
   DiscoveryFailure,
   Evidence,
   Explanation,
@@ -331,39 +330,12 @@ export async function synchronize(assessmentIds: string[] = []): Promise<{
     failureDetails: snapshot.failureDetails,
   }
 }
-function fallbackExplanation(
+export function emptyExplanation(
   event: LifecycleEvent,
-  missing: string[],
   resources: ResourceImpact[],
-  includeGeneralReview = true,
-  decision?: Decision,
 ): Explanation {
-  const empty = {
-    impact: [
-      {
-        id: 'impact-undetermined',
-        text:
-          decision?.status === 'Proposed' &&
-          decision.impactIfUnaddressed &&
-          decision.impactDuringAndAfterChange
-            ? `Decision-1の型付き判断: 未対応時 ${decision.impactIfUnaddressed}、対応時・対応後 ${decision.impactDuringAndAfterChange}。この結果は人間による最終確認が必要です。`
-            : '業務影響を確定できる根拠が不足しています。適用条件と業務情報を確認するまで影響度の判断を保留します。',
-        kind:
-          decision?.status === 'Proposed' &&
-          decision.impactIfUnaddressed &&
-          decision.impactDuringAndAfterChange
-            ? ('Model Decision' as const)
-            : ('Unknown' as const),
-        evidenceIds: [],
-        decisionRefs:
-          decision?.status === 'Proposed' &&
-          decision.impactIfUnaddressed &&
-          decision.impactDuringAndAfterChange
-            ? ['impactIfUnaddressed', 'impactDuringAndAfterChange']
-            : [],
-      },
-      ...generalImpactNarratives(event, resources),
-    ],
+  return {
+    impact: generalImpactNarratives(event, resources),
     increasingFactors: [],
     reducingFactors: [],
     startRationale: [],
@@ -373,85 +345,6 @@ function fallbackExplanation(
     internalFacts: [],
     judgments: [],
     humanChecks: [],
-  }
-  return {
-    ...empty,
-    microsoftFacts: event.evidence
-      .filter((e) => e.sourceType === 'Microsoft')
-      .map((e) => ({
-        id: hash(e.id),
-        text: '公式通知を取得済み。適用条件と日付は人間確認が必要。',
-        kind: 'Confirmed Fact' as const,
-        evidenceIds: [e.id],
-        decisionRefs: [],
-      })),
-    missingInformation: missing.map((text, i) => ({
-      id: `unknown-${i}`,
-      text,
-      kind: 'Unknown' as const,
-      evidenceIds: [],
-      decisionRefs: [],
-    })),
-    humanChecks: [
-      ...resources
-        .filter(
-          (r) =>
-            r.verificationRequired ||
-            ['Unknown', 'Possible', 'Verification Required'].includes(
-              r.classification,
-            ),
-        )
-        .map((r) => ({
-          id: `resource-check-${hash({ id: r.id, reason: r.classificationReason })}`,
-          text: resourceGapText(r),
-          kind: 'Unknown' as const,
-          evidenceIds: r.evidenceIds,
-          decisionRefs: [],
-        })),
-      ...(includeGeneralReview
-        ? [
-            {
-              id: 'review',
-              text: '業務重要度・Owner・期限・移行方式を確認してください。',
-              kind: 'Recommendation' as const,
-              evidenceIds: event.evidence.map((e) => e.id),
-              decisionRefs: [],
-            },
-          ]
-        : []),
-    ],
-  }
-}
-export function ensureExplanationCoverage(
-  generated: Explanation,
-  fallback: Explanation,
-  needsMissingInformation: boolean,
-  needsMicrosoftFacts: boolean,
-  needsHumanChecks: boolean,
-): { explanation: Explanation; usedFallback: boolean } {
-  const explanation = {
-    ...generated,
-    impact: fallback.impact,
-    missingInformation:
-      needsMissingInformation && !generated.missingInformation.length
-        ? fallback.missingInformation
-        : generated.missingInformation,
-    microsoftFacts:
-      needsMicrosoftFacts && !generated.microsoftFacts.length
-        ? fallback.microsoftFacts
-        : generated.microsoftFacts,
-    humanChecks:
-      needsHumanChecks && !generated.humanChecks.length
-        ? fallback.humanChecks
-        : generated.humanChecks,
-  }
-  return {
-    explanation,
-    usedFallback:
-      explanation.impact !== generated.impact ||
-      explanation.missingInformation !== generated.missingInformation ||
-      explanation.microsoftFacts !== generated.microsoftFacts ||
-      explanation.humanChecks !== generated.humanChecks,
   }
 }
 function resourceGapText(resource: ResourceImpact): string {
@@ -925,13 +818,7 @@ async function assessWorkload(
       missing = [...missing, 'Decision-1の判断を完了できないため手動判断']
     }
   }
-  let explanation = fallbackExplanation(
-    event,
-    missing,
-    resources,
-    !deterministicNoReview,
-    decision,
-  )
+  let explanation = emptyExplanation(event, resources)
   const rules = applyRules({
     decision,
     asOf,
@@ -977,14 +864,6 @@ async function assessWorkload(
         httpStatus: null,
       }),
     )
-    missing = [...missing, '説明LLMが未設定のため固定テンプレートを使用']
-    explanation = fallbackExplanation(
-      event,
-      missing,
-      resources,
-      !deterministicNoReview,
-      decision,
-    )
   } else {
     const startedAt = Date.now()
     let requestStarted = false
@@ -1008,21 +887,15 @@ async function assessWorkload(
         hash({ id: assessmentId, stage: 'explanation' }),
         output,
       )
-      const fallback = fallbackExplanation(
-        event,
-        missing,
-        resources,
-        !deterministicNoReview,
-        decision,
-      )
-      const completed = ensureExplanationCoverage(
-        output.result.explanation,
-        fallback,
-        missing.length > 0,
-        event.evidence.some((item) => item.sourceType === 'Microsoft'),
-        !deterministicNoReview,
-      )
-      explanation = completed.explanation
+      explanation = {
+        ...output.result.explanation,
+        impact: [
+          ...output.result.explanation.impact.filter(
+            (claim) => claim.kind !== 'General Impact',
+          ),
+          ...generalImpactNarratives(event, resources),
+        ],
+      }
       modelInvocations.push(
         emitModelInvocation({
           stage: 'Explanation',
@@ -1030,9 +903,7 @@ async function assessWorkload(
           deployment: explanationDeployment,
           modelVersion: null,
           promptVersion: PROMPT_VERSION,
-          status: completed.usedFallback
-            ? 'SucceededWithFallback'
-            : 'Succeeded',
+          status: 'Succeeded',
           durationMs: Date.now() - startedAt,
           failureCategory: null,
           httpStatus: null,
@@ -1069,14 +940,7 @@ async function assessWorkload(
           httpStatus: failure.httpStatus,
         }),
       )
-      missing = [...missing, '生成結果未確認。固定テンプレートで確認事項を提示']
-      explanation = fallbackExplanation(
-        event,
-        missing,
-        resources,
-        !deterministicNoReview,
-        decision,
-      )
+      explanation = emptyExplanation(event, resources)
     }
   }
   if (!deterministicNoReview && !workItems.length)

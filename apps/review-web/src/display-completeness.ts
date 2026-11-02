@@ -1,5 +1,4 @@
-import type { WorkItem } from '@arp/contracts'
-import type { Assessment } from '@arp/contracts'
+import type { Assessment, ModelInvocation, WorkItem } from '@arp/contracts'
 
 type WorkRouting = NonNullable<WorkItem['workflowRouting']>
 
@@ -34,6 +33,32 @@ export function ownerTagDisplay(ownerTeam: string | null): string {
 
 export function modelVersionDisplay(version: string | null): string {
   return version ?? 'モデル版の記録なし（監査記録を確認）'
+}
+
+export function modelInvocationStatusDisplay(
+  invocation: Pick<ModelInvocation, 'stage' | 'status'>,
+): string {
+  if (invocation.stage === 'Explanation') {
+    const explanationLabels: Record<string, string> = {
+      NotRequired: '説明生成対象外',
+      NotConfigured: '説明LLM未設定（説明文は生成されていません）',
+      NotStarted: '説明生成未開始（説明文はありません）',
+      Succeeded: '説明生成完了',
+      SucceededWithFallback: '過去評価: 一部項目を補足',
+      Failed: '説明生成失敗（生成文は表示していません）',
+    }
+    return explanationLabels[invocation.status] ?? '説明生成状態を確認'
+  }
+
+  const decisionLabels: Record<string, string> = {
+    NotRequired: '実行対象外',
+    NotConfigured: '構成なし（実行されていません）',
+    NotStarted: '実行開始前に停止',
+    Succeeded: '完了',
+    SucceededWithFallback: '完了（過去評価で一部項目を補足）',
+    Failed: '失敗',
+  }
+  return decisionLabels[invocation.status] ?? 'モデル実行状態を確認'
 }
 
 export function explanationSectionDisplay(name: string): string {
