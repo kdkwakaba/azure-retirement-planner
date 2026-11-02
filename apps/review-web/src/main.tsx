@@ -15,6 +15,7 @@ import {
   evidenceDisplay,
   explanationSectionDisplay,
   impactDisplay,
+  modelInvocationStatusDisplay,
   officialDeadlineDisplay,
   milestoneDateDisplay,
   milestoneKindDisplay,
@@ -58,14 +59,6 @@ const classificationReasonLabels: Record<string, string> = {
 const modelStageLabels: Record<string, string> = {
   Decision: '影響判断',
   Explanation: '説明・作業案生成',
-}
-const modelStatusLabels: Record<string, string> = {
-  NotRequired: '実行対象外',
-  NotConfigured: '構成なし（実行されていません）',
-  NotStarted: '実行開始前に停止',
-  Succeeded: '完了',
-  SucceededWithFallback: '完了（必須説明を固定テンプレートで補完）',
-  Failed: '失敗',
 }
 const operationSourceLabels: Record<string, string> = {
   ServiceHealthAdvisory: 'Service Health通知',
@@ -970,7 +963,7 @@ function App() {
                           {current.modelInvocations.map((invocation) => (
                             <li key={invocation.correlationId}>
                               {modelStageLabels[invocation.stage]} —{' '}
-                              {modelStatusLabels[invocation.status]} —{' '}
+                              {modelInvocationStatusDisplay(invocation)} —{' '}
                               {invocation.provider} / {invocation.deployment}
                               {invocation.modelVersion
                                 ? ` / ${invocation.modelVersion}`
