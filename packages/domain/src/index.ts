@@ -737,6 +737,8 @@ export function validateAssessment(input: Assessment): string[] {
       [
         ...input.resources.map((r) => r.ownerTeam),
         ...(input.humanContext?.workItemUpdates.map((w) => w.ownerTeam) ?? []),
+        ...(input.humanContext?.workItemAdditions.map((w) => w.ownerTeam) ??
+          []),
       ].filter((t): t is string => !!t),
     )
     if (item.ownerTeam && !teams.has(item.ownerTeam))
@@ -853,6 +855,36 @@ export function canClose(assessment: Assessment): boolean {
     )
   )
 }
+function applyHumanWorkItemUpdate(
+  item: WorkItem,
+  update: Correction['workItemUpdates'][number] | undefined,
+  evidenceId: string | undefined,
+): WorkItem {
+  if (!update) return item
+  const changed =
+    (update.title !== undefined && update.title !== item.title) ||
+    (update.description !== undefined &&
+      update.description !== item.description) ||
+    update.ownerTeam !== item.ownerTeam ||
+    update.plannedStartDate !== item.plannedStartDate ||
+    update.dueDate !== item.dueDate ||
+    (update.completionCriteria !== undefined &&
+      JSON.stringify(update.completionCriteria) !==
+        JSON.stringify(item.completionCriteria))
+  const result = { ...item, ...update }
+  if (!changed || !evidenceId) return result
+  return {
+    ...result,
+    evidenceIds: [...new Set([...result.evidenceIds, evidenceId])],
+    sourceType: 'Mixed',
+    confidence: {
+      kind: 'Human',
+      value: null,
+      method: '人間が作業内容・担当・日程を確認または修正',
+      limitations: ['記録された人間の確認理由を参照し、承認時に再確認'],
+    },
+  }
+}
 export function carryForwardHumanContext(
   next: Assessment,
   previous: Assessment,
@@ -906,6 +938,48 @@ export function carryForwardHumanContext(
       unresolvedImpact: context.impactIfUnaddressed === null,
       alternativeApproved: context.alternativeApproved,
     })
+    const carriedAdditions = context.workItemAdditions
+      .map((addition) => {
+        const evidenceId = context.reviewEvidenceIds?.[0]
+        if (!evidenceId) return null
+        return {
+          id: hash({
+            eventId: result.event.id,
+            workloadId: result.workloadId,
+            clientId: addition.clientId,
+          }),
+          category: addition.category,
+          title: addition.title,
+          description: addition.description,
+          workloadId: result.workloadId,
+          resourceIds: [],
+          ownerTeam: addition.ownerTeam,
+          necessity: 'Recommended' as const,
+          priority: rules.priority,
+          plannedStartDate: null,
+          dueDate: null,
+          applicableMilestoneIds: milestone ? [milestone.id] : [],
+          prerequisites: [],
+          completionCriteria: addition.completionCriteria,
+          humanApprovalRequired: true as const,
+          evidenceIds: [evidenceId],
+          sourceType: 'Mixed' as const,
+          officialReferenceIds: [],
+          dependencyIds: [],
+          status: 'Draft' as const,
+          confidence: {
+            kind: 'Human' as const,
+            value: null,
+            method: '人間が追加した作業案',
+            limitations: ['作業案は承認済みではなく、担当・内容は再確認が必要'],
+          },
+        }
+      })
+      .filter((item) => item !== null)
+    const existingIds = new Set(result.workItems.map((item) => item.id))
+    result.workItems.push(
+      ...carriedAdditions.filter((item) => !existingIds.has(item.id)),
+    )
     const knownWorkItems = new Set(result.workItems.map((item) => item.id))
     const staleUpdates = context.workItemUpdates.filter(
       (update) => !knownWorkItems.has(update.id),
@@ -915,11 +989,14 @@ export function carryForwardHumanContext(
         (candidate) => candidate.id === item.id,
       )
       return {
-        ...item,
-        ...(update ?? {}),
+        ...applyHumanWorkItemUpdate(
+          item,
+          update,
+          context.reviewEvidenceIds?.[0],
+        ),
         priority: rules.priority,
         applicableMilestoneIds: milestone ? [milestone.id] : [],
-        status: 'Draft',
+        status: 'Draft' as const,
       }
     })
     if (staleUpdates.length)
@@ -1012,7 +1089,7 @@ export function reviseAssessment(
       correction.workItemUpdates.length
   )
     throw new Error('Unknown or duplicate correction item')
-  result.workItems =
+  const updatedItems =
     scopeDisposition === 'OutOfScope'
       ? []
       : result.workItems.map((item) => {
@@ -1020,13 +1097,61 @@ export function reviseAssessment(
             (w) => w.id === item.id,
           )
           return {
-            ...item,
-            ...update,
+            ...applyHumanWorkItemUpdate(item, update, evidenceId),
             priority: rules.priority,
             applicableMilestoneIds: milestone ? [milestone.id] : [],
-            status: 'Draft',
+            status: 'Draft' as const,
           }
         })
+  if (
+    new Set(correction.workItemAdditions.map((item) => item.clientId)).size !==
+    correction.workItemAdditions.length
+  )
+    throw new Error('Duplicate manual work item client ID')
+  if (
+    correction.workItemAdditions.some(
+      (item) => item.category === 'Budget Approval',
+    )
+  )
+    throw new Error(
+      'Budget Approval requires confirmed additional cost; use Cost Assessment while cost is unknown',
+    )
+  const additions =
+    scopeDisposition === 'OutOfScope'
+      ? []
+      : correction.workItemAdditions.map((addition) => ({
+          id: hash({
+            eventId: original.event.id,
+            workloadId: original.workloadId,
+            clientId: addition.clientId,
+          }),
+          category: addition.category,
+          title: addition.title,
+          description: addition.description,
+          workloadId: original.workloadId,
+          resourceIds: [],
+          ownerTeam: addition.ownerTeam,
+          necessity: 'Recommended' as const,
+          priority: rules.priority,
+          plannedStartDate: null,
+          dueDate: null,
+          applicableMilestoneIds: milestone ? [milestone.id] : [],
+          prerequisites: [],
+          completionCriteria: addition.completionCriteria,
+          humanApprovalRequired: true as const,
+          evidenceIds: [evidenceId],
+          sourceType: 'Mixed' as const,
+          officialReferenceIds: [],
+          dependencyIds: [],
+          status: 'Draft' as const,
+          confidence: {
+            kind: 'Human' as const,
+            value: null,
+            method: '人間が追加した作業案',
+            limitations: ['作業案は承認済みではなく、担当・内容は再確認が必要'],
+          },
+        }))
+  result.workItems = [...updatedItems, ...additions]
   result.id = hash({ previous: original.id, correction, reviewerId, now })
   result.createdAt = now
   result.asOf = now.slice(0, 10)

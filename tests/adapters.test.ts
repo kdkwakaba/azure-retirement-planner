@@ -780,6 +780,59 @@ test('managed Issue updates preserve manual text and reject edits inside the man
     /human conflict review required/,
   )
 })
+test('managed Issue content includes lifecycle notice context and department candidates', () => {
+  const assessment = fixture()
+  assessment.event.evidence.push({
+    id: 'official-notice',
+    sourceType: 'Microsoft',
+    sourceVersion: 'official-version',
+    observedAt: '2026-08-01T00:00:00.000Z',
+    subjectIds: [assessment.event.id],
+    fact: 'Classic API retirement by 31 March 2027.',
+    officialUrl:
+      'https://learn.microsoft.com/en-us/azure/foundry/agents/migrate',
+  })
+  assessment.event.milestones.push({
+    id: 'official-retirement-date',
+    kind: 'Retirement',
+    date: '2027-03-31',
+    rawDateText: '31 March 2027',
+    scope: 'Synthetic test date',
+    evidenceIds: [assessment.event.evidence[0]!.id],
+  })
+  const item = {
+    ...assessment.workItems[0]!,
+    workflowRouting: {
+      policyVersion: 'test',
+      teamCandidates: [
+        { id: 'infra', displayName: 'インフラ部門', kind: 'Team' as const },
+      ],
+      coordinationCandidates: [
+        {
+          id: 'is',
+          displayName: '情報システム部門',
+          kind: 'Department' as const,
+        },
+      ],
+      approvalStages: [],
+      sequenceOrder: null,
+      dependsOnCategories: [],
+      policyRuleIds: [],
+      unresolvedReasons: [],
+    },
+  }
+  const content = managedIssueContent(item, assessment)
+  assert.ok(content.includes(assessment.event.title))
+  assert.ok(content.includes('2027-03-31'))
+  assert.ok(content.includes('Classic API retirement by 31 March 2027.'))
+  assert.ok(
+    content.includes(
+      'https://learn.microsoft.com/en-us/azure/foundry/agents/migrate',
+    ),
+  )
+  assert.ok(content.includes('インフラ部門'))
+  assert.ok(content.includes('情報システム部門'))
+})
 
 test('Project progress import reads only the configured Status field', async (t) => {
   const client = new GitHubClient(

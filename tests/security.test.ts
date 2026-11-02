@@ -229,6 +229,7 @@ function correction(): Correction {
     applicableKind: 'Retirement',
     reason: 'Synthetic human confirmation',
     workItemUpdates: [],
+    workItemAdditions: [],
   }
 }
 test('human correction preserves model output and invalidates prior approval', () => {
@@ -254,6 +255,65 @@ test('human correction preserves model output and invalidates prior approval', (
   assert.notEqual(revised.id, original.id)
   assert.throws(() => verifyApproval(revised, review, revised.workItems[0]!.id))
   assert.equal(original.event.milestones.length, 0)
+})
+test('human-added coordination work remains a recommended draft with traceable human evidence', () => {
+  const original = fixture()
+  const revised = reviseAssessment(
+    original,
+    {
+      ...correction(),
+      workItemAdditions: [
+        {
+          clientId: '35d68144-ec5e-4a16-9985-3edc1443a3ef',
+          category: 'Cost Assessment',
+          title: '追加費用と予算確保の要否を確認',
+          description: '追加費用の有無を調査し、必要な場合に予算調整する',
+          completionCriteria: ['費用根拠と予算調整要否を記録する'],
+          ownerTeam: null,
+        },
+      ],
+    },
+    'synthetic-user',
+    '2026-08-02T00:00:00.000Z',
+  )
+  const addition = revised.workItems.find((item) =>
+    item.title.includes('追加費用'),
+  )
+  assert.ok(addition)
+  assert.equal(addition.necessity, 'Recommended')
+  assert.equal(addition.status, 'Draft')
+  assert.equal(addition.sourceType, 'Mixed')
+  assert.deepEqual(addition.resourceIds, [])
+  assert.equal(
+    revised.event.evidence.find((item) => item.id === addition.evidenceIds[0])
+      ?.sourceType,
+    'Human',
+  )
+  assert.deepEqual(validateAssessment(revised), [])
+})
+test('manual additions cannot turn unknown cost into a budget approval task', () => {
+  assert.throws(
+    () =>
+      reviseAssessment(
+        fixture(),
+        {
+          ...correction(),
+          workItemAdditions: [
+            {
+              clientId: '35d68144-ec5e-4a16-9985-3edc1443a3ef',
+              category: 'Budget Approval',
+              title: '予算承認',
+              description: '費用は未確認',
+              completionCriteria: ['承認を記録'],
+              ownerTeam: '情報システム部門',
+            },
+          ],
+        },
+        'synthetic-user',
+        '2026-08-02T00:00:00.000Z',
+      ),
+    /confirmed additional cost/,
+  )
 })
 test('reassessment with the same event version carries human corrections but requires fresh review', () => {
   const original = fixture()
@@ -313,6 +373,12 @@ test('reassessment with the same event version carries human corrections but req
   )
   assert.equal(carried.workItems[0]?.ownerTeam, 'confirmed-platform-team')
   assert.equal(carried.workItems[0]?.dueDate, '2026-09-10')
+  assert.equal(carried.workItems[0]?.sourceType, 'Mixed')
+  assert.ok(
+    carried.workItems[0]?.evidenceIds.includes(
+      carried.humanContext?.reviewEvidenceIds?.[0] ?? '',
+    ),
+  )
   assert.equal(carried.humanReviewRequired, true)
   assert.notEqual(carried.packageHash, corrected.packageHash)
   assert.throws(() =>
