@@ -753,7 +753,8 @@ function App() {
                   </div>
                 )}
                 <p>
-                  Workload: {current.workloadId} ／ 評価基準日: {current.asOf}
+                  {workloadDisplay(current.workloadId)} ／ 評価基準日:{' '}
+                  {current.asOf}
                 </p>
                 {canSync &&
                   current.event.trackingId !== syntheticUatTrackingId &&
@@ -873,7 +874,7 @@ function App() {
                       </article>
                     </div>
                     <p>
-                      Model: {current.decision.model} /{' '}
+                      モデル: {current.decision.model} /{' '}
                       {modelVersionDisplay(current.decision.modelVersion)} ·{' '}
                       {decisionStatusDisplay(current.decision.status)}
                     </p>
