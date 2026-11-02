@@ -205,7 +205,7 @@ export async function discover(subscriptionIds: string[], tenantId: string) {
     try {
       const inventory = await argRows(
         [subscription],
-        "resources | where type in~ ('microsoft.network/loadbalancers','microsoft.storage/storageaccounts','microsoft.insights/webtests') | project id, type, location, kind, skuName=tostring(sku.name), workloadId=tostring(tags.WorkloadId), environment=tostring(tags.Environment), ownerTeam=tostring(tags.OwnerTeam), webTestKind=tostring(properties.Kind)",
+        "resources | where type in~ ('microsoft.network/loadbalancers','microsoft.storage/storageaccounts','microsoft.insights/webtests','microsoft.cognitiveservices/accounts','microsoft.cognitiveservices/accounts/projects','microsoft.machinelearningservices/workspaces') | project id, type, location, kind, skuName=tostring(sku.name), workloadId=tostring(tags.WorkloadId), environment=tostring(tags.Environment), ownerTeam=tostring(tags.OwnerTeam), webTestKind=tostring(properties.Kind), hubResourceId=tostring(properties.hubResourceId), storageAccount=tostring(properties.storageAccount), blobStore=tostring(properties.capabilitySettings.blobStore), documentStore=tostring(properties.capabilitySettings.documentStore), vectorStore=tostring(properties.capabilitySettings.vectorStore)",
       )
       for (const row of inventory) {
         const id = String(row.id),
@@ -236,6 +236,11 @@ export async function discover(subscriptionIds: string[], tenantId: string) {
           properties: {
             kind: row.kind ?? null,
             webTestKind: row.webTestKind ?? null,
+            hubResourceId: row.hubResourceId ?? null,
+            storageAccount: row.storageAccount ?? null,
+            blobStore: row.blobStore ?? null,
+            documentStore: row.documentStore ?? null,
+            vectorStore: row.vectorStore ?? null,
           },
         })
       }
@@ -308,11 +313,19 @@ export async function explicitResourceIds(
   }
   return { resourceIds: ids, complete, failures, failureDetails }
 }
-export const PROFILE_REGISTRY_VERSION = '2026-10-26.1'
+export const PROFILE_REGISTRY_VERSION = '2026-11-02.1'
 export const PROFILE_RESOURCE_TYPES = [
   'microsoft.network/loadbalancers',
   'microsoft.storage/storageaccounts',
   'microsoft.insights/webtests',
+  'microsoft.cognitiveservices/accounts',
+  'microsoft.cognitiveservices/accounts/projects',
+  'microsoft.machinelearningservices/workspaces',
+] as const
+const FOUNDRY_RESOURCE_TYPES = [
+  'microsoft.cognitiveservices/accounts',
+  'microsoft.cognitiveservices/accounts/projects',
+  'microsoft.machinelearningservices/workspaces',
 ] as const
 export const RESOURCE_PROFILES = [
   {
@@ -335,6 +348,13 @@ export const RESOURCE_PROFILES = [
     officialReferenceUrl:
       'https://learn.microsoft.com/en-us/azure/azure-monitor/app/availability',
     eventPattern: /url ping|ping test/i,
+  },
+  {
+    id: 'foundry-agent-service-classic',
+    resourceType: 'microsoft.cognitiveservices/accounts',
+    officialReferenceUrl:
+      'https://learn.microsoft.com/en-us/azure/foundry-classic/concepts/ai-resources',
+    eventPattern: /foundry.{0,40}agent service/i,
   },
 ] as const
 const officialReferenceCache = new Map<
@@ -448,8 +468,11 @@ export async function fetchOfficialProfileEvidence(
 }
 export function applicableProfileIds(event: LifecycleEvent): string[] {
   const text = event.title + ' ' + event.body
-  return RESOURCE_PROFILES.filter((profile) =>
-    profile.eventPattern.test(text),
+  return RESOURCE_PROFILES.filter(
+    (profile) =>
+      profile.eventPattern.test(text) &&
+      (profile.id !== 'foundry-agent-service-classic' ||
+        /classic|retir|deprecat|end of support/i.test(text)),
   ).map((profile) => profile.id)
 }
 export function matchProfile(
@@ -462,8 +485,18 @@ export function matchProfile(
     excluded = false,
     requiredAttributeMissing = false,
     applicableProfile = false,
+    usageRequired = false,
     requiredAttributeNames: string[] = []
-  // 保守する3つの公式条件だけを適用。別機能や未知の条件をLLMで補完しない。
+  if (
+    profileIds.includes('foundry-agent-service-classic') &&
+    FOUNDRY_RESOURCE_TYPES.includes(
+      resource.type.toLowerCase() as (typeof FOUNDRY_RESOURCE_TYPES)[number],
+    )
+  ) {
+    applicableProfile = true
+    usageRequired = true
+  }
+  // 登録済み公式条件だけを適用。別機能や未知の条件をLLMで補完しない。
   if (
     profileIds.includes('basic-load-balancer') &&
     resource.type.toLowerCase() === 'microsoft.network/loadbalancers'
@@ -503,7 +536,7 @@ export function matchProfile(
     conditionMatches,
     explicitlyExcluded: excluded,
     dependencyEvidence: false,
-    usageRequired: false,
+    usageRequired,
     requiredAttributeMissing,
     requiredAttributeNames,
     applicableProfile,

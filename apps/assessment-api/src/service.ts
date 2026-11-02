@@ -470,8 +470,25 @@ export async function assessSnapshot(message: unknown): Promise<void> {
   const matched = snapshot.resources.map((r) =>
     matchProfile(event, r, explicit),
   )
-  // 対象不明の構成も残す。公式対象一覧にないことだけでは除外しない。
-  const candidates = matched
+  // Foundry通知ではFoundry本体と公式明示対象だけを候補にする。
+  // 取得できたというだけのStorage Accountを影響対象へ混ぜない。
+  const foundryProfile = applicableProfileIds(event).includes(
+    'foundry-agent-service-classic',
+  )
+  const candidates = matched.filter((resource) => {
+    if (!foundryProfile || explicit.has(resource.id.toLowerCase())) return true
+    const type = resource.type.toLowerCase()
+    if (type === 'microsoft.cognitiveservices/accounts')
+      return (
+        String(resource.properties.kind ?? '').toLowerCase() === 'aiservices'
+      )
+    if (type === 'microsoft.cognitiveservices/accounts/projects') return true
+    if (type === 'microsoft.machinelearningservices/workspaces')
+      return ['hub', 'project'].includes(
+        String(resource.properties.kind ?? '').toLowerCase(),
+      )
+    return false
+  })
   for (const id of explicit) {
     const eid = hash({ eventVersion: event.versionId, explicitResource: id })
     snapshot.evidence.push({
@@ -506,10 +523,19 @@ export async function assessSnapshot(message: unknown): Promise<void> {
   const referenceEvidence: Evidence[] = []
   for (const profileId of profiles) {
     const profile = RESOURCE_PROFILES.find((item) => item.id === profileId)
+    const profileResourceTypes =
+      profileId === 'foundry-agent-service-classic'
+        ? [
+            'microsoft.cognitiveservices/accounts',
+            'microsoft.cognitiveservices/accounts/projects',
+            'microsoft.machinelearningservices/workspaces',
+          ]
+        : profile
+          ? [profile.resourceType]
+          : []
     const matchingResources = profile
-      ? candidates.filter(
-          (resource) =>
-            resource.type.toLowerCase() === profile.resourceType.toLowerCase(),
+      ? candidates.filter((resource) =>
+          profileResourceTypes.includes(resource.type.toLowerCase()),
         )
       : []
     if (!profile || !matchingResources.length) continue

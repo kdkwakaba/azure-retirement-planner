@@ -109,6 +109,14 @@ test('Service Health failure is isolated from Resource Graph inventory and categ
   )
   const result = await discover([tenant], tenant)
   assert.equal(queries.length, 2)
+  assert.match(
+    queries.find((query) => query.startsWith('resources |')) ?? '',
+    /microsoft\.cognitiveservices\/accounts\/projects.*microsoft\.machinelearningservices\/workspaces/,
+  )
+  assert.match(
+    queries.find((query) => query.startsWith('resources |')) ?? '',
+    /properties\.hubResourceId/,
+  )
   assert.equal(result.resources.length, 1)
   assert.equal(result.scopeComplete, false)
   assert.equal(result.failureDetails[0]?.source, 'ServiceHealthAdvisory')
