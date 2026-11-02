@@ -6,10 +6,12 @@ export function visibleAssessments(
   assessments: Assessment[],
   testModeEnabled: boolean,
   syntheticUatEnabled: boolean,
+  includeNoAction = false,
 ): Assessment[] {
-  if (!testModeEnabled || !syntheticUatEnabled)
-    return assessments.filter(
-      (item) => item.event.trackingId !== syntheticUatTrackingId,
-    )
-  return assessments
+  return assessments.filter(
+    (item) =>
+      (includeNoAction || item.reviewDisposition !== 'NoAction') &&
+      ((testModeEnabled && syntheticUatEnabled) ||
+        item.event.trackingId !== syntheticUatTrackingId),
+  )
 }

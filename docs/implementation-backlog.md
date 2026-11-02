@@ -27,6 +27,8 @@
 | IMP-20 | Demo/UAT: 同一実環境で3分ライブ | 10,14–19 | 事前サインイン、実通知、判断→根拠→承認→登録 | リハーサル待ち。合成をライブ取得と偽らない | M / Presenter+QA / No |
 | IMP-21 | Cleanup: 作成台帳と専用資源・Project・秘密の撤去 | 04,15 | 削除対象照合、残存保持・残費用報告 | 専用Azure資源・Entra App・資格情報を作成済。撤去はPoC終了時に別途実行 | M / Cloud+Owner / No |
 | IMP-22 | UI: Microsoft公式Evidenceの日本語参考訳 | 03,13 | 原文保持、公式Source限定、MI、翻訳と判断根拠の分離、版付きCache | Service Health通知Evidenceの出所検証とUI/API対応はPR #46でmainへ反映済み。run #35はinfra-only applyでアプリZIP配置なし。PR #48により配置stepのoutcomeはJob Summaryへ表示。画面・実翻訳の確認は利用者指示により保留。2026-10-29にPR #56のアプリを再配置済み。API匿名ルート401、Exporterルート200を確認。認証済み画面での日本語表示UATとPoC Translator SKU/費用確認が残る | M / Dev+Cloud / Yes |
+| IMP-07a | Discovery: 保存済み通知の最新構成による再評価 | 07 | 既存Notice版を保持し、最新Inventoryで候補再抽出・新版保存 | `codex/resource-refresh-no-action`に実装済み。Operator／Governance限定APIから選択通知を再Queueできる。npm verify合格。PR・Azure再配置・実通知の再評価は未実施 | M / Dev / Yes |
+| IMP-14a | Human Review: 対応不要通知の一覧整理 | 14 | 理由付き判定・監査履歴保持・既定一覧から非表示・再表示 | `codex/resource-refresh-no-action`に実装済み。新しいAssessment版は再レビュー対象として一覧へ戻る。npm verify合格、認証画面UATは未実施 | S / Frontend+Dev / Yes |
 
 ## 未確定情報と次のゲート
 

@@ -262,9 +262,10 @@ function modelFailure(error: unknown): {
   return failureFacts(error)
 }
 const EVIDENCE_SCOPE_VERSION = '2'
-export async function synchronize(): Promise<{
+export async function synchronize(assessmentIds: string[] = []): Promise<{
   events: number
   resources: number
+  reassessedEvents: number
   scopeComplete: boolean
   failures: string[]
   failureDetails: DiscoveryFailure[]
@@ -274,19 +275,55 @@ export async function synchronize(): Promise<{
   const snapshot = await discover(settings.subscriptions, settings.tenantId)
   const snapshotId = hash(snapshot)
   await store.put('discovery', snapshotId, snapshot)
+  const eventVersions = new Set<string>()
+  const requestedWorkloads = new Map<string, Set<string>>()
+  const existingAssessments = assessmentIds.length ? await store.list(true) : []
   for (const event of snapshot.events) {
     await store.put('events', event.versionId, event)
-    await store.queues
-      .getQueueClient('assessments')
-      .sendMessage(
-        Buffer.from(
-          JSON.stringify({ snapshotId, eventVersionId: event.versionId }),
-        ).toString('base64'),
-      )
+    eventVersions.add(event.versionId)
+  }
+  for (const assessmentId of assessmentIds) {
+    const assessment = await store.assessment(assessmentId)
+    if (
+      assessment.event.trackingId === 'ARP-SYNTHETIC-UAT-001' ||
+      assessment.event.classification === 'OutOfScope' ||
+      assessment.humanContext?.scopeDisposition === 'OutOfScope'
+    )
+      throw new Error('Only an in-scope real notice can be resource-refreshed')
+    const logicalId = hash({
+      eventId: assessment.event.id,
+      workloadId: assessment.workloadId,
+    })
+    const current = await store.head(logicalId)
+    if (!current || current.assessmentId !== assessment.id)
+      throw new Error('Assessment is not the current version')
+    const workloads =
+      requestedWorkloads.get(assessment.eventVersionId) ?? new Set()
+    for (const related of existingAssessments) {
+      if (related.event.id === assessment.event.id)
+        workloads.add(related.workloadId)
+    }
+    workloads.add(assessment.workloadId)
+    requestedWorkloads.set(assessment.eventVersionId, workloads)
+    eventVersions.add(assessment.eventVersionId)
+  }
+  for (const eventVersionId of eventVersions) {
+    await store.queues.getQueueClient('assessments').sendMessage(
+      Buffer.from(
+        JSON.stringify({
+          snapshotId,
+          eventVersionId,
+          ...(requestedWorkloads.has(eventVersionId)
+            ? { workloadIds: [...requestedWorkloads.get(eventVersionId)!] }
+            : {}),
+        }),
+      ).toString('base64'),
+    )
   }
   return {
     events: snapshot.events.length,
     resources: snapshot.resources.length,
+    reassessedEvents: requestedWorkloads.size,
     scopeComplete: snapshot.scopeComplete,
     failures: snapshot.failures,
     failureDetails: snapshot.failureDetails,
@@ -448,6 +485,7 @@ export async function assessSnapshot(message: unknown): Promise<void> {
     .object({
       snapshotId: z.string().regex(/^[a-f0-9]{64}$/),
       eventVersionId: z.string().regex(/^[a-f0-9]{64}$/),
+      workloadIds: z.array(z.string()).optional(),
     })
     .parse(message)
   const settings = config(),
@@ -541,7 +579,10 @@ export async function assessSnapshot(message: unknown): Promise<void> {
     evidence: [...event.evidence, ...referenceEvidence],
   }
   const workloads = [
-    ...new Set(candidates.map((r) => r.workloadId ?? 'unassigned')),
+    ...new Set([
+      ...candidates.map((r) => r.workloadId ?? 'unassigned'),
+      ...(job.workloadIds ?? []),
+    ]),
   ]
   if (!workloads.length) workloads.push('unassigned')
   for (const workloadId of workloads) {

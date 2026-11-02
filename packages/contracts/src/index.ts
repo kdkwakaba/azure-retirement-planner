@@ -379,6 +379,7 @@ export const correctionSchema = z
 export const assessmentSchema = z
   .object({
     id: z.string(),
+    reviewDisposition: z.enum(['Active', 'NoAction']).optional(),
     sourceInputHash: z.string().optional(),
     reevaluation: z
       .object({
@@ -465,7 +466,7 @@ export const approvalSchema = z
     reviewerId: z.string(),
     reviewedAt: z.iso.datetime(),
     reason: z.string().min(1),
-    result: z.enum(['Approved', 'Partial', 'Returned', 'Held']),
+    result: z.enum(['Approved', 'Partial', 'Returned', 'Held', 'NoAction']),
   })
   .strict()
 export type LifecycleEvent = z.infer<typeof eventSchema>

@@ -29,6 +29,7 @@ export interface Head {
   assessmentId: string
   packageHash: string
   entityKind: string
+  disposition?: 'Active' | 'NoAction'
 }
 export class AzureStore {
   blobs: BlobServiceClient
@@ -466,12 +467,17 @@ export class AzureStore {
     await save(reference)
     return reference
   }
-  async list(): Promise<Assessment[]> {
+  async list(includeNoAction = false): Promise<Assessment[]> {
     const results: Assessment[] = []
     for await (const entity of this.table.listEntities<Head>({
       queryOptions: { filter: "entityKind eq 'head'" },
     })) {
-      results.push(await this.assessment(entity.assessmentId))
+      if (!includeNoAction && entity.disposition === 'NoAction') continue
+      results.push({
+        ...(await this.assessment(entity.assessmentId)),
+        reviewDisposition:
+          entity.disposition === 'NoAction' ? 'NoAction' : 'Active',
+      })
       if (results.length >= 100) break
     }
     return results.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -490,6 +496,7 @@ export class AzureStore {
       entityKind: 'head',
       assessmentId: assessment.id,
       packageHash: assessment.packageHash,
+      disposition: 'Active',
     }
     if (prior)
       await this.table.updateEntity(entity, 'Replace', { etag: prior.etag })
@@ -507,6 +514,13 @@ export class AzureStore {
       approval.approvedItemIds.length > 50
     )
       throw new Error('Invalid approval selection')
+    if (
+      approval.result === 'NoAction' &&
+      (approval.approvedItemIds.length > 0 || !approval.reason.trim())
+    )
+      throw new Error(
+        'No-action review requires a reason and no approved items',
+      )
     for (const id of approval.approvedItemIds)
       verifyApproval(assessment, approval, id)
     const logicalId = hash({
@@ -572,6 +586,10 @@ export class AzureStore {
           packageHash: current.packageHash,
           entityKind: 'head',
           lastReviewId: approval.id,
+          disposition: approval.result === 'NoAction' ? 'NoAction' : 'Active',
+          ...(approval.result === 'NoAction'
+            ? { noActionAt: approval.reviewedAt }
+            : {}),
         },
         'Replace',
         { etag: current.etag },

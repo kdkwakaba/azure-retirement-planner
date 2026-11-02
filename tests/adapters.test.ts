@@ -1192,3 +1192,41 @@ test('synthetic UAT approval is recorded without creating production outbox rows
   await store.approve(assessment, approval, true)
   assert.equal(submit.mock.callCount(), 1)
 })
+
+test('no-action review hides the current assessment and does not create outbox work', async (t) => {
+  const store = new AzureStore('syntheticaccount')
+  const assessment = fixture()
+  const approval: Approval = {
+    id: hash('no-action-review'),
+    assessmentId: assessment.id,
+    packageHash: assessment.packageHash,
+    approvedItemIds: [],
+    reviewerId: 'synthetic-user',
+    reviewedAt: '2026-08-01T00:00:00.000Z',
+    reason: 'No matching resource types were found',
+    result: 'NoAction',
+  }
+  t.mock.method(store, 'head', async () => ({
+    partitionKey: 'assessment:synthetic',
+    rowKey: 'head',
+    assessmentId: assessment.id,
+    packageHash: assessment.packageHash,
+    entityKind: 'head',
+    etag: 'synthetic-etag',
+  }))
+  t.mock.method(store, 'put', async () => {})
+  const submit = t.mock.method(
+    store.table,
+    'submitTransaction',
+    async (actions: unknown) => {
+      const text = JSON.stringify(actions)
+      assert.ok(text.includes('disposition'))
+      assert.ok(text.includes('NoAction'))
+      assert.ok(text.includes('review:' + approval.id))
+      assert.ok(!text.includes('outbox:'))
+      return { status: 202, subResponses: [] }
+    },
+  )
+  await store.approve(assessment, approval)
+  assert.equal(submit.mock.callCount(), 1)
+})
