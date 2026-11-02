@@ -12,7 +12,7 @@ const initialWorkItemAdditions = (assessment: Assessment) => {
       description:
         '社内外の利用者・関係チームと確認日程および回答を調整し、情報システム部門が窓口となる。',
       completionCriteria: ['関係者、回答、未解決事項、次の確認日を記録する'],
-      ownerTeam: null,
+      ownerTeam: '情報システム部門',
     },
     {
       clientId: crypto.randomUUID(),
@@ -23,7 +23,7 @@ const initialWorkItemAdditions = (assessment: Assessment) => {
       completionCriteria: [
         '費用の根拠または未確定理由と、予算調整の要否を記録する',
       ],
-      ownerTeam: null,
+      ownerTeam: '情報システム部門',
     },
     {
       clientId: crypto.randomUUID(),
@@ -32,7 +32,7 @@ const initialWorkItemAdditions = (assessment: Assessment) => {
       description:
         '必要な社内承認・外部調整の有無を確認し、情報システム部門が調整する。承認者や承認結果は未確認のままとする。',
       completionCriteria: ['必要な承認役割・調整事項・判断結果を記録する'],
-      ownerTeam: null,
+      ownerTeam: '情報システム部門',
     },
   ]
 }
