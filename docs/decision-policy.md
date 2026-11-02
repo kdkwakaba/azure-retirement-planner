@@ -61,6 +61,8 @@ Immediate、Within 30 days、Within 90 days、Within 180 days、Later、No actio
 
 リソース分類の`Unknown`は「カテゴリに該当しない」ではなく、現在の証拠で影響を特定できない状態を表す。`classificationReason`で評価前、対応プロファイルなし、条件不一致、旧データの理由未記録を区別する。既知プロファイルが必要とするSKU／kind等が取得できない場合は`Verification Required`とし、不足属性を人間の確認項目にする。プロファイルに存在しない属性値は`Not Impacted`へ倒さずUnknownとしてレビューに残す。
 
+候補表示は通知内容と対応プロファイルのResource Typeに合わせる。既知プロファイルがある場合は該当Resource Typeだけを候補にし、同種リソースの未知属性・条件はUnknownとして保持する。Service Health／Advisorが明示した対象はプロファイルにない種別でも保持する。対応プロファイルがない通知では、明示対象以外のインベントリを候補に推測せず、`ProfileUnavailable`として人間レビューに送り、対象外とは扱わない。
+
 Unknown、Possible、Verification Required、または確認フラグ付きConfirmedには、分類理由・不足属性・該当Evidenceに沿った`Impact Verification`作業を用意する。これはRecommendedの確認作業であり、移行必須や本番変更を意味しない。説明LLMが停止している場合も同じ安全な作業案を決定的に生成し、根拠がなければUnknownを維持する。
 
 欠損数ではなく結論への影響で判定する。以下は強制レビュー。

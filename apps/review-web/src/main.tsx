@@ -911,6 +911,12 @@ function App() {
                     調査範囲内のリソースは、確認済み根拠により対象外と判定されています。
                   </p>
                 )}
+                {current.discoveryScope?.profileIds.length === 0 && (
+                  <p>
+                    通知に対応するResource
+                    Typeプロファイルがありません。公式の明示対象がある場合はそれだけを表示しています。無関係なインベントリ候補は表示していません。これは対象外の判定ではありません。公式対象サービス種別を人が確認してください。
+                  </p>
+                )}
                 <div className="scroll">
                   <table>
                     <thead>
