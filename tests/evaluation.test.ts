@@ -5,7 +5,12 @@ import type {
   EvaluationManifest,
   EvaluationObservation,
 } from '@arp/domain'
-import { evaluateCases, evaluateManifest } from '@arp/domain'
+import type { Explanation } from '@arp/contracts'
+import {
+  evaluateCases,
+  evaluateExplanations,
+  evaluateManifest,
+} from '@arp/domain'
 
 const firstCase: EvaluationCase = {
   caseId: 'synthetic-lb-critical',
@@ -90,6 +95,49 @@ test('empty metric denominators remain null and do not imply success', () => {
   assert.equal(empty.ownerTeam.exactAgreement.value, null)
   assert.equal(empty.unsupportedFactualClaims.value, null)
   assert.equal(empty.retirementDetection.missRate, null)
+})
+
+test('explanation quality reports reference integrity and leaves semantic support to humans', () => {
+  const explanation: Explanation = {
+    impact: [
+      {
+        id: 'claim-1',
+        text: '根拠付き説明',
+        kind: 'Confirmed Fact',
+        evidenceIds: ['evidence-1'],
+        decisionRefs: [],
+      },
+      {
+        id: 'claim-2',
+        text: '根拠なし説明',
+        kind: 'Assumption',
+        evidenceIds: ['missing-evidence'],
+        decisionRefs: [],
+      },
+    ],
+    increasingFactors: [],
+    reducingFactors: [],
+    startRationale: [],
+    missingInformation: [],
+    changeConditions: [],
+    microsoftFacts: [],
+    internalFacts: [],
+    judgments: [],
+    humanChecks: [],
+  }
+  const report = evaluateExplanations([
+    {
+      caseId: 'synthetic-explanation-1',
+      knownEvidenceIds: ['evidence-1'],
+      knownDecisionRefs: [],
+      explanation,
+    },
+  ])
+  assert.equal(report.claimCount, 2)
+  assert.equal(report.claimsWithoutGrounding.value, 0)
+  assert.equal(report.invalidEvidenceReferences.value, 0.5)
+  assert.equal(report.nonEmptySectionCoverage.value, 0.1)
+  assert.equal(report.semanticSupportRequiresHumanReview, true)
 })
 
 test('cases with no impact or owner truth do not create false denominators', () => {
