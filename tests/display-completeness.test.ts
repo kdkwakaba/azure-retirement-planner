@@ -38,7 +38,7 @@ const routing = {
 } satisfies NonNullable<WorkItem['workflowRouting']>
 
 test('incomplete assessment values display their reason and next decision', () => {
-  assert.match(impactDisplay(null, '未対応時'), /Workload責任者が確認/)
+  assert.match(impactDisplay(null, '未対応時'), /影響度は未確定/)
   assert.match(priorityDisplay(null), /対象範囲と影響を確認後/)
   assert.match(plannedDateDisplay(null, '完了日'), /計画担当が設定/)
   assert.match(ownerDisplay(null, routing), /情報システム部門が初動窓口/)
@@ -52,6 +52,7 @@ test('incomplete assessment values display their reason and next decision', () =
   assert.match(modelVersionDisplay(null), /監査記録を確認/)
   assert.equal(explanationSectionDisplay('missingInformation'), '不足情報')
   assert.equal(claimKindDisplay('Unknown'), '根拠不足で不明')
+  assert.equal(claimKindDisplay('General Impact'), '一般的な影響想定')
   assert.match(milestoneDateDisplay(null, null), /公式通知の原文を確認/)
   assert.equal(milestoneKindDisplay('Retirement'), '廃止日')
   assert.match(

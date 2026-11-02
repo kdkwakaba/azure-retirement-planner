@@ -24,6 +24,8 @@ import {
   carryForwardHumanContext,
   impactDiscoveryOutcome,
   canSkipAssessmentReview,
+  generalImpactNarratives,
+  IMPACT_NARRATIVE_VERSION,
   applyWorkflowPolicy,
   generateBusinessWorkflowTasks,
   scopeEvidenceToWorkload,
@@ -360,6 +362,7 @@ function fallbackExplanation(
             ? ['impactIfUnaddressed', 'impactDuringAndAfterChange']
             : [],
       },
+      ...generalImpactNarratives(event, resources),
     ],
     increasingFactors: [],
     reducingFactors: [],
@@ -428,7 +431,7 @@ export function ensureExplanationCoverage(
 ): { explanation: Explanation; usedFallback: boolean } {
   const explanation = {
     ...generated,
-    impact: generated.impact.length ? generated.impact : fallback.impact,
+    impact: fallback.impact,
     missingInformation:
       needsMissingInformation && !generated.missingInformation.length
         ? fallback.missingInformation
@@ -775,6 +778,7 @@ async function assessWorkload(
         return r
       })
       .sort((a, b) => a.id.localeCompare(b.id)),
+    impactNarrativeVersion: IMPACT_NARRATIVE_VERSION,
     complete,
     decisionRevision: decisionRevision(limit),
     ...(reevaluation ? { reevaluationRunId: reevaluation.runId } : {}),
@@ -1163,6 +1167,7 @@ async function assessWorkload(
       ? policyParsed.data.version
       : 'Invalid',
     workflowPolicyHash: policyHash,
+    impactNarrativeVersion: IMPACT_NARRATIVE_VERSION,
     eventVersionId: event.versionId,
     workloadId,
     createdAt: new Date().toISOString(),
