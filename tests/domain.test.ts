@@ -387,6 +387,17 @@ test('a valid partial approval only covers the selected current work item', () =
   const a = fixture()
   assert.doesNotThrow(() => verifyApproval(a, approval(a), a.workItems[0]!.id))
 })
+test('a no-action review records a decision without approving work items', () => {
+  const a = fixture()
+  const review = approvalSchema.parse({
+    ...approval(a),
+    approvedItemIds: [],
+    result: 'NoAction',
+    reason: 'No applicable resources were confirmed',
+  })
+  assert.equal(review.result, 'NoAction')
+  assert.deepEqual(review.approvedItemIds, [])
+})
 test('TST-24: hostile text is stored as data and does not mint milestones', () => {
   const e = normalizeNotice({
     tenantId: tenant,

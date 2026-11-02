@@ -113,6 +113,16 @@ app.http('api', {
             process.env.DECISION_REEVALUATION_ENABLED === 'true',
           canReevaluate:
             principal.kind === 'User' && principal.roles.includes('Governance'),
+          canSync:
+            principal.kind === 'User' &&
+            principal.roles.some((role) =>
+              ['Operator', 'Governance'].includes(role),
+            ),
+          canReview:
+            principal.kind === 'User' &&
+            principal.roles.some((role) =>
+              ['Reviewer', 'Governance'].includes(role),
+            ),
         })
       const store = new AzureStore(config().account)
       if (request.method === 'GET' && path === 'decision-reevaluation-status') {
@@ -206,8 +216,10 @@ app.http('api', {
           })
         }
       }
-      if (request.method === 'GET' && path === 'assessments')
-        return reply(200, await store.list())
+      if (request.method === 'GET' && path === 'assessments') {
+        const includeNoAction = request.query.get('includeNoAction') === 'true'
+        return reply(200, await store.list(includeNoAction))
+      }
       if (request.method === 'GET' && path === 'project-progress')
         return reply(200, await store.projectProgress())
       if (request.method === 'POST') {
@@ -221,7 +233,16 @@ app.http('api', {
           return reply(413, { error: 'Request too large' })
         if (path === 'sync') {
           requireUserRole(principal, apiRolePolicy.sync)
-          return reply(202, await synchronize())
+          const body = z
+            .object({
+              assessmentIds: z
+                .array(z.string().regex(/^[a-f0-9]{64}$/))
+                .max(10)
+                .default([]),
+            })
+            .strict()
+            .parse(JSON.parse(await request.text()))
+          return reply(202, await synchronize(body.assessmentIds))
         }
         const content = await request.text()
         if (Buffer.byteLength(content) > 200000)
@@ -728,7 +749,13 @@ app.http('api', {
               packageHash: z.string().regex(/^[a-f0-9]{64}$/),
               approvedItemIds: z.array(z.string()),
               reason: z.string().min(1).max(2000),
-              result: z.enum(['Approved', 'Partial', 'Returned', 'Held']),
+              result: z.enum([
+                'Approved',
+                'Partial',
+                'Returned',
+                'Held',
+                'NoAction',
+              ]),
             })
             .strict()
             .parse(payload)
@@ -750,6 +777,8 @@ app.http('api', {
             return reply(400, {
               error: 'Unapproved result cannot select work items',
             })
+          if (approval.result === 'NoAction' && !approval.reason.trim())
+            return reply(400, { error: 'No-action decision requires a reason' })
           const syntheticUat = isSyntheticUatAssessment(assessment)
           await store.approve(assessment, approval, syntheticUat)
           if (!syntheticUat && process.env.EXPORT_ENABLED === 'true')
