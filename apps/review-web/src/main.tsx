@@ -510,7 +510,8 @@ function App() {
         reason,
         result,
       })
-      let exportNotice = '外部登録は無効です。'
+      let exportNotice =
+        'GitHub Issue／Projectへの外部登録は環境設定（ARP_EXPORT_ENABLED=falseまたは未設定）で無効です。有効化前に未配送Outboxを確認し、設定変更後に手動CDで再配置してください。'
       if (response.exportEnabled)
         exportNotice = '承認済み作業を登録待ちへ送ります。'
       else if (current.event.trackingId === syntheticUatTrackingId)
