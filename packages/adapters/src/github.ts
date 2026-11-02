@@ -94,6 +94,22 @@ function issueSafeText(value: string): string {
       '[メールアドレス省略]',
     )
 }
+function safeOfficialReference(value: string): string | null {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' &&
+      [
+        'learn.microsoft.com',
+        'azure.microsoft.com',
+        'status.azure.com',
+        'portal.azure.com',
+      ].includes(url.hostname.toLowerCase())
+      ? url.toString()
+      : null
+  } catch {
+    return null
+  }
+}
 function boundedTitle(value: string): string {
   return issueSafeText(value)
     .replace(/[\r\n]+/g, ' ')
@@ -154,7 +170,10 @@ function throwGraphQLErrors(errors: unknown, operation: string): void {
 function japaneseCategory(category: string): string {
   return categoryLabels[category] ?? category
 }
-export function managedIssueContent(item: WorkItem): string {
+export function managedIssueContent(
+  item: WorkItem,
+  assessment?: Assessment,
+): string {
   // Work Itemの承認済み作業内容を転記し、Resource ID・メールは外部へ複製しない。
   return [
     ...(item.title.startsWith('[SYNTHETIC UAT]')
@@ -170,6 +189,40 @@ export function managedIssueContent(item: WorkItem): string {
     `対応開始日: ${item.plannedStartDate ?? '未確定'}`,
     `対応期限: ${item.dueDate ?? '未確定'}`,
     `担当チーム候補: ${item.ownerTeam ?? '未設定'}`,
+    ...(item.workflowRouting?.teamCandidates.length
+      ? [
+          `担当候補: ${item.workflowRouting.teamCandidates.map((team) => team.displayName).join('、')}`,
+        ]
+      : []),
+    ...(item.workflowRouting?.coordinationCandidates.length
+      ? [
+          `調整候補: ${item.workflowRouting.coordinationCandidates.map((team) => team.displayName).join('、')}`,
+        ]
+      : []),
+    ...(assessment
+      ? [
+          '## 通知情報',
+          `通知: ${issueSafeText(assessment.event.title).slice(0, 500)}`,
+          ...assessment.event.evidence
+            .filter((e) => e.sourceType === 'Microsoft' && e.officialUrl)
+            .slice(0, 1)
+            .map(
+              (e) => `公式通知要約: ${issueSafeText(e.fact).slice(0, 1200)}`,
+            ),
+          `公式日付: ${
+            assessment.event.milestones
+              .filter((m) => m.kind !== 'Deprecation')
+              .map((m) => `${m.kind} ${m.date}`)
+              .join('、') || '未確定'
+          }`,
+          ...assessment.event.evidence
+            .filter((e) => e.sourceType === 'Microsoft' && e.officialUrl)
+            .slice(0, 3)
+            .map((e) => safeOfficialReference(e.officialUrl!))
+            .filter((url): url is string => url !== null)
+            .map((url) => `公式情報: ${url}`),
+        ]
+      : []),
     `必要性: ${item.necessity === 'Required' ? '必須作業' : '推奨作業'}`,
     '## 作業内容',
     issueSafeText(item.description).slice(0, 8000),
@@ -621,6 +674,7 @@ export class GitHubClient {
     issueId: string,
     item: WorkItem,
     previousManagedHash: string | null,
+    assessment?: Assessment,
   ): Promise<string> {
     const current = z
       .object({
@@ -647,7 +701,7 @@ export class GitHubClient {
     const previousContent = body
       .slice(contentStart, end)
       .replace(/^\n|\n$/g, '')
-    const nextContent = managedIssueContent(item)
+    const nextContent = managedIssueContent(item, assessment)
     const currentHash = hash(previousContent)
     if (
       previousManagedHash

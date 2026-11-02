@@ -30,6 +30,7 @@ import {
   assessSnapshot,
   config,
   evaluateSyntheticUat,
+  applyReviewWorkflowPolicy,
   processDecisionReevaluation,
   synchronize,
 } from './service.ts'
@@ -555,6 +556,7 @@ app.http('api', {
             typeof row.managedContentHash === 'string'
               ? row.managedContentHash
               : null,
+            assessment,
           )
           await store.table.updateEntity(
             {
@@ -707,11 +709,13 @@ app.http('api', {
             prior.packageHash !== body.packageHash
           )
             return reply(409, { error: 'Stale assessment' })
-          const revised = reviseAssessment(
-            original,
-            body.correction,
-            principal.id,
-            new Date().toISOString(),
+          const revised = applyReviewWorkflowPolicy(
+            reviseAssessment(
+              original,
+              body.correction,
+              principal.id,
+              new Date().toISOString(),
+            ),
           )
           await store.commitAssessment(revised, prior)
           return reply(200, { assessmentId: revised.id })

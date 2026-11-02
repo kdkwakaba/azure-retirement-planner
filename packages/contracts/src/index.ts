@@ -344,12 +344,36 @@ export const correctionSchema = z
       z
         .object({
           id: z.string(),
+          title: z.string().min(1).max(160).optional(),
+          description: z.string().min(1).max(2000).optional(),
+          completionCriteria: z
+            .array(z.string().min(1).max(500))
+            .min(1)
+            .max(10)
+            .optional(),
           ownerTeam: z.string().nullable(),
           plannedStartDate: dateSchema.nullable(),
           dueDate: dateSchema.nullable(),
         })
         .strict(),
     ),
+    workItemAdditions: z
+      .array(
+        z
+          .object({
+            clientId: z.uuid(),
+            category: categorySchema,
+            title: z.string().min(1).max(160),
+            description: z.string().min(1).max(2000),
+            completionCriteria: z
+              .array(z.string().min(1).max(500))
+              .min(1)
+              .max(10),
+            ownerTeam: z.string().max(100).nullable(),
+          })
+          .strict(),
+      )
+      .default([]),
   })
   .strict()
 export const assessmentSchema = z
