@@ -100,6 +100,13 @@ test('assessment-level empty discovery requires complete scope and active profil
     }),
     'ProfileUnavailable',
   )
+  assert.equal(
+    canSkipAssessmentReview({
+      outcome: 'ProfileUnavailable',
+      scopeComplete: true,
+    }),
+    false,
+  )
   const excluded = {
     ...fixture().resources[0]!,
     classification: 'Not Impacted' as const,
