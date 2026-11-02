@@ -76,7 +76,7 @@ Readerは評価対象Subscription範囲のみで、APIのシステム割り当�
 ## 4. 実接続を有効にする順序
 
 - モデル接続リリース後は`MAX_MODEL_CALLS_PER_DAY=200`、同期/通知/外部登録はfalse。要求単位のToken上限は設定しない。`infra/main.bicep`とパラメーターへ構成を記録し、ポータル手修正を次のCDで消さない。
-- 許可するサービスはBasic LB、GPv1、URL pingの3種。現在のARGは3リソースTypeを取得する。未知の条件の構成もUnknownとして残し、0件を影響なしにしない。Owner/Workloadのタグは`OwnerTeam`、`WorkloadId`、環境は`Environment`。データプレーンは取得しない。
+- 現在のARGはBasic LB、GPv1、URL pingに加え、Foundry `AIServices`アカウント／project、Classic Foundryのhub／projectを取得する。Foundry Agent Service Classicの廃止通知では、FoundryリソースとMicrosoftが明示した対象だけを候補にし、無関係なStorage Accountを影響対象へ含めない。FoundryとStorageの関連付け項目も制御プレーンから収集するが、関係だけで影響を確定せず、利用状況は人が確認する。その他の通知では不明な構成もUnknownとして残し、0件を影響なしにしない。Owner/Workloadのタグは`OwnerTeam`、`WorkloadId`、環境は`Environment`。データプレーンは取得しない。
 - UIの「Azure情報を取得・評価」で実取得を開始し、Queue処理後に更新する。API読取権限、ARGページング、Service Health/Advisorの実データShapeをSP-02で確認する。Service HealthのTracking IDはimpacted-resource IDから完全一致で抽出し、Advisorメタデータと推奨を`recommendationTypeId`で関連付ける。Advisorの有効状態は`recommendationStatus`を用い、`platformState`や`customerState`に依存しない。いずれかの取得に失敗した場合も他方の対象結果を保持し、評価Scopeを不完全としてレビューへ送る。
 - Health Advisoryの非推奨・Retirement以外を含む入口は`infra/ingestion.bicep`。承認済み監視RGへSubscriptionごとに配置する。通知Payloadは原本保存後、ARGから正規情報を再読取する。受信本文のIDや日付を正本として使わない。配送試験を実Retirement取得と同一視しない。
 - Decision-1のDeployment、API設定、API MIへのFoundry限定推論権限を反映済み。実データ通知1件のv1応答に加え、合成3事例×3回の型・確率契約検証を完了（9/9成功、9/9 Unknownを含みAbstained相当）。これは判断精度の実証ではない。CLI利用者のCognitive Services UserはFoundryアカウント範囲に限定。説明モデルと実環境精度評価は未完了。応答契約不一致は原応答をAzureへ保存してUnavailable＋人間判断。採用契約は`packages/adapters/src/models.ts`、Prompt/Rule Versionはコードで追跡する。別モデルへの自動切替はない。
