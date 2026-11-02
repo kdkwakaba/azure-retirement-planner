@@ -127,7 +127,7 @@ APIの日次モデル呼出枠は200件で、同時予約をETagで制御する�
 - Foundry `arp-foundry-0e2e4716`（East US 2）のカタログに`gpt-6-luna` version `2026-09-22`、`DataZoneStandard`があり、モデル情報の`maxCapacity`は3。capacity 1のWhat-IfはLuna deployment作成のみで、Decision-1に変更なし。
 - `infra/bootstrap/foundry.bicep`で`arp-explanation-gpt-6-luna`を作成。deploymentは`Succeeded`／`Running`、SKU `DataZoneStandard`、capacity 1。Bicep What-Ifは両モデルdeploymentがNoChange。
 - API Function Appへ説明Endpoint／Deployment／Model Versionを反映し、Manual PoC deployment run [41467404738](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41467404738)が成功。API Managed IdentityのFoundryアカウント範囲`Cognitive Services User`割当を確認。
-- Azure CLI利用者の委任トークンで合成テキストを送り、Chat CompletionsとJSON Schema応答を確認（172 tokens）。これはAPI Managed Identity経由の呼出しや、アプリ固有の説明Schema／実通知の説明品質を検証したものではない。既存の合成UATはDecision-1のみを呼び説明LLMを呼ばないため、次に実通知を再評価する経路の確認が必要。
+- Azure CLI利用者の委任トークンで合成テキストを送り、Chat CompletionsとJSON Schema応答を確認（172 tokens）。これはAPI Managed Identity経由の呼出しや、アプリ固有の説明Schema／実通知の説明品質を検証したものではない。既存の合成UATは引き続きDecision-1のみを呼び説明LLMを呼ばない。Governance限定の実通知再評価をDecision-1と説明LLMの両方を呼ぶ検証経路として拡張中。
 
 [GitHub OIDCのimmutable subject仕様](https://docs.github.com/en/actions/reference/security/oidc#immutable-subject-claims)
 
@@ -151,13 +151,14 @@ ServiceHealthResourcesの`LastUpdateTime`は数値で返る場合がある。ARG
 
 `arp-foundry-0e2e4716` に `arp-decision-1`（Microsoft-Decision-1 version 1、DataZoneStandard、capacity 500）を配置し、Runningを確認した。Deploymentのサービスレートは500 requests/minute・500,000 tokens/minuteで、要求ごとの生成トークン上限ではない。API endpoint／deployment／model versionをBicepへ設定し、API Managed IdentityへFoundryアカウント範囲のCognitive Services Userを付与した。実通知の1評価でversion 1の有効応答（Abstained）を確認し、合成3事例×3回も9/9契約検証を通過した。後者は精度保証ではなく、結果詳細は`docs/spike-and-testing.md`に記録する。CLI利用者へはCognitive Services UserをFoundryアカウント範囲で付与した。Unknownや不確実性を解消せず、すべての作業項目は引き続き人間承認を要する。説明用LLMは未設定。モデル呼出枠は200/日、要求単位Token capなし。利用者がPoC累計20,000円をCost Managementで確認し、アプリ側の金額ハード停止は実装しない。Cost Managementのbudgetは通知用で、課金停止機能ではなく反映に遅延がある。
 
-## テストモードと実通知1件のDecision再評価
+## テストモードと実通知1件のモデル再評価
 
-- `ARP_TEST_MODE_ENABLED`、`ARP_SYNTHETIC_UAT_ENABLED`、`ARP_DECISION_REEVALUATION_ENABLED`はRepository Variablesで指定し、すべて未設定時false。合成UATとDecision再評価の各操作は、共通の`ARP_TEST_MODE_ENABLED=true`に加えて個別フラグもtrueの場合だけ画面へ表示される。変更はBicep経由の手動CDが必要。
-- Decision再評価はGovernance App roleのユーザーだけが実行可能。最新の実Service Health評価レコード1件（通知・Workload単位）を指定し、理由を入力する。合成UAT、対象外、非Current、調査範囲Snapshotのない旧レコードは拒否する。
-- キュー処理は保存済みAssessmentのResource/Evidence/scopeを読み、Decision-1のみ最大1回呼ぶ。ARG再取得、評価対象変更、Explanation LLM、作業承認、GitHub登録は実行しない。日次モデル呼出枠を使用する。結果は新Assessmentとして保存し、旧承認は再利用できない。
+- `ARP_TEST_MODE_ENABLED`、`ARP_SYNTHETIC_UAT_ENABLED`、`ARP_DECISION_REEVALUATION_ENABLED`はRepository Variablesで指定し、すべて未設定時false。合成UATとモデル再評価の各操作は、共通の`ARP_TEST_MODE_ENABLED=true`に加えて個別フラグもtrueの場合だけ画面へ表示される。変更はBicep経由の手動CDが必要。
+- 再評価はGovernance App roleのユーザーだけが実行可能。最新の実Service Health評価レコード1件（通知・Workload単位）を指定し、理由を入力する。合成UAT、対象外、非Current、調査範囲Snapshotのない旧レコードは拒否する。
+- キュー処理は保存済みAssessmentのResource/Evidence/scopeを読み、Decision-1と説明LLMを最大各1回呼ぶ。モデル入力ではResource ID、Owner Team、Workload IDを別名化し、Resourceのopen-ended propertiesは送らない。通知本文・根拠・型付き構成属性・判断を送信する。ARG再取得、評価対象変更、作業承認、GitHub登録は実行しない。日次モデル呼出枠を使用し、両方の呼出とSchema検証が成功した場合だけ再評価RunをCompletedにする。結果は新Assessmentとして保存し、旧承認は再利用できない。
+- テスト再評価Assessmentは参照専用。画面の訂正・承認操作を隠し、APIでも訂正と承認を拒否する。Store層も再評価Assessmentから外部Outboxを作らない。
 - 同じAssessmentに対する並列再評価はTable lockで防止する。処理が20分以上停止した場合は失敗状態として記録し、自動でモデル再実行はしない。必要なら画面から新しい理由で明示的に再依頼する。
-- 実施前に`MAX_MODEL_CALLS_PER_DAY`とPoC累計予算の残額を確認する。PoC上限のCost Management確認と無断増額禁止は従来どおり。呼出上限到達・モデル失敗は実行記録に失敗理由を残す。
+- 実施前に`MAX_MODEL_CALLS_PER_DAY`とPoC累計予算の残額を確認する。Decisionと説明のためモデル呼出枠を最大2件消費する。PoC上限のCost Management確認と無断増額禁止は従来どおり。呼出上限到達・モデル失敗は実行記録に失敗理由を残す。
 - 表示専用のテストモードであり、データ分離や削除は行わない。フラグを無効化すると合成UAT関連画面は通常一覧・集計から隠れるが、記録自体は保持される。
 
 ### Decision-1を含む合成UAT
