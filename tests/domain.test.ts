@@ -19,6 +19,8 @@ import {
   daysBetween,
   hash,
   impactDiscoveryOutcome,
+  generalImpactNarratives,
+  IMPACT_NARRATIVE_VERSION,
   normalizeNotice,
   packageHash,
   priorityFor,
@@ -54,6 +56,52 @@ test('TST-01: contradictory explicit target and exclusion requires review', () =
     }),
     'Unknown',
   ))
+
+test('general impact narratives describe lifecycle consequences without inventing workload details', () => {
+  const assessment = fixture()
+  assessment.event.kinds = ['Retirement']
+  const narratives = generalImpactNarratives(
+    assessment.event,
+    assessment.resources,
+  )
+  assert.equal(narratives.length, 2)
+  assert.equal(narratives[0]?.kind, 'General Impact')
+  assert.deepEqual(narratives[0]?.decisionRefs, ['impactIfUnaddressed'])
+  assert.deepEqual(narratives[1]?.decisionRefs, ['impactDuringAndAfterChange'])
+  assert.ok(narratives.every((claim) => claim.evidenceIds.length > 0))
+  assert.match(narratives[0]!.text, /退役後.*機能を継続利用できなくなる可能性/)
+  assert.match(narratives[0]!.text, /処理名や影響範囲は特定していません/)
+  assert.match(narratives[1]!.text, /停止時間.*断定していません/)
+  assessment.explanation.impact.push(...narratives)
+  assert.deepEqual(validateAssessment(assessment), [])
+  assert.equal(IMPACT_NARRATIVE_VERSION, '2026-11-02.1')
+})
+
+test('creation block general impact does not claim existing resources will stop', () => {
+  const assessment = fixture()
+  assessment.event.kinds = ['NewCreationBlocked']
+  const narratives = generalImpactNarratives(
+    assessment.event,
+    assessment.resources,
+  )
+  assert.match(narratives[0]!.text, /新規作成ができなくなり/)
+  assert.match(
+    narratives[0]!.text,
+    /既存リソースが直ちに停止するとは判断できません/,
+  )
+})
+
+test('general impact is not produced without a persisted evidence reference', () => {
+  const assessment = fixture()
+  assessment.resources[0]!.evidenceIds = []
+  assessment.event.evidence = assessment.event.evidence.filter(
+    (evidence) => evidence.sourceType !== 'Microsoft',
+  )
+  assert.deepEqual(
+    generalImpactNarratives(assessment.event, assessment.resources),
+    [],
+  )
+})
 
 test('confirmed evidence remains confirmed while missing metadata requires verification', () => {
   const result = classifyResourceDetails({
