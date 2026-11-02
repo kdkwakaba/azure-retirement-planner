@@ -19,6 +19,7 @@ import {
 } from '@arp/adapters'
 import {
   applicableProfileIds,
+  candidateResourcesForEvent,
   credential,
   matchProfile,
   PROFILE_RESOURCE_TYPES,
@@ -95,6 +96,95 @@ test('Foundry retirement profile includes Foundry resource types and requires us
   assert.equal(assessed.classification, 'Verification Required')
   assert.equal(assessed.classificationReason, 'UsageRequiresVerification')
   assert.equal(assessed.verificationRequired, true)
+})
+
+test('retirement candidates include only event-matched resource types and explicit impacts', () => {
+  const base = fixture().resources[0]!
+  const resources = [
+    {
+      ...base,
+      id: `${resourceId}/lb`,
+      type: 'microsoft.network/loadbalancers',
+      sku: 'UnexpectedSku',
+    },
+    {
+      ...base,
+      id: `${resourceId}/storage`,
+      type: 'microsoft.storage/storageaccounts',
+    },
+    {
+      ...base,
+      id: `${resourceId}/webtest`,
+      type: 'microsoft.insights/webtests',
+    },
+    {
+      ...base,
+      id: `${resourceId}/foundry`,
+      type: 'microsoft.cognitiveservices/accounts',
+      properties: { kind: 'AIServices' },
+    },
+    {
+      ...base,
+      id: `${resourceId}/foundry-project`,
+      type: 'microsoft.cognitiveservices/accounts/projects',
+      properties: { kind: 'AIServices' },
+    },
+    {
+      ...base,
+      id: `${resourceId}/foundry-hub`,
+      type: 'microsoft.machinelearningservices/workspaces',
+      properties: { kind: 'hub' },
+    },
+    {
+      ...base,
+      id: `${resourceId}/other-account`,
+      type: 'microsoft.cognitiveservices/accounts',
+      properties: { kind: 'OpenAI' },
+    },
+  ]
+  const select = (title: string, explicit = new Set<string>()) =>
+    candidateResourcesForEvent(
+      { ...fixture().event, title },
+      resources,
+      explicit,
+    )
+  assert.deepEqual(
+    select('Azure Basic Load Balancer retirement').map(
+      (resource) => resource.type,
+    ),
+    ['microsoft.network/loadbalancers'],
+  )
+  assert.deepEqual(
+    select('General Purpose v1 (GPv1) retirement').map(
+      (resource) => resource.type,
+    ),
+    ['microsoft.storage/storageaccounts'],
+  )
+  assert.deepEqual(
+    select('URL ping test retirement').map((resource) => resource.type),
+    ['microsoft.insights/webtests'],
+  )
+  assert.deepEqual(
+    select('Foundry Agent Service classic API retirement').map(
+      (resource) => resource.type,
+    ),
+    [
+      'microsoft.cognitiveservices/accounts',
+      'microsoft.cognitiveservices/accounts/projects',
+      'microsoft.machinelearningservices/workspaces',
+    ],
+  )
+  assert.deepEqual(
+    select('Unmapped Azure retirement notice').map((resource) => resource.type),
+    [],
+  )
+  assert.deepEqual(
+    select(
+      'Unmapped Azure retirement notice',
+      new Set([`${resourceId}/storage`]),
+    ).map((resource) => resource.type),
+    ['microsoft.storage/storageaccounts'],
+  )
 })
 
 test('official evidence translation rejects arbitrary resources and oversized text before network access', async () => {

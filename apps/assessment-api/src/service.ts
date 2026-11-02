@@ -37,6 +37,8 @@ import {
   explain,
   groundedInput,
   matchProfile,
+  candidateResourcesForEvent,
+  resourceTypesForProfile,
   PROMPT_VERSION,
   required,
   unavailableDecision,
@@ -112,6 +114,14 @@ export function decisionRevision(limit: number): string | null {
     modelVersion,
     promptVersion: PROMPT_VERSION,
   })
+}
+export function shouldInvokeDecisionModel(input: {
+  candidateResourceCount: number
+  deterministicNoReview: boolean
+  reevaluation: boolean
+}): boolean {
+  if (input.candidateResourceCount === 0) return false
+  return !input.deterministicNoReview || input.reevaluation
 }
 
 export async function evaluateSyntheticUat(
@@ -467,28 +477,11 @@ export async function assessSnapshot(message: unknown): Promise<void> {
       recordDependencyFailure('ServiceHealthImpactedResources', error),
     )
   }
-  const matched = snapshot.resources.map((r) =>
-    matchProfile(event, r, explicit),
-  )
-  // Foundry通知ではFoundry本体と公式明示対象だけを候補にする。
-  // 取得できたというだけのStorage Accountを影響対象へ混ぜない。
-  const foundryProfile = applicableProfileIds(event).includes(
-    'foundry-agent-service-classic',
-  )
-  const candidates = matched.filter((resource) => {
-    if (!foundryProfile || explicit.has(resource.id.toLowerCase())) return true
-    const type = resource.type.toLowerCase()
-    if (type === 'microsoft.cognitiveservices/accounts')
-      return (
-        String(resource.properties.kind ?? '').toLowerCase() === 'aiservices'
-      )
-    if (type === 'microsoft.cognitiveservices/accounts/projects') return true
-    if (type === 'microsoft.machinelearningservices/workspaces')
-      return ['hub', 'project'].includes(
-        String(resource.properties.kind ?? '').toLowerCase(),
-      )
-    return false
-  })
+  const candidates = candidateResourcesForEvent(
+    event,
+    snapshot.resources,
+    explicit,
+  ).map((resource) => matchProfile(event, resource, explicit))
   for (const id of explicit) {
     const eid = hash({ eventVersion: event.versionId, explicitResource: id })
     snapshot.evidence.push({
@@ -523,16 +516,7 @@ export async function assessSnapshot(message: unknown): Promise<void> {
   const referenceEvidence: Evidence[] = []
   for (const profileId of profiles) {
     const profile = RESOURCE_PROFILES.find((item) => item.id === profileId)
-    const profileResourceTypes =
-      profileId === 'foundry-agent-service-classic'
-        ? [
-            'microsoft.cognitiveservices/accounts',
-            'microsoft.cognitiveservices/accounts/projects',
-            'microsoft.machinelearningservices/workspaces',
-          ]
-        : profile
-          ? [profile.resourceType]
-          : []
+    const profileResourceTypes = resourceTypesForProfile(profileId)
     const matchingResources = profile
       ? candidates.filter((resource) =>
           profileResourceTypes.includes(resource.type.toLowerCase()),
@@ -577,6 +561,11 @@ export async function assessSnapshot(message: unknown): Promise<void> {
       ? []
       : [
           ...missing,
+          ...(profiles.length === 0 && resources.length === 0
+            ? [
+                '通知に対応するResource Typeプロファイルがありません。無関係なインベントリ候補は表示せず、公式の明示対象または対象サービス種別を人が確認してください。対象外とは判定していません。',
+              ]
+            : []),
           '業務重要度・移行方式・工程期間・適用期限の人間確認が必要',
           ...resourceMissingInformation(resources),
         ]
@@ -797,7 +786,13 @@ async function assessWorkload(
   let workItems: WorkItem[] = []
   const endpoint = process.env.DECISION_ENDPOINT,
     deployment = process.env.DECISION_DEPLOYMENT
-  if (deterministicNoReview && !reevaluation) {
+  if (
+    !shouldInvokeDecisionModel({
+      candidateResourceCount: resources.length,
+      deterministicNoReview,
+      reevaluation: Boolean(reevaluation),
+    })
+  ) {
     modelInvocations.push(
       emitModelInvocation({
         stage: 'Decision',
