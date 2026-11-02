@@ -205,6 +205,13 @@ ServiceHealthResourcesの`LastUpdateTime`は数値で返る場合がある。ARG
 - `/api/project-progress`はEntra認証を要求し、レビュー画面に登録済作業項目ごとの最終取込Statusを表示する。`未同期`は未登録、未出力、同期無効、同期未実行のいずれかであり、完了を意味しない。
 - Project read権限不足、API制限、ページング不備は同期失敗として記録し、前回値を保持する。失敗時にProject状態を空にしない。
 
+### 2026-11-02 実環境検証記録
+
+- 保存済みのFoundry Agent Service実通知1件を、認証済みAPIから再取得・再評価した。事前にPending Outboxが0件であることを確認し、対象Assessment IDだけを指定した。同期APIはHTTP 202、現行Health Advisory 0件、Resource Graph inventory 5件、再評価対象1件、`scopeComplete=true`、取得失敗0件を返した。
+- Queue完了後の新版にはCognitive Services account 1件とCognitive Services project 1件のみが候補として表示された。両候補は`Verification Required`、Decision-1はSucceeded／Abstained、説明LLMはNotConfigured、レビュー必須、検証エラー0件。これは候補フィルターと評価の実動作を確認した結果であり、対象影響の確定やAdvisor正相関の証明ではない。
+- 既存の合成UATは`Exported`／`completed`で親・フェーズ・作業Issueの3リンクを保持していた。認証済みAPIから同じ登録を再送するとHTTP 200と`alreadyExported=true`が返り、重複Issueを作成しなかった。GitHub CLIへProject readを追加後、GraphQLで`test-project`を直接読取し、Issue item 7件・次ページなしを確認した。現在の親Issue #82、フェーズIssue #84、作業Issue #85に加え、旧合成テストIssue #66もProject内に残っていた。合成UAT関連4件のStatusはすべて`Backlog`。旧Issueは削除していない。
+- この時点で`PROJECT_PROGRESS_SYNC_ENABLED=false`。15分周期のProject Status取込は起動せず、ARPによる実Status同期とレビュー画面の同期表示は未検証。GitHub CLIでのProject直接読取は可能だが、設定変更・デプロイは行っていない。
+
 
 ## ProcessingFailure監視とPoison Queue復旧
 
