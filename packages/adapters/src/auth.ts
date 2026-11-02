@@ -40,6 +40,7 @@ export const apiRolePolicy = {
   sync: ['Operator', 'Governance'],
   review: ['Reviewer', 'Governance'],
   decisionReevaluation: ['Governance'],
+  businessContext: ['Governance'],
   notification: ['NotificationSender'],
 } as const
 

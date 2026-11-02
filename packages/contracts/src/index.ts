@@ -125,6 +125,21 @@ export const evidenceSchema = z
     officialUrl: z.url().nullable(),
   })
   .strict()
+export const businessContextSchema = z
+  .object({
+    schemaVersion: z.literal('1'),
+    workloadId: z.string().min(1).max(200),
+    sourceSystem: z.string().min(1).max(100),
+    sourceRecordId: z.string().min(1).max(200),
+    sourceUpdatedAt: z.iso.datetime(),
+    reviewedBy: z.string().uuid(),
+    reviewedAt: z.iso.datetime(),
+    businessImpact: z.enum(['Confirmed', 'None', 'Unknown']),
+    vendorUse: z.enum(['Confirmed', 'No', 'Unknown']),
+    additionalCost: z.enum(['Confirmed', 'Possible', 'None', 'Unknown']),
+    contractReview: z.enum(['Required', 'NotRequired', 'Unknown']),
+  })
+  .strict()
 export const milestoneSchema = z
   .object({
     id: z.string().min(1),
@@ -474,6 +489,7 @@ export const approvalSchema = z
 export type LifecycleEvent = z.infer<typeof eventSchema>
 export type ResourceImpact = z.infer<typeof resourceSchema>
 export type Evidence = z.infer<typeof evidenceSchema>
+export type BusinessContext = z.infer<typeof businessContextSchema>
 export type DiscoveryFailure = z.infer<typeof discoveryFailureSchema>
 export type DiscoveryFailureSource = DiscoveryFailure['source']
 export type ModelInvocation = z.infer<typeof modelInvocationSchema>

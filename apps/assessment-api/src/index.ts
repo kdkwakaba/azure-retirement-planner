@@ -3,7 +3,11 @@ import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
 import { z } from 'zod'
-import { approvalSchema, correctionSchema } from '@arp/contracts'
+import {
+  approvalSchema,
+  businessContextSchema,
+  correctionSchema,
+} from '@arp/contracts'
 import {
   hash,
   isTranslatableOfficialEvidence,
@@ -222,6 +226,13 @@ app.http('api', {
       }
       if (request.method === 'GET' && path === 'project-progress')
         return reply(200, await store.projectProgress())
+      if (request.method === 'GET' && path === 'business-context') {
+        const query = z
+          .object({ workloadId: z.string().min(1).max(200) })
+          .strict()
+          .parse({ workloadId: request.query.get('workloadId') })
+        return reply(200, await store.businessContext(query.workloadId))
+      }
       if (request.method === 'POST') {
         verifyWriteRequest(
           request.headers.get('origin'),
@@ -231,6 +242,21 @@ app.http('api', {
         )
         if (Number(request.headers.get('content-length') ?? 0) > 200000)
           return reply(413, { error: 'Request too large' })
+        if (path === 'business-context') {
+          requireUserRole(principal, apiRolePolicy.businessContext)
+          const content = await request.text()
+          if (Buffer.byteLength(content) > 200000)
+            return reply(413, { error: 'Request too large' })
+          const payload = businessContextSchema
+            .omit({ reviewedBy: true, reviewedAt: true })
+            .parse(JSON.parse(content))
+          await store.saveBusinessContext({
+            ...payload,
+            reviewedBy: principal.id,
+            reviewedAt: new Date().toISOString(),
+          })
+          return reply(200, await store.businessContext(payload.workloadId))
+        }
         if (path === 'sync') {
           requireUserRole(principal, apiRolePolicy.sync)
           const body = z

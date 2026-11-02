@@ -650,6 +650,7 @@ async function assessWorkload(
   reevaluation?: NonNullable<Assessment['reevaluation']>,
 ): Promise<string | null> {
   const asOf = new Date().toISOString().slice(0, 10)
+  const businessContext = await store.businessContext(workloadId)
   const policyHash = hash(workflowPolicyData)
   const policyParsed = workflowPolicySchema.safeParse(workflowPolicyData)
   const officialReferenceVersions = event.evidence
@@ -659,6 +660,7 @@ async function assessWorkload(
   const id = hash({
     evidenceScopeVersion: EVIDENCE_SCOPE_VERSION,
     workflowPolicyHash: policyHash,
+    businessContextHash: businessContext ? hash(businessContext) : null,
     eventVersionId: event.versionId,
     ...(officialReferenceVersions.length ? { officialReferenceVersions } : {}),
     workloadId,
@@ -714,6 +716,27 @@ async function assessWorkload(
       workloadId,
       resources,
     }),
+  }
+  if (businessContext) {
+    const evidenceId = hash({
+      kind: 'business-context',
+      workloadId,
+      context: businessContext,
+    })
+    enriched.evidence.push({
+      id: evidenceId,
+      sourceType: 'Internal',
+      sourceVersion: businessContext.sourceUpdatedAt,
+      observedAt: businessContext.reviewedAt,
+      subjectIds: [workloadId],
+      fact: [
+        `業務影響=${businessContext.businessImpact}`,
+        `外部事業者利用=${businessContext.vendorUse}`,
+        `追加費用=${businessContext.additionalCost}`,
+        `契約確認=${businessContext.contractReview}`,
+      ].join('。'),
+      officialUrl: null,
+    })
   }
   const deterministicNoReview = canSkipAssessmentReview({
     outcome: impactOutcome,
@@ -831,7 +854,8 @@ async function assessWorkload(
     alternativeApproved: false,
   })
   const explanationEndpoint = process.env.EXPLANATION_ENDPOINT,
-    explanationDeployment = process.env.EXPLANATION_DEPLOYMENT
+    explanationDeployment = process.env.EXPLANATION_DEPLOYMENT,
+    explanationModelVersion = process.env.EXPLANATION_MODEL_VERSION ?? null
   if (
     reevaluation ||
     deterministicNoReview ||
@@ -842,7 +866,7 @@ async function assessWorkload(
         stage: 'Explanation',
         assessmentId,
         deployment: explanationDeployment,
-        modelVersion: null,
+        modelVersion: explanationModelVersion,
         promptVersion: null,
         status: 'NotRequired',
         durationMs: null,
@@ -856,7 +880,7 @@ async function assessWorkload(
         stage: 'Explanation',
         assessmentId,
         deployment: explanationDeployment,
-        modelVersion: null,
+        modelVersion: explanationModelVersion,
         promptVersion: null,
         status: 'NotConfigured',
         durationMs: null,
@@ -901,7 +925,7 @@ async function assessWorkload(
           stage: 'Explanation',
           assessmentId,
           deployment: explanationDeployment,
-          modelVersion: null,
+          modelVersion: explanationModelVersion,
           promptVersion: PROMPT_VERSION,
           status: 'Succeeded',
           durationMs: Date.now() - startedAt,
@@ -932,7 +956,7 @@ async function assessWorkload(
           stage: 'Explanation',
           assessmentId,
           deployment: explanationDeployment,
-          modelVersion: null,
+          modelVersion: explanationModelVersion,
           promptVersion: PROMPT_VERSION,
           status: requestStarted ? 'Failed' : 'NotStarted',
           durationMs: Date.now() - startedAt,
