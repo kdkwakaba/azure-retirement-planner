@@ -300,6 +300,7 @@ export const claimSchema = z
     kind: z.enum([
       'Confirmed Fact',
       'Derived Fact',
+      'General Impact',
       'Model Decision',
       'Assumption',
       'Unknown',
@@ -393,6 +394,7 @@ export const assessmentSchema = z
       .optional(),
     workflowPolicyVersion: z.string().optional(),
     workflowPolicyHash: z.string().optional(),
+    impactNarrativeVersion: z.string().optional(),
     eventVersionId: z.string(),
     workloadId: z.string(),
     createdAt: z.iso.datetime(),

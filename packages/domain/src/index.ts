@@ -32,6 +32,11 @@ export type {
 
 export const RULE_VERSION = '2026-10-27.1'
 export const NORMALIZATION_VERSION = '2026-10-27.1'
+export {
+  generalImpactNarratives,
+  IMPACT_NARRATIVE_VERSION,
+} from './impact-narratives.ts'
+
 export function canonical(value: unknown): string {
   if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']'
   if (value !== null && typeof value === 'object')
@@ -689,9 +694,12 @@ export function validateAssessment(input: Assessment): string[] {
       input.resources.map((resource) => resource.id),
     )
     if (
-      ['Confirmed Fact', 'Derived Fact', 'Recommendation'].includes(
-        claim.kind,
-      ) &&
+      [
+        'Confirmed Fact',
+        'Derived Fact',
+        'General Impact',
+        'Recommendation',
+      ].includes(claim.kind) &&
       !claim.evidenceIds.length
     )
       errors.push(`${claim.id}: 根拠不足`)

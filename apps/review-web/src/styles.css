@@ -201,6 +201,28 @@ small {
 .metrics strong {
   font-size: 24px;
 }
+.impact-narrative {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #c9dcd7;
+  font-size: 14px;
+  font-weight: 400;
+}
+.impact-narrative > span {
+  display: inline-block;
+  margin-bottom: 6px;
+  color: #355e57;
+  font-size: 12px;
+  font-weight: 700;
+}
+.impact-narrative p {
+  margin: 0 0 8px;
+  line-height: 1.55;
+}
+.impact-narrative small {
+  color: #526c6d;
+  overflow-wrap: anywhere;
+}
 .operations-summary {
   margin-bottom: 20px;
 }

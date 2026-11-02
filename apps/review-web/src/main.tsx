@@ -1,6 +1,7 @@
 import { useEffect, useId, useState, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { assessmentSchema, type Assessment } from '@arp/contracts'
+import { generalImpactNarratives } from '@arp/domain/impact-narratives'
 import './styles.css'
 import { CorrectionForm } from './CorrectionForm.tsx'
 import {
@@ -93,9 +94,9 @@ const priorityDescriptions: Record<string, string> = {
 }
 const impactDescriptions: Record<'未対応時' | '対応時・対応後', string> = {
   未対応時:
-    'この通知への対応を行わない場合に想定される業務影響です。Azure構成だけでは確定できないため、Workload責任者が利用状況と業務影響を確認します。',
+    '通知の適用条件に該当する場合、未対応で起こり得る機能・運用上の影響を一般的な想定として示します。影響度の評価値とは別の説明です。個別業務との対応情報がない場合は処理名を特定しません。',
   '対応時・対応後':
-    '対応作業の実施中と完了後に想定される業務影響です。停止時間や影響の有無は作業内容と業務担当者の確認が必要です。',
+    '更新・移行・切替を行う場合に想定される作業上の影響を示します。作業方式と構成が分からない場合、停止の有無や時間は断定しません。',
 }
 function HelpTip({
   label,
@@ -159,6 +160,21 @@ function ImpactHelp({ axis }: { axis: '未対応時' | '対応時・対応後' }
     <HelpTip label={`${axis}の業務影響について`}>
       <span>{impactDescriptions[axis]}</span>
     </HelpTip>
+  )
+}
+
+function ImpactNarrative({
+  claim,
+}: {
+  claim: Assessment['explanation']['impact'][number] | undefined
+}) {
+  if (!claim) return null
+  return (
+    <div className="impact-narrative">
+      <span>一般的な影響想定</span>
+      <p>{claim.text}</p>
+      <small>根拠Evidence ID: {evidenceDisplay(claim.evidenceIds)}</small>
+    </div>
   )
 }
 
@@ -286,10 +302,29 @@ function App() {
     >([])
   const current = items.find((a) => a.id === selected)
   const summary = summarizeAssessments(items)
+  const storedImpactNarratives = current?.explanation.impact.filter(
+    (claim) => claim.kind === 'General Impact',
+  )
+  const impactNarratives = current
+    ? storedImpactNarratives?.length
+      ? storedImpactNarratives
+      : generalImpactNarratives(current.event, current.resources)
+    : []
+  const impactNarrativeFor = (decisionRef: string) =>
+    impactNarratives.find((claim) => claim.decisionRefs.includes(decisionRef))
   const explanationSections = current
-    ? Object.entries(current.explanation).filter(
-        ([name, claims]) => name !== 'humanChecks' && claims.length > 0,
-      )
+    ? Object.entries(current.explanation)
+        .filter(([name, claims]) => name !== 'humanChecks' && claims.length > 0)
+        .map(
+          ([name, claims]) =>
+            [
+              name,
+              name === 'impact'
+                ? claims.filter((claim) => claim.kind !== 'General Impact')
+                : claims,
+            ] as const,
+        )
+        .filter(([, claims]) => claims.length > 0)
     : []
   const explanationClaimCount = explanationSections.reduce(
     (count, [, claims]) => count + claims.length,
@@ -888,6 +923,9 @@ function App() {
                             '未対応時',
                           )}
                         </strong>
+                        <ImpactNarrative
+                          claim={impactNarrativeFor('impactIfUnaddressed')}
+                        />
                       </article>
                       <article>
                         <small className="summary-caption">
@@ -901,6 +939,11 @@ function App() {
                             '対応時・対応後',
                           )}
                         </strong>
+                        <ImpactNarrative
+                          claim={impactNarrativeFor(
+                            'impactDuringAndAfterChange',
+                          )}
+                        />
                       </article>
                       <article>
                         <small className="priority-caption">

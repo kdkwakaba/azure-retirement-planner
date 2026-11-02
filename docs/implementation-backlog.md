@@ -29,7 +29,8 @@
 | IMP-22 | UI: Microsoft公式Evidenceの日本語参考訳 | 03,13 | 原文保持、公式Source限定、MI、翻訳と判断根拠の分離、版付きCache | Service Health通知Evidenceの出所検証とUI/API対応はPR #46でmainへ反映済み。run #35はinfra-only applyでアプリZIP配置なし。PR #48により配置stepのoutcomeはJob Summaryへ表示。画面・実翻訳の確認は利用者指示により保留。2026-10-29にPR #56のアプリを再配置済み。API匿名ルート401、Exporterルート200を確認。認証済み画面での日本語表示UATとPoC Translator SKU/費用確認が残る | M / Dev+Cloud / Yes |
 | IMP-07a | Discovery: 保存済み通知の最新構成による再評価 | 07 | 既存Notice版を保持し、最新Inventoryで候補再抽出・新版保存 | PR #94でmainへ反映・Azure配置済み。2026-11-02に実通知Foundry Agent Service noticeを最新Inventoryで再評価し、Storage候補からCognitive Services account／projectへ更新、scopeComplete=trueを確認。 | M / Dev / Yes |
 | IMP-14a | Human Review: 対応不要通知の一覧整理 | 14 | 理由付き判定・監査履歴保持・既定一覧から非表示・再表示 | PR #94でmainへ反映・Azure配置済み。NoAction実データがないため、実通知での選択・非表示UATは未実施。 | S / Frontend+Dev / Yes |
-| IMP-14b | Human Review: 実データ表示の欠落項目を明確化 | 14 | 未取得・未決項目に理由・次の作業・判断役割を示し、根拠なしの値を補完しない | PR #95を2026-11-02に配置し、認証済み実データ画面を確認。値の状態・理由・役割は表示された。UATで詳細のWorkload表記、影響軸の説明、Claim/Evidence/確認理由の分割、Microsoft公式URL表示、同じ確認方法の重複作業が残ることを確認。修正をPR #96へ集約中。 | S / Frontend+Governance / Yes |
+| IMP-14b | Human Review: 実データ表示の欠落項目を明確化 | 14 | 未取得・未決項目に理由・次の作業・判断役割を示し、根拠なしの値を補完しない | PR #96を2026-11-02にmainへ反映・配置。認証済み画面で項目説明、Claim／Evidence／確認理由の分割、Microsoft公式URL、影響確認の集約UIを確認。保存済み旧評価には変更前の重複作業が残る。 | S / Frontend+Governance / Yes |
+| IMP-14c | Human Review: 一般的な業務影響説明 | 14 | 影響度と文章を分離し、ライフサイクル種別ごとにEvidence付きの条件付き説明を表示。未取得の業務処理名・停止時間を創作しない | Retirement／Support End／New Creation Blocked／Deprecationの決定的説明と旧評価の表示フォールバックを実装。Workload固有のResource→処理対応データは将来拡張 | S / Dev+Governance / Yes |
 
 ## 未確定情報と次のゲート
 
