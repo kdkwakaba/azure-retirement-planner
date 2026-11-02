@@ -35,6 +35,7 @@ import {
   config,
   evaluateSyntheticUat,
   applyReviewWorkflowPolicy,
+  isTestReevaluation,
   processDecisionReevaluation,
   synchronize,
 } from './service.ts'
@@ -744,6 +745,10 @@ app.http('api', {
             .strict()
             .parse(payload)
           const original = await store.assessment(body.assessmentId)
+          if (isTestReevaluation(original))
+            return reply(409, {
+              error: 'Test reevaluation assessments are read-only',
+            })
           const prior = await store.head(
             hash({
               eventId: original.event.id,
@@ -786,6 +791,10 @@ app.http('api', {
             .strict()
             .parse(payload)
           const assessment = await store.assessment(body.assessmentId)
+          if (isTestReevaluation(assessment))
+            return reply(409, {
+              error: 'Test reevaluation assessments cannot be approved',
+            })
           if (assessment.humanContext?.scopeDisposition === 'OutOfScope')
             return reply(409, {
               error: 'Out-of-scope assessment cannot approve work items',

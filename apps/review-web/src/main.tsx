@@ -212,7 +212,7 @@ type DecisionReevaluationStatus = {
 const reevaluationStateLabels: Record<string, string> = {
   Pending: '再評価を待機中',
   Queued: '再評価をキューに登録中',
-  Processing: 'Decision-1で再評価中',
+  Processing: 'Decision-1と説明LLMで再評価中',
   Completed: '再評価が完了しました',
   Failed: '再評価に失敗しました',
 }
@@ -221,7 +221,7 @@ const reevaluationErrorLabels: Record<string, string> = {
   MissingSnapshot:
     '保存済みの調査情報がありません。Azure情報を再取得してください。',
   ModelUnavailable:
-    'Decision-1を利用できませんでした。モデル設定と実行記録を確認してください。',
+    'Decision-1または説明LLMを利用できませんでした。モデル設定と実行記録を確認してください。',
   DailyLimit: '本日のモデル呼び出し上限に達しました。',
   ProcessingFailed: '処理に失敗しました。照会記録から原因を確認してください。',
 }
@@ -443,7 +443,10 @@ function App() {
         )) as DecisionReevaluationStatus
         if (!active) return
         setReevaluationStatus(status)
-        if (status.state === 'Completed' && status.resultAssessmentId) {
+        if (
+          ['Completed', 'Failed'].includes(status.state) &&
+          status.resultAssessmentId
+        ) {
           await refresh()
           setSelected(status.resultAssessmentId)
         }
@@ -499,18 +502,18 @@ function App() {
   async function reevaluateCurrentNotice() {
     if (!current || current.event.trackingId === syntheticUatTrackingId) return
     const reason = window.prompt(
-      '再評価理由を入力してください（10〜500文字）。保存済みのAzure調査スナップショットを使い、Decision-1を1回だけ実行します。',
+      '再評価理由を入力してください（10〜500文字）。保存済みの調査結果を使い、Decision-1とGPT-6 Lunaを最大各1回実行します。',
     )
     if (!reason?.trim() || reason.trim().length < 10) return
     if (
       !window.confirm(
-        '選択中の実通知・ワークロード1件だけを再評価します。Azure情報の再取得、対象リソースの変更、Issue登録は行いません。新しい評価版を作成し、従来の承認は引き継ぎません。続けますか？',
+        '選択中の実通知・ワークロード1件だけを再評価します。保存済み通知本文・根拠・型付き構成属性をDecision-1とGPT-6 Lunaへ送信します。Resource ID、Owner Team、Workload IDは別名化し、Resourceの未定義propertiesは送信しません。保存済みの調査結果を使うため、Azure情報の再取得や対象リソースの変更は行いません。モデル呼出しは最大各1回です。新しい検証用評価版を作成し、承認・修正・Issue登録はできません。続けますか？',
       )
     )
       return
     setBusy(true)
     setError('')
-    setNotice('1件限定のDecision-1再評価を依頼しています。')
+    setNotice('1件限定のDecision-1・説明LLM再評価を依頼しています。')
     try {
       const result = (await request('decision-reevaluation', 'POST', {
         assessmentId: current.id,
@@ -987,16 +990,18 @@ function App() {
                     </details>
                   </>
                 )}
-                <CorrectionForm
-                  key={current.id}
-                  assessment={current}
-                  onRevised={async (id) => {
-                    await refresh()
-                    setSelected(id)
-                    setChecked([])
-                    setReason('')
-                  }}
-                />
+                {!current.reevaluation && (
+                  <CorrectionForm
+                    key={current.id}
+                    assessment={current}
+                    onRevised={async (id) => {
+                      await refresh()
+                      setSelected(id)
+                      setChecked([])
+                      setReason('')
+                    }}
+                  />
+                )}
                 <details className="review-info-group">
                   <summary>
                     確認が必要な理由（{confirmationReasonCount}）
@@ -1258,6 +1263,14 @@ function App() {
                 ) : (
                   <>
                     <h3>作業案・部分承認</h3>
+                    {current.reevaluation && (
+                      <div className="notice" role="note">
+                        <b>テスト用再評価結果・参照専用</b>
+                        <p>
+                          Decision-1と説明LLMの動作確認用です。この評価は修正・承認・対応不要判定・外部登録の対象にできません。元の評価と履歴は保持されています。
+                        </p>
+                      </div>
+                    )}
                     {syntheticUatEnabled &&
                       current.event.trackingId === syntheticUatTrackingId && (
                         <div className="notice">
@@ -1367,6 +1380,7 @@ function App() {
                         <label>
                           <input
                             type="checkbox"
+                            disabled={Boolean(current.reevaluation)}
                             checked={checked.includes(w.id)}
                             onChange={(e) =>
                               setChecked((v) =>
@@ -1456,52 +1470,56 @@ function App() {
                         この評価には作業案がありません。調査結果と確認事項を確認し、必要な作業はReviewerまたはGovernanceが根拠を添えて追加してください。
                       </p>
                     )}
-                    <label>
-                      判断理由
-                      <textarea
-                        value={reason}
-                        onChange={(e) => setReason(e.target.value)}
-                        maxLength={2000}
-                      />
-                    </label>
-                    <p role="note">
-                      承認・対応不要・保留には判断理由が必要です。対応不要を選ぶと通常一覧から非表示になりますが、通知・根拠・判断履歴は保持されます。検証不適合が表示されている間は作業を承認できません。
-                    </p>
-                    <div className="toolbar">
-                      <button
-                        disabled={
-                          busy ||
-                          !canReview ||
-                          !reason.trim() ||
-                          !checked.length ||
-                          !!current.validationErrors.length
-                        }
-                        onClick={() =>
-                          void review(
-                            checked.length === current.workItems.length
-                              ? 'Approved'
-                              : 'Partial',
-                          )
-                        }
-                      >
-                        選択した作業を承認
-                      </button>
-                      <button
-                        disabled={busy || !canReview || !reason.trim()}
-                        onClick={() => void review('NoAction')}
-                      >
-                        対応不要として一覧から外す
-                      </button>
-                      <button
-                        disabled={busy || !canReview || !reason.trim()}
-                        onClick={() => void review('Held')}
-                      >
-                        保留
-                      </button>
-                    </div>
-                    <p>
-                      本番変更の実行承認ではありません。承認対象の版とHashを記録します。
-                    </p>
+                    {!current.reevaluation && (
+                      <>
+                        <label>
+                          判断理由
+                          <textarea
+                            value={reason}
+                            onChange={(e) => setReason(e.target.value)}
+                            maxLength={2000}
+                          />
+                        </label>
+                        <p role="note">
+                          承認・対応不要・保留には判断理由が必要です。対応不要を選ぶと通常一覧から非表示になりますが、通知・根拠・判断履歴は保持されます。検証不適合が表示されている間は作業を承認できません。
+                        </p>
+                        <div className="toolbar">
+                          <button
+                            disabled={
+                              busy ||
+                              !canReview ||
+                              !reason.trim() ||
+                              !checked.length ||
+                              !!current.validationErrors.length
+                            }
+                            onClick={() =>
+                              void review(
+                                checked.length === current.workItems.length
+                                  ? 'Approved'
+                                  : 'Partial',
+                              )
+                            }
+                          >
+                            選択した作業を承認
+                          </button>
+                          <button
+                            disabled={busy || !canReview || !reason.trim()}
+                            onClick={() => void review('NoAction')}
+                          >
+                            対応不要として一覧から外す
+                          </button>
+                          <button
+                            disabled={busy || !canReview || !reason.trim()}
+                            onClick={() => void review('Held')}
+                          >
+                            保留
+                          </button>
+                        </div>
+                        <p>
+                          本番変更の実行承認ではありません。承認対象の版とHashを記録します。
+                        </p>
+                      </>
+                    )}
                   </>
                 )}
               </>

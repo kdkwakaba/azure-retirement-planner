@@ -125,6 +125,39 @@ export function shouldInvokeDecisionModel(input: {
   return !input.deterministicNoReview || input.reevaluation
 }
 
+export function shouldInvokeExplanationModel(input: {
+  candidateResourceCount: number
+  deterministicNoReview: boolean
+  reevaluation: boolean
+  decisionStatus: Assessment['decision']['status']
+}): boolean {
+  if (
+    input.candidateResourceCount === 0 ||
+    input.decisionStatus === 'Unavailable'
+  )
+    return false
+  return !input.deterministicNoReview || input.reevaluation
+}
+
+export function testReevaluationError(
+  invocations: ModelInvocation[] | undefined,
+): 'ModelUnavailable' | 'DailyLimit' | null {
+  for (const stage of ['Decision', 'Explanation'] as const) {
+    const invocation = invocations?.find((item) => item.stage === stage)
+    if (invocation?.status === 'Succeeded') continue
+    return invocation?.failureCategory === 'DailyLimit'
+      ? 'DailyLimit'
+      : 'ModelUnavailable'
+  }
+  return null
+}
+
+export function isTestReevaluation(
+  assessment: Pick<Assessment, 'reevaluation'>,
+): boolean {
+  return assessment.reevaluation !== undefined
+}
+
 export async function evaluateSyntheticUat(
   source: Assessment,
 ): Promise<Assessment> {
@@ -604,15 +637,14 @@ export async function processDecisionReevaluation(
     )
     if (!resultId) throw new Error('Reevaluation produced no assessment')
     const result = await store.assessment(resultId)
-    const decisionInvocation = result.modelInvocations?.find(
-      (invocation) => invocation.stage === 'Decision',
-    )
-    if (decisionInvocation?.status !== 'Succeeded') {
-      const error =
-        decisionInvocation?.failureCategory === 'DailyLimit'
-          ? 'DailyLimit'
-          : 'ModelUnavailable'
-      await store.finishDecisionReevaluation(runId, 'Failed', resultId, error)
+    const modelError = testReevaluationError(result.modelInvocations)
+    if (modelError) {
+      await store.finishDecisionReevaluation(
+        runId,
+        'Failed',
+        resultId,
+        modelError,
+      )
       return
     }
     await store.finishDecisionReevaluation(runId, 'Completed', resultId, null)
@@ -857,9 +889,12 @@ async function assessWorkload(
     explanationDeployment = process.env.EXPLANATION_DEPLOYMENT,
     explanationModelVersion = process.env.EXPLANATION_MODEL_VERSION ?? null
   if (
-    reevaluation ||
-    deterministicNoReview ||
-    decision.status === 'Unavailable'
+    !shouldInvokeExplanationModel({
+      candidateResourceCount: resources.length,
+      deterministicNoReview,
+      reevaluation: Boolean(reevaluation),
+      decisionStatus: decision.status,
+    })
   ) {
     modelInvocations.push(
       emitModelInvocation({
