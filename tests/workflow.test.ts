@@ -9,6 +9,7 @@ import {
 } from '@arp/domain'
 import { fixture, resourceId } from './fixtures.ts'
 import demoPolicy from '../config/examples/workflow-policy.demo.json' with { type: 'json' }
+import departmentPolicy from '../config/workflow-policy.json' with { type: 'json' }
 
 const policy = {
   schemaVersion: '1',
@@ -468,4 +469,39 @@ test('business task IDs remain stable across routing-only policy version bumps',
     updated.workItems.map((item) => item.id),
     original.workItems.map((item) => item.id),
   )
+})
+
+test('department policy routes technical discovery and coordination without assigning an owner', () => {
+  const parsed = workflowPolicySchema.parse(departmentPolicy)
+  const assessment = fixture()
+  const technical = {
+    ...assessment.workItems[0]!,
+    id: 'technical-check',
+    category: 'Impact Verification' as const,
+    ownerTeam: null,
+    workflowRouting: undefined,
+  }
+  const coordination = {
+    ...technical,
+    id: 'coordination',
+    category: 'Cross-Team Coordination' as const,
+  }
+  const result = applyWorkflowPolicy(
+    [technical, coordination],
+    assessment.resources,
+    parsed,
+  )
+  assert.deepEqual(
+    result.workItems[0]?.workflowRouting?.teamCandidates.map(
+      (candidate) => candidate.displayName,
+    ),
+    ['インフラ部門', 'アプリ部門'],
+  )
+  assert.deepEqual(
+    result.workItems.map(
+      (item) => item.workflowRouting?.coordinationCandidates[0]?.displayName,
+    ),
+    ['情報システム部門', '情報システム部門'],
+  )
+  assert.equal(result.workItems[0]?.ownerTeam, null)
 })

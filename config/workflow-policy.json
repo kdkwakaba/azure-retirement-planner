@@ -1,8 +1,75 @@
 {
   "schemaVersion": "1",
-  "version": "poc-template-1",
-  "roles": [],
-  "assignmentRules": [],
+  "version": "poc-department-routing-1",
+  "roles": [
+    {
+      "id": "infrastructure-team",
+      "displayName": "インフラ部門",
+      "kind": "Team"
+    },
+    { "id": "application-team", "displayName": "アプリ部門", "kind": "Team" },
+    {
+      "id": "information-systems",
+      "displayName": "情報システム部門",
+      "kind": "Department"
+    }
+  ],
+  "assignmentRules": [
+    {
+      "id": "impact-verification",
+      "match": { "categories": ["Impact Verification"] },
+      "teamRoleIds": ["infrastructure-team", "application-team"],
+      "coordinationRoleIds": ["information-systems"]
+    },
+    {
+      "id": "infrastructure-work",
+      "match": {
+        "categories": [
+          "Infrastructure Change",
+          "Network Change",
+          "Security Review",
+          "Production Migration",
+          "Rollback Preparation",
+          "Legacy Resource Removal",
+          "Policy and IaC Update"
+        ]
+      },
+      "teamRoleIds": ["infrastructure-team"],
+      "coordinationRoleIds": ["information-systems"]
+    },
+    {
+      "id": "application-work",
+      "match": {
+        "categories": [
+          "Application Change",
+          "Test",
+          "Proof of Concept",
+          "Architecture Design",
+          "Migration Assessment"
+        ]
+      },
+      "teamRoleIds": ["application-team", "infrastructure-team"],
+      "coordinationRoleIds": ["information-systems"]
+    },
+    {
+      "id": "business-coordination",
+      "match": {
+        "categories": [
+          "Owner Confirmation",
+          "Change Management",
+          "Cross-Team Coordination",
+          "Customer Communication",
+          "Vendor Assessment",
+          "Cost Assessment",
+          "Budget Approval",
+          "Contract Review",
+          "Documentation Update",
+          "CMDB Update"
+        ]
+      },
+      "coordinationRoleIds": ["information-systems"]
+    }
+  ],
   "sequence": [],
   "businessContextProfiles": [],
   "businessTaskTemplates": []

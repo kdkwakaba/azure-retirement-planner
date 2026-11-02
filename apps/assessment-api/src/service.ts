@@ -49,6 +49,36 @@ import {
   recordDependencyFailure,
   recordModelInvocation,
 } from '@arp/adapters'
+
+export function applyReviewWorkflowPolicy(input: Assessment): Assessment {
+  const parsed = workflowPolicySchema.safeParse(workflowPolicyData)
+  if (!parsed.success)
+    throw new Error('Workflow policy configuration is invalid')
+  const result = structuredClone(input)
+  const routing = applyWorkflowPolicy(
+    result.workItems,
+    result.resources,
+    parsed.data,
+  )
+  result.workItems = routing.workItems
+  result.workflowPolicyVersion = parsed.data.version
+  result.workflowPolicyHash = hash(workflowPolicyData)
+  result.humanReviewRequired = true
+  result.reviewReasons = [
+    ...new Set([
+      ...result.reviewReasons,
+      'ワークフローポリシーに基づく担当候補・調整候補を確認してください',
+      ...routing.reviewReasons,
+      ...routing.errors,
+    ]),
+  ]
+  result.missingInformation = [
+    ...new Set([...result.missingInformation, ...routing.errors]),
+  ]
+  result.validationErrors = validateAssessment(result)
+  result.packageHash = packageHash(result)
+  return assessmentSchema.parse(result)
+}
 import { applySyntheticUatDecision } from './uat.ts'
 
 export function config() {

@@ -130,6 +130,7 @@ app.storageQueue('export', {
         typeof row.managedContentHash === 'string'
           ? row.managedContentHash
           : null,
+        assessment,
       )
       await store.table.updateEntity(
         {
