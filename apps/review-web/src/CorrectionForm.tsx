@@ -7,17 +7,6 @@ const initialWorkItemAdditions = (assessment: Assessment) => {
   return [
     {
       clientId: crypto.randomUUID(),
-      category: 'Impact Verification' as const,
-      title: 'Foundry Agent Service classic APIの利用有無を確認',
-      description:
-        '対象Workloadの構成・コード・利用者に確認し、classic APIを利用しているかを確認する。現時点では利用有無未確認のため、移行要否は判断しない。',
-      completionCriteria: [
-        '確認した構成・担当部署・根拠を記録し、利用有無を人が判断する',
-      ],
-      ownerTeam: null,
-    },
-    {
-      clientId: crypto.randomUUID(),
       category: 'Cross-Team Coordination' as const,
       title: '関係チームとの影響確認を調整',
       description:
@@ -47,6 +36,34 @@ const initialWorkItemAdditions = (assessment: Assessment) => {
     },
   ]
 }
+const initialWorkItemUpdates = (assessment: Assessment) => {
+  const isFoundryNotice = assessment.event.title
+    .toLowerCase()
+    .includes('foundry agent service')
+  const verificationId = isFoundryNotice
+    ? assessment.workItems.find(
+        (item) => item.category === 'Impact Verification',
+      )?.id
+    : undefined
+  return assessment.workItems.map((item) => ({
+    id: item.id,
+    title:
+      item.id === verificationId
+        ? 'Foundry Agent Service classic APIの利用有無を確認'
+        : item.title,
+    description:
+      item.id === verificationId
+        ? '対象Workloadの構成・コード・利用者に確認し、classic APIを利用しているかを確認する。現時点では利用有無未確認のため、移行要否は判断しない。'
+        : item.description,
+    completionCriteria:
+      item.id === verificationId
+        ? ['確認した構成・担当部署・根拠を記録し、利用有無を人が判断する']
+        : item.completionCriteria,
+    ownerTeam: item.ownerTeam,
+    plannedStartDate: item.plannedStartDate,
+    dueDate: item.dueDate,
+  }))
+}
 
 export function CorrectionForm({
   assessment,
@@ -73,15 +90,7 @@ export function CorrectionForm({
           deprecationDate: assessment.humanContext.deprecationDate,
           applicableKind: assessment.humanContext.applicableKind,
           reason: '',
-          workItemUpdates: assessment.workItems.map((w) => ({
-            id: w.id,
-            title: w.title,
-            description: w.description,
-            completionCriteria: w.completionCriteria,
-            ownerTeam: w.ownerTeam,
-            plannedStartDate: w.plannedStartDate,
-            dueDate: w.dueDate,
-          })),
+          workItemUpdates: initialWorkItemUpdates(assessment),
           workItemAdditions: assessment.humanContext.workItemAdditions ?? [],
         }
       : {
@@ -98,15 +107,7 @@ export function CorrectionForm({
           deprecationDate: null,
           applicableKind: null,
           reason: '',
-          workItemUpdates: assessment.workItems.map((w) => ({
-            id: w.id,
-            title: w.title,
-            description: w.description,
-            completionCriteria: w.completionCriteria,
-            ownerTeam: w.ownerTeam,
-            plannedStartDate: w.plannedStartDate,
-            dueDate: w.dueDate,
-          })),
+          workItemUpdates: initialWorkItemUpdates(assessment),
           workItemAdditions: initialWorkItemAdditions(assessment),
         },
   )
