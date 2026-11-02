@@ -120,7 +120,14 @@ APIの日次モデル呼出枠は200件で、同時予約をETagで制御する�
 
 ## Foundry Bootstrap
 
-`infra/bootstrap/foundry.bicep`は既存Foundry／Projectを参照し、Microsoft-Decision-1 deploymentだけを宣言する。既存リソースのサーバー管理プロパティを削除しないことをWhat-ifで確認する。deployment変更は容量・価格・利用可能性に影響するため、変更前にカタログ、クォータ、費用を確認する。API Managed Identityの推論ロールは`infra/bootstrap/permissions.bicep`がFoundryアカウント範囲で付与する。
+`infra/bootstrap/foundry.bicep`は既存Foundry／Projectを参照し、Microsoft-Decision-1と説明用GPT-6 Lunaのdeploymentを宣言する。Lunaは`gpt-6-luna` version `2026-09-22`、`DataZoneStandard`、capacity 1を既定とする。既存リソースのサーバー管理プロパティを削除しないことをWhat-ifで確認する。deployment変更は容量・価格・利用可能性に影響するため、適用前にカタログ、クォータ、費用を確認する。API Managed Identityの推論ロールは`infra/bootstrap/permissions.bicep`がFoundryアカウント範囲で付与する。アプリから説明LLMを有効化するには、deploymentのRunning確認後、Repository Variablesの`EXPLANATION_ENDPOINT`（Foundry account endpoint）、`EXPLANATION_DEPLOYMENT`（deployment名）、`EXPLANATION_MODEL_VERSION`（モデル版）を設定し、通常のPoC CDで反映する。
+
+### 2026-11-03 GPT-6 Luna 配置・接続確認
+
+- Foundry `[foundry-resource-name-removed]`（East US 2）のカタログに`gpt-6-luna` version `2026-09-22`、`DataZoneStandard`があり、モデル情報の`maxCapacity`は3。capacity 1のWhat-IfはLuna deployment作成のみで、Decision-1に変更なし。
+- `infra/bootstrap/foundry.bicep`で`arp-explanation-gpt-6-luna`を作成。deploymentは`Succeeded`／`Running`、SKU `DataZoneStandard`、capacity 1。Bicep What-Ifは両モデルdeploymentがNoChange。
+- API Function Appへ説明Endpoint／Deployment／Model Versionを反映し、Manual PoC deployment run [41467404738](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41467404738)が成功。API Managed IdentityのFoundryアカウント範囲`Cognitive Services User`割当を確認。
+- Azure CLI利用者の委任トークンで合成テキストを送り、Chat CompletionsとJSON Schema応答を確認（172 tokens）。これはAPI Managed Identity経由の呼出しや、アプリ固有の説明Schema／実通知の説明品質を検証したものではない。既存の合成UATはDecision-1のみを呼び説明LLMを呼ばないため、次に実通知を再評価する経路の確認が必要。
 
 [GitHub OIDCのimmutable subject仕様](https://docs.github.com/en/actions/reference/security/oidc#immutable-subject-claims)
 
