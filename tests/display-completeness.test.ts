@@ -118,6 +118,13 @@ test('explanation display consolidates repeated facts and keeps official dates i
     evidenceIds: [evidenceId, 'same-date-impact-evidence'],
     decisionRefs: [],
   }
+  const mixedScheduleAndImpact = {
+    id: 'mixed-schedule-and-impact',
+    text: 'Microsoftはclassic Foundry Agent Service APIを2027年3月31日に廃止すると通知しているが、未対応時の具体的影響は提示資料から確認できない。',
+    kind: 'Derived Fact' as const,
+    evidenceIds: [evidenceId],
+    decisionRefs: [],
+  }
   const repeatedFactor = {
     id: 'factor-1',
     text: 'このリソースの利用有無を確認する必要があります。',
@@ -135,7 +142,7 @@ test('explanation display consolidates repeated facts and keeps official dates i
   const explanation = {
     ...source,
     microsoftFacts: [schedule],
-    impact: [impact],
+    impact: [impact, mixedScheduleAndImpact],
     increasingFactors: [repeatedFactor],
     missingInformation: [repeatedMissingInfo],
   }
@@ -154,6 +161,10 @@ test('explanation display consolidates repeated facts and keeps official dates i
     '廃止後は対象機能を利用できなくなる可能性があります。',
   )
   assert.equal(
+    displayedImpact[1]!.text,
+    '未対応時の具体的影響は提示資料から確認できない。',
+  )
+  assert.equal(
     sections.filter(([name]) => name === 'increasingFactors').length,
     1,
   )
@@ -166,6 +177,52 @@ test('explanation display consolidates repeated facts and keeps official dates i
     true,
   )
   assert.equal(explanation.impact[0]!.text, impact.text)
+})
+
+test('similar facts are consolidated across categories while distinct facts remain visible', () => {
+  const source = fixture().explanation
+  const explanation = {
+    ...source,
+    increasingFactors: [
+      {
+        id: 'usage-impact-factor',
+        text: '対象リソースの利用状況を確認できないため、影響範囲を特定できない。',
+        kind: 'Unknown' as const,
+        evidenceIds: ['usage-evidence'],
+        decisionRefs: [],
+      },
+    ],
+    missingInformation: [
+      {
+        id: 'usage-impact-missing',
+        text: '対象リソースの使用実態が不明で影響範囲は特定できない。',
+        kind: 'Unknown' as const,
+        evidenceIds: ['duplicate-usage-evidence'],
+        decisionRefs: [],
+      },
+      {
+        id: 'sku-fact',
+        text: '対象リソースのSKUはStandardである。',
+        kind: 'Confirmed Fact' as const,
+        evidenceIds: ['sku-evidence'],
+        decisionRefs: [],
+      },
+    ],
+  }
+
+  const sections = deduplicateExplanationClaims(explanation)
+  const factors = sections.find(([name]) => name === 'increasingFactors')![1]
+  const missingInformation = sections.find(
+    ([name]) => name === 'missingInformation',
+  )![1]
+
+  assert.equal(factors.length, 1)
+  assert.equal(missingInformation.length, 1)
+  assert.equal(missingInformation[0]!.id, 'sku-fact')
+  assert.deepEqual(factors[0]!.evidenceIds, [
+    'usage-evidence',
+    'duplicate-usage-evidence',
+  ])
 })
 
 test('usage verification confirmation reasons combine similar resource and missing-information messages', () => {
