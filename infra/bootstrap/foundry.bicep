@@ -6,7 +6,7 @@ param decisionModelVersion string = '1'
 param decisionCapacity int = 500
 param explanationDeploymentName string = 'arp-explanation-gpt-6-luna'
 param explanationModelVersion string = '2026-09-22'
-param explanationCapacity int = 1
+param explanationCapacity int = 3
 
 resource account 'Microsoft.CognitiveServices/accounts@2025-06-01' existing = {
   name: accountName
