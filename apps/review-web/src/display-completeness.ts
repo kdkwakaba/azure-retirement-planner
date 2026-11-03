@@ -18,7 +18,49 @@ function normalizeExplanationText(text: string): string {
   return text
     .normalize('NFKC')
     .toLocaleLowerCase()
+    .replace(
+      /利用有無|使用有無|利用状況|使用状況|利用実態|使用実態/g,
+      '利用状況',
+    )
+    .replace(
+      /確認できていない|確認できない|把握できない|特定できない|分からない|わからない|不明/g,
+      '不明',
+    )
     .replace(/[\s\p{P}\p{S}]+/gu, '')
+}
+
+function explanationBigrams(text: string): Set<string> {
+  const characters = [
+    ...normalizeExplanationText(text).replace(
+      /の|は|が|を|に|で|へ|と|から|ため|する|ます|です/g,
+      '',
+    ),
+  ]
+  return new Set(
+    characters
+      .slice(0, -1)
+      .map((character, index) => character + characters[index + 1]),
+  )
+}
+
+function areSimilarExplanationClaims(first: string, second: string): boolean {
+  const firstNormalized = normalizeExplanationText(first)
+  const secondNormalized = normalizeExplanationText(second)
+  if (firstNormalized === secondNormalized) return true
+
+  const firstBigrams = explanationBigrams(first)
+  const secondBigrams = explanationBigrams(second)
+  const smallerSetSize = Math.min(firstBigrams.size, secondBigrams.size)
+  if (smallerSetSize < 10) return false
+  const lengthRatio =
+    Math.min(firstBigrams.size, secondBigrams.size) /
+    Math.max(firstBigrams.size, secondBigrams.size)
+  if (lengthRatio < 0.8) return false
+
+  const sharedBigrams = [...firstBigrams].filter((bigram) =>
+    secondBigrams.has(bigram),
+  ).length
+  return sharedBigrams / smallerSetSize >= 0.85
 }
 
 function explanationSentences(text: string): string[] {
@@ -76,6 +118,34 @@ function isScheduleOnlySentence(text: string): boolean {
   return schedule && !describesImpact
 }
 
+function removeRepeatedScheduleClause(
+  sentence: string,
+  officialDates: Set<string>,
+): string {
+  const clauseBoundary =
+    /(?:が|けれど|ものの)?[、，,;；]\s*(?:but\s+|however,?\s+)?/gi
+  let boundary: RegExpExecArray | null
+  while ((boundary = clauseBoundary.exec(sentence))) {
+    const precedingClause = sentence.slice(0, boundary.index)
+    const hasRepeatedOfficialDate = explanationDates(precedingClause).some(
+      (date) => officialDates.has(date),
+    )
+    const containsSchedule =
+      /廃止|退役|終了|期限|retir|sunset|endofsupport|deadline/i.test(
+        precedingClause,
+      )
+    const remainingClause = sentence.slice(clauseBoundary.lastIndex).trim()
+    if (
+      hasRepeatedOfficialDate &&
+      containsSchedule &&
+      remainingClause &&
+      !isScheduleOnlySentence(remainingClause)
+    )
+      return remainingClause
+  }
+  return sentence
+}
+
 export function deduplicateExplanationClaims(
   explanation: Explanation,
 ): Array<[string, ExplanationClaim[]]> {
@@ -86,11 +156,19 @@ export function deduplicateExplanationClaims(
   const officialDates = new Set(
     (officialFacts ?? []).flatMap((claim) => explanationDates(claim.text)),
   )
+  const evidenceEntries = entries.filter(([name]) =>
+    ['microsoftFacts', 'internalFacts'].includes(name),
+  )
   const preferredEntries = [
-    ...entries.filter(([name]) => name === 'microsoftFacts'),
-    ...entries.filter(([name]) => name !== 'microsoftFacts'),
+    ...evidenceEntries,
+    ...entries.filter(
+      ([name]) => !['microsoftFacts', 'internalFacts'].includes(name),
+    ),
   ]
-  const seen = new Map<string, ExplanationClaim>()
+  const seen = new Map<
+    string,
+    { claim: ExplanationClaim; section: string; text: string }
+  >()
   const officialClaimsByDate = new Map<string, ExplanationClaim>()
   const deduplicated = new Map<string, ExplanationClaim[]>()
 
@@ -130,27 +208,38 @@ export function deduplicateExplanationClaims(
         },
       )
       const uniqueSentences: string[] = []
-      for (const sentence of remainingSentences) {
+      for (const originalSentence of remainingSentences) {
+        const sentence = explanationDates(originalSentence).some((date) =>
+          officialDates.has(date),
+        )
+          ? removeRepeatedScheduleClause(originalSentence, officialDates)
+          : originalSentence
         const key = normalizeExplanationText(sentence)
         if (!key) continue
-        const existing = seen.get(key)
+        const existing =
+          seen.get(key) ??
+          [...seen.values()].find(
+            (entry) =>
+              entry.section !== name &&
+              areSimilarExplanationClaims(entry.text, sentence),
+          )
         if (existing) {
-          existing.evidenceIds = [
+          existing.claim.evidenceIds = [
             ...new Set([
-              ...existing.evidenceIds,
+              ...existing.claim.evidenceIds,
               ...displayedClaim.evidenceIds,
             ]),
           ]
-          existing.decisionRefs = [
+          existing.claim.decisionRefs = [
             ...new Set([
-              ...existing.decisionRefs,
+              ...existing.claim.decisionRefs,
               ...displayedClaim.decisionRefs,
             ]),
           ]
           continue
         }
         uniqueSentences.push(sentence)
-        seen.set(key, displayedClaim)
+        seen.set(key, { claim: displayedClaim, section: name, text: sentence })
       }
       if (uniqueSentences.length) {
         displayedClaim.text = uniqueSentences.join('')
