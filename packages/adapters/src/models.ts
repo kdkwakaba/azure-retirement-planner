@@ -11,8 +11,8 @@ import { compactExplanationInput } from './grounding.ts'
 import { jsonRequest, safeModelEndpoint } from './http.ts'
 
 export const PROMPT_VERSION = '2026-10-24.1'
-export const EXPLANATION_PROMPT_VERSION = '2026-11-03.5'
-export const EXPLANATION_MAX_COMPLETION_TOKENS = 1500
+export const EXPLANATION_PROMPT_VERSION = '2026-11-03.6'
+export const EXPLANATION_MAX_COMPLETION_TOKENS = 2500
 export const EXPLANATION_MAX_WORK_ITEMS = 2
 export const EXPLANATION_REASONING_EFFORT = 'none'
 
