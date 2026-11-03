@@ -129,6 +129,14 @@ APIの日次モデル呼出枠は200件で、同時予約をETagで制御する�
 - API Function Appへ説明Endpoint／Deployment／Model Versionを反映し、Manual PoC deployment run [41467404738](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41467404738)が成功。API Managed IdentityのFoundryアカウント範囲`Cognitive Services User`割当を確認。
 - Azure CLI利用者の委任トークンで合成テキストを送り、Chat CompletionsとJSON Schema応答を確認（172 tokens）。これはAPI Managed Identity経由の呼出しや、アプリ固有の説明Schema／実通知の説明品質を検証したものではない。既存の合成UATは引き続きDecision-1のみを呼び説明LLMを呼ばない。Governance限定の実通知再評価をDecision-1と説明LLMの両方を呼ぶ検証経路として拡張中。
 
+### 2026-11-03 PR #102 配置後の実通知再評価
+
+- main commit `1ded83af9162e237143b66858277582613086613`のCI [#41547228604](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41547228604)成功成果物を使用。CD Plan [#41547452148](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41547452148)のWhat-If SHA256は`5f5608b59adc90956c198cb769e4ae719cc99f65281d655a1ff4021d3d1d05db`。専用RG内Application Insights／API Function／Exporter Functionの3件Modify、Create／Deleteなし。ApplyとAPI／Exporter配置は[CD #41547772735](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41547772735)で成功。
+- APIのtest mode／decision reevaluationはtrue。Decision-1 endpoint／deployment／versionとGPT-6 Luna endpoint／deployment`arp-explanation-gpt-6-luna`／version`2026-09-22`をFunction App設定で確認。モデル呼出し上限は200/日。
+- Governance利用者がAPIへテスト再評価を1回依頼し、保存済み実通知・構成候補を用いた。対象Azureへの再取得・変更、作業承認、GitHub登録はなし。Decision-1はSucceeded／Abstained、説明LLMはFailed／HTTP 400／InvalidResponse、Assessment検証エラー0件。元の実通知と履歴は保持。
+- 保存された失敗記録にはモデル応答本文がなく、Application Insightsにも対象のHTTP dependency記録を確認できなかった。アプリのZod Schemaをローカル生成して調べると、Azure Structured Outputsで非対応と記載された`maxItems`、`minLength`、`pattern`、`format`、数値境界等の制約が含まれ、さらに`workflowRouting`が任意プロパティだった。MicrosoftはStructured Outputsで全プロパティをrequiredとし、JSON Schemaの一部キーワードを使わないよう案内している（[公式仕様](https://learn.microsoft.com/azure/foundry/openai/how-to/structured-outputs)）。これをHTTP 400の有力原因と推定するが、非記録のprovider error bodyを根拠とする確定診断ではない。
+- SchemaをAzure互換に整形して送信し、内部routingはモデル出力から除外、受信結果は既存Zod Schemaで引き続き完全検証する修正を作成中。修正版がmainへマージ・配置され、実通知再評価で説明LLM Succeeded、10区分と作業案がSchema検証を通るまで、API MI説明生成と実説明品質は未完了として扱う。
+
 [GitHub OIDCのimmutable subject仕様](https://docs.github.com/en/actions/reference/security/oidc#immutable-subject-claims)
 
 ## 認証障害の診断
