@@ -140,6 +140,116 @@ export const businessContextSchema = z
     contractReview: z.enum(['Required', 'NotRequired', 'Unknown']),
   })
   .strict()
+// SharePoint document grounding contract. Sources are an array from the first
+// revision so future multi-folder support does not require a schema redesign.
+export const documentSourceSchema = z
+  .object({
+    sourceId: z.string().min(1).max(100),
+    tenantId: z.uuid(),
+    siteId: z.string().min(1).max(500),
+    driveId: z.string().min(1).max(500),
+    folderItemId: z.string().min(1).max(500),
+    displayName: z.string().min(1).max(200),
+    workloadIds: z.array(z.string().min(1).max(200)).min(1),
+    includeSubfolders: z.boolean(),
+    allowedExtensions: z.array(z.enum(['.docx', '.xlsx'])).min(1),
+    sampleOnly: z.boolean(),
+    configurationVersion: z.string().min(1).max(100),
+  })
+  .strict()
+export const documentRevisionSchema = z
+  .object({
+    sourceId: z.string().min(1).max(100),
+    itemId: z.string().min(1).max(500),
+    name: z.string().min(1).max(500),
+    extension: z.enum(['.docx', '.xlsx']),
+    eTag: z.string().min(1).max(500).nullable(),
+    lastModifiedAt: z.iso.datetime().nullable(),
+    contentHash: z.string().regex(/^[a-f0-9]{64}$/),
+    observedAt: z.iso.datetime(),
+    sampleOnly: z.boolean(),
+  })
+  .strict()
+export const documentFactSchema = z
+  .object({
+    factId: z.string().min(1).max(200),
+    workloadId: z.string().min(1).max(200),
+    kind: z.enum([
+      'BusinessProcess',
+      'ResourceDependency',
+      'FeatureUsage',
+      'AlternativePath',
+      'Tolerance',
+      'ChangeImpact',
+    ]),
+    statement: z.string().min(1).max(4000),
+    sourceId: z.string().min(1).max(100),
+    documentItemId: z.string().min(1).max(500),
+    documentContentHash: z.string().regex(/^[a-f0-9]{64}$/),
+    locator: z
+      .object({
+        heading: z.string().max(500).nullable(),
+        table: z.string().max(200).nullable(),
+        row: z.number().int().nonnegative().nullable(),
+        cell: z.string().max(100).nullable(),
+        page: z.number().int().positive().nullable(),
+      })
+      .strict(),
+    reviewStatus: z.enum(['Candidate', 'Confirmed', 'Rejected']),
+    sampleOnly: z.boolean(),
+  })
+  .strict()
+export const documentGroundingSchema = z
+  .object({
+    schemaVersion: z.literal('1'),
+    workloadId: z.string().min(1).max(200),
+    sampleOnly: z.boolean(),
+    sourceConfigurationVersion: z.string().min(1).max(100),
+    documentRevisions: z.array(documentRevisionSchema),
+    facts: z.array(documentFactSchema),
+    observedAt: z.iso.datetime(),
+  })
+  .strict()
+  .superRefine((grounding, context) => {
+    const revisions = new Map(
+      grounding.documentRevisions.map((revision) => [
+        `${revision.sourceId}:${revision.itemId}:${revision.contentHash}`,
+        revision,
+      ]),
+    )
+    grounding.facts.forEach((fact, index) => {
+      if (fact.workloadId !== grounding.workloadId)
+        context.addIssue({
+          code: 'custom',
+          path: ['facts', index, 'workloadId'],
+          message: 'Document fact workload does not match grounding workload',
+        })
+      if (fact.sampleOnly !== grounding.sampleOnly)
+        context.addIssue({
+          code: 'custom',
+          path: ['facts', index, 'sampleOnly'],
+          message: 'Sample classification must match document grounding',
+        })
+      if (
+        !revisions.has(
+          `${fact.sourceId}:${fact.documentItemId}:${fact.documentContentHash}`,
+        )
+      )
+        context.addIssue({
+          code: 'custom',
+          path: ['facts', index, 'documentItemId'],
+          message: 'Document fact must reference an included document revision',
+        })
+    })
+    grounding.documentRevisions.forEach((revision, index) => {
+      if (revision.sampleOnly !== grounding.sampleOnly)
+        context.addIssue({
+          code: 'custom',
+          path: ['documentRevisions', index, 'sampleOnly'],
+          message: 'Sample classification must match document grounding',
+        })
+    })
+  })
 export const milestoneSchema = z
   .object({
     id: z.string().min(1),
@@ -490,6 +600,10 @@ export type LifecycleEvent = z.infer<typeof eventSchema>
 export type ResourceImpact = z.infer<typeof resourceSchema>
 export type Evidence = z.infer<typeof evidenceSchema>
 export type BusinessContext = z.infer<typeof businessContextSchema>
+export type DocumentSource = z.infer<typeof documentSourceSchema>
+export type DocumentRevision = z.infer<typeof documentRevisionSchema>
+export type DocumentFact = z.infer<typeof documentFactSchema>
+export type DocumentGrounding = z.infer<typeof documentGroundingSchema>
 export type DiscoveryFailure = z.infer<typeof discoveryFailureSchema>
 export type DiscoveryFailureSource = DiscoveryFailure['source']
 export type ModelInvocation = z.infer<typeof modelInvocationSchema>
