@@ -76,6 +76,34 @@ function isScheduleOnlySentence(text: string): boolean {
   return schedule && !describesImpact
 }
 
+function removeRepeatedScheduleClause(
+  sentence: string,
+  officialDates: Set<string>,
+): string {
+  const clauseBoundary =
+    /(?:が|けれど|ものの)?[、，,;；]\s*(?:but\s+|however,?\s+)?/gi
+  let boundary: RegExpExecArray | null
+  while ((boundary = clauseBoundary.exec(sentence))) {
+    const precedingClause = sentence.slice(0, boundary.index)
+    const hasRepeatedOfficialDate = explanationDates(precedingClause).some(
+      (date) => officialDates.has(date),
+    )
+    const containsSchedule =
+      /廃止|退役|終了|期限|retir|sunset|endofsupport|deadline/i.test(
+        precedingClause,
+      )
+    const remainingClause = sentence.slice(clauseBoundary.lastIndex).trim()
+    if (
+      hasRepeatedOfficialDate &&
+      containsSchedule &&
+      remainingClause &&
+      !isScheduleOnlySentence(remainingClause)
+    )
+      return remainingClause
+  }
+  return sentence
+}
+
 export function deduplicateExplanationClaims(
   explanation: Explanation,
 ): Array<[string, ExplanationClaim[]]> {
@@ -130,7 +158,12 @@ export function deduplicateExplanationClaims(
         },
       )
       const uniqueSentences: string[] = []
-      for (const sentence of remainingSentences) {
+      for (const originalSentence of remainingSentences) {
+        const sentence = explanationDates(originalSentence).some((date) =>
+          officialDates.has(date),
+        )
+          ? removeRepeatedScheduleClause(originalSentence, officialDates)
+          : originalSentence
         const key = normalizeExplanationText(sentence)
         if (!key) continue
         const existing = seen.get(key)
