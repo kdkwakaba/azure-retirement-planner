@@ -211,6 +211,7 @@ export const documentFactSchema = z
     locator: z
       .object({
         heading: z.string().max(500).nullable(),
+        sheet: z.string().max(200).nullable().optional(),
         table: z.string().max(200).nullable(),
         row: z.number().int().nonnegative().nullable(),
         cell: z.string().max(100).nullable(),
@@ -219,6 +220,20 @@ export const documentFactSchema = z
       .strict(),
     reviewStatus: z.enum(['Candidate', 'Confirmed', 'Rejected']),
     sampleOnly: z.boolean(),
+  })
+  .strict()
+export const documentFactProposalSchema = z
+  .object({
+    blockId: z.string().min(1).max(200),
+    kind: z.enum([
+      'BusinessProcess',
+      'ResourceDependency',
+      'FeatureUsage',
+      'AlternativePath',
+      'Tolerance',
+      'ChangeImpact',
+    ]),
+    statement: z.string().min(1).max(4000),
   })
   .strict()
 export const documentGroundingSchema = z
@@ -627,6 +642,7 @@ export type DocumentRevision = z.infer<typeof documentRevisionSchema>
 export type DocumentTextBlock = z.infer<typeof documentTextBlockSchema>
 export type DocumentText = z.infer<typeof documentTextSchema>
 export type DocumentFact = z.infer<typeof documentFactSchema>
+export type DocumentFactProposal = z.infer<typeof documentFactProposalSchema>
 export type DocumentGrounding = z.infer<typeof documentGroundingSchema>
 export type DiscoveryFailure = z.infer<typeof discoveryFailureSchema>
 export type DiscoveryFailureSource = DiscoveryFailure['source']
