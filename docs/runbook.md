@@ -120,7 +120,7 @@ APIの日次モデル呼出枠は200件で、同時予約をETagで制御する�
 
 ## Foundry Bootstrap
 
-`infra/bootstrap/foundry.bicep`は既存Foundry／Projectを参照し、Microsoft-Decision-1と説明用GPT-6 Lunaのdeploymentを宣言する。Lunaは`gpt-6-luna` version `2026-09-22`、`DataZoneStandard`、capacity 1を既定とする。既存リソースのサーバー管理プロパティを削除しないことをWhat-ifで確認する。deployment変更は容量・価格・利用可能性に影響するため、適用前にカタログ、クォータ、費用を確認する。API Managed Identityの推論ロールは`infra/bootstrap/permissions.bicep`がFoundryアカウント範囲で付与する。アプリから説明LLMを有効化するには、deploymentのRunning確認後、Repository Variablesの`EXPLANATION_ENDPOINT`（Foundry account endpoint）、`EXPLANATION_DEPLOYMENT`（deployment名）、`EXPLANATION_MODEL_VERSION`（モデル版）を設定し、通常のPoC CDで反映する。
+`infra/bootstrap/foundry.bicep`は既存Foundry／Projectを参照し、Microsoft-Decision-1と説明用GPT-6 Lunaのdeploymentを宣言する。Lunaは`gpt-6-luna` version `2026-09-22`、`DataZoneStandard`、capacity 3を既定とする。既存リソースのサーバー管理プロパティを削除しないことをWhat-ifで確認する。deployment変更は容量・価格・利用可能性に影響するため、適用前にカタログ、クォータ、費用を確認する。API Managed Identityの推論ロールは`infra/bootstrap/permissions.bicep`がFoundryアカウント範囲で付与する。アプリから説明LLMを有効化するには、deploymentのRunning確認後、Repository Variablesの`EXPLANATION_ENDPOINT`（Foundry account endpoint）、`EXPLANATION_DEPLOYMENT`（deployment名）、`EXPLANATION_MODEL_VERSION`（モデル版）を設定し、通常のPoC CDで反映する。
 
 ### 2026-11-03 GPT-6 Luna 配置・接続確認
 
@@ -136,6 +136,13 @@ APIの日次モデル呼出枠は200件で、同時予約をETagで制御する�
 - Governance利用者がAPIへテスト再評価を1回依頼し、保存済み実通知・構成候補を用いた。対象Azureへの再取得・変更、作業承認、GitHub登録はなし。Decision-1はSucceeded／Abstained、説明LLMはFailed／HTTP 400／InvalidResponse、Assessment検証エラー0件。元の実通知と履歴は保持。
 - 保存された失敗記録にはモデル応答本文がなく、Application Insightsにも対象のHTTP dependency記録を確認できなかった。アプリのZod Schemaをローカル生成して調べると、Azure Structured Outputsで非対応と記載された`maxItems`、`minLength`、`pattern`、`format`、数値境界等の制約が含まれ、さらに`workflowRouting`が任意プロパティだった。MicrosoftはStructured Outputsで全プロパティをrequiredとし、JSON Schemaの一部キーワードを使わないよう案内している（[公式仕様](https://learn.microsoft.com/azure/foundry/openai/how-to/structured-outputs)）。これをHTTP 400の有力原因と推定するが、非記録のprovider error bodyを根拠とする確定診断ではない。
 - SchemaをAzure互換に整形して送信し、内部routingはモデル出力から除外、受信結果は既存Zod Schemaで引き続き完全検証する修正を作成中。修正版がmainへマージ・配置され、実通知再評価で説明LLM Succeeded、10区分と作業案がSchema検証を通るまで、API MI説明生成と実説明品質は未完了として扱う。
+
+### 2026-11-03 PR #103 配置後の再評価とGPT-6 Luna容量
+
+- PR #103のStructured Outputs Schema修正を含むmain commit `612a56b4c2bbd0fa13e1e438d4f814cd64396c4c`を[CI #41550736477](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41550736477)と[CD #41551188892](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41551188892)で検査・配置。
+- 2026-11-03に保存済み実通知1件をAPI Managed Identity経由で再評価。Decision-1はSucceeded／Abstained。説明LLMはHTTP 429／Throttledとなり、Structured Outputs応答の受信・Schema検証には到達しなかった。実説明品質とSchema互換性の実呼出し確認は未完了。
+- Foundry上でGPT-6 Lunaの旧容量1、DataZoneStandardクォータ上限100・使用1、モデルカタログの最大容量3を確認。PR #104のBicep変更を適用し、容量3、3 requests/minute・3,000 tokens/minute、deployment Running／Succeededを確認。適用What-IfはDecision-1 NoChange、Lunaの`sku.capacity`と`properties.currentCapacity`のみModify、Create／Deleteなし。クォータ使用量は3/100。
+- PR #104の追加変更では、GPT-6 Lunaを維持したまま`max_completion_tokens`を1,500へ下げ、モデルへの作業案を重要度順で最大5件・簡潔な記述に制限する。10区分のExplanation Schemaと元通知／Evidence入力は維持し、繰り返されるClaim定義をJSON Schema `$defs`参照へまとめてSchemaを7,402から3,579文字へ縮小する。MicrosoftはStructured Outputsの`$defs`／`$ref`をサポート対象としている（[公式仕様](https://learn.microsoft.com/azure/foundry/openai/how-to/structured-outputs)）。これは容量3（3,000 TPM）に合わせる要求量調整であり、prompt token数もレート制限見積もりに含まれるため、HTTP 429解消を保証しない。PR merge・配置後、実通知再評価でExplanation SucceededとSchema検証通過を確認するまで未解決として扱う。
 
 [GitHub OIDCのimmutable subject仕様](https://docs.github.com/en/actions/reference/security/oidc#immutable-subject-claims)
 

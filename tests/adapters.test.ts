@@ -2,12 +2,15 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   AzureStore,
+  EXPLANATION_MAX_COMPLETION_TOKENS,
+  EXPLANATION_MAX_WORK_ITEMS,
   ensureIssueForExport,
   GitHubClient,
   argRows,
   fetchOfficialProfileEvidence,
   decide,
   explicitResourceIds,
+  explain,
   issueText,
   managedIssueContent,
   priorityIssueLabel,
@@ -27,6 +30,58 @@ import {
 import { fixture, tenant, resourceId } from './fixtures.ts'
 import { hash } from '@arp/domain'
 import { categorySchema, type Approval } from '@arp/contracts'
+
+test('GPT-6 Luna explanation request stays within the configured token and work-item budgets', async (t) => {
+  t.mock.method(credential, 'getToken', async () => ({
+    token: 'synthetic',
+    expiresOnTimestamp: Date.now() + 3600000,
+  }))
+  let requestBody: Record<string, unknown> | undefined
+  const explanation = {
+    impact: [],
+    increasingFactors: [],
+    reducingFactors: [],
+    startRationale: [],
+    missingInformation: [],
+    changeConditions: [],
+    microsoftFacts: [],
+    internalFacts: [],
+    judgments: [],
+    humanChecks: [],
+  }
+  t.mock.method(
+    globalThis,
+    'fetch',
+    async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return Response.json({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({ explanation, workItems: [] }),
+            },
+          },
+        ],
+      })
+    },
+  )
+
+  const result = await explain(
+    'https://synthetic.services.ai.azure.com',
+    'gpt-6-luna',
+    { event: { title: 'Synthetic notice', evidence: [] }, resources: [] },
+    async () => {},
+  )
+
+  assert.equal(requestBody?.max_completion_tokens, 1500)
+  assert.equal(EXPLANATION_MAX_COMPLETION_TOKENS, 1500)
+  assert.equal(EXPLANATION_MAX_WORK_ITEMS, 5)
+  assert.match(
+    (requestBody?.messages as Array<{ content: string }>)[0]?.content ?? '',
+    /最大5件/,
+  )
+  assert.deepEqual(result.result.explanation, explanation)
+})
 
 test('official evidence translation uses the managed-identity Translator contract', async () => {
   let requestBody = ''
