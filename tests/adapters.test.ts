@@ -4,6 +4,7 @@ import {
   AzureStore,
   EXPLANATION_MAX_COMPLETION_TOKENS,
   EXPLANATION_MAX_WORK_ITEMS,
+  EXPLANATION_REASONING_EFFORT,
   ensureIssueForExport,
   GitHubClient,
   argRows,
@@ -57,6 +58,7 @@ test('GPT-6 Luna explanation request stays within the configured token and work-
       return Response.json({
         choices: [
           {
+            finish_reason: 'stop',
             message: {
               content: JSON.stringify({ explanation, workItems: [] }),
             },
@@ -95,8 +97,10 @@ test('GPT-6 Luna explanation request stays within the configured token and work-
   )
 
   assert.equal(requestBody?.max_completion_tokens, 1500)
+  assert.equal(requestBody?.reasoning_effort, 'low')
   assert.equal(EXPLANATION_MAX_COMPLETION_TOKENS, 1500)
   assert.equal(EXPLANATION_MAX_WORK_ITEMS, 5)
+  assert.equal(EXPLANATION_REASONING_EFFORT, 'low')
   assert.match(
     (requestBody?.messages as Array<{ content: string }>)[0]?.content ?? '',
     /最大5件/,
@@ -120,6 +124,32 @@ test('GPT-6 Luna explanation request stays within the configured token and work-
   )
   assert.equal('probabilities' in sentInput.decision, false)
   assert.deepEqual(result.result.explanation, explanation)
+})
+
+test('GPT-6 Luna truncation is detected before parsing an empty completion', async (t) => {
+  t.mock.method(credential, 'getToken', async () => ({
+    token: 'synthetic',
+    expiresOnTimestamp: Date.now() + 3600000,
+  }))
+  let responseRecorded = false
+  t.mock.method(globalThis, 'fetch', async () =>
+    Response.json({
+      choices: [{ finish_reason: 'length', message: { content: '' } }],
+    }),
+  )
+
+  await assert.rejects(
+    explain(
+      'https://synthetic.services.ai.azure.com',
+      'gpt-6-luna',
+      { event: { title: 'Synthetic notice', evidence: [] }, resources: [] },
+      async () => {
+        responseRecorded = true
+      },
+    ),
+    /truncated at token limit/,
+  )
+  assert.equal(responseRecorded, true)
 })
 
 test('official evidence translation uses the managed-identity Translator contract', async () => {
