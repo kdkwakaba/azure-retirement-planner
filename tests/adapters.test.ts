@@ -97,10 +97,10 @@ test('GPT-6 Luna explanation request stays within the configured token and work-
     async () => {},
   )
 
-  assert.equal(requestBody?.max_completion_tokens, 1500)
+  assert.equal(requestBody?.max_completion_tokens, 2500)
   assert.equal(requestBody?.reasoning_effort, 'none')
   assert.equal(requestBody?.verbosity, 'low')
-  assert.equal(EXPLANATION_MAX_COMPLETION_TOKENS, 1500)
+  assert.equal(EXPLANATION_MAX_COMPLETION_TOKENS, 2500)
   assert.equal(EXPLANATION_MAX_WORK_ITEMS, 2)
   assert.equal(EXPLANATION_REASONING_EFFORT, 'none')
   assert.match(
