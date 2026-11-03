@@ -1,6 +1,10 @@
-import { useEffect, useId, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { assessmentSchema, type Assessment } from '@arp/contracts'
+import {
+  assessmentSchema,
+  type Assessment,
+  type Evidence,
+} from '@arp/contracts'
 import { generalImpactNarratives } from '@arp/domain/impact-narratives'
 import './styles.css'
 import { CorrectionForm } from './CorrectionForm.tsx'
@@ -158,16 +162,55 @@ function ImpactHelp({ axis }: { axis: '未対応時' | '対応時・対応後' }
 
 function ImpactNarrative({
   claim,
+  evidence,
+  onOpenEvidence,
 }: {
   claim: Assessment['explanation']['impact'][number] | undefined
+  evidence: Evidence[]
+  onOpenEvidence: (index: number) => void
 }) {
   if (!claim) return null
   return (
     <div className="impact-narrative">
       <span>一般的な影響想定</span>
       <p>{claim.text}</p>
-      <small>根拠Evidence ID: {evidenceDisplay(claim.evidenceIds)}</small>
+      <EvidenceReferences
+        evidenceIds={claim.evidenceIds}
+        evidence={evidence}
+        onOpenEvidence={onOpenEvidence}
+      />
     </div>
+  )
+}
+
+function EvidenceReferences({
+  evidenceIds,
+  evidence,
+  onOpenEvidence,
+}: {
+  evidenceIds: string[]
+  evidence: Evidence[]
+  onOpenEvidence: (index: number) => void
+}) {
+  const references = evidenceDisplay(evidenceIds, evidence)
+  return (
+    <small className="evidence-references">
+      根拠:{' '}
+      {references.map((reference, index) =>
+        reference.evidenceIndex === null ? (
+          <span key={`${reference.label}-${index}`}>{reference.label}</span>
+        ) : (
+          <button
+            className="evidence-reference"
+            key={`${reference.evidenceIndex}-${index}`}
+            onClick={() => onOpenEvidence(reference.evidenceIndex!)}
+            type="button"
+          >
+            {reference.label}
+          </button>
+        ),
+      )}
+    </small>
   )
 }
 
@@ -268,6 +311,7 @@ function uatErrorCategoryLabel(category: string | null): string {
 }
 
 function App() {
+  const evidencePanelRef = useRef<HTMLDetailsElement>(null)
   const [items, setItems] = useState<Assessment[]>([]),
     [selected, setSelected] = useState<string | null>(null),
     [error, setError] = useState(''),
@@ -334,6 +378,16 @@ function App() {
   const confirmationReasonCount =
     confirmationReasons.length +
     new Set(additionalHumanChecks.map((claim) => claim.text)).size
+  function openEvidence(index: number) {
+    const panel = evidencePanelRef.current
+    const target = document.getElementById(`evidence-card-${index}`)
+    if (!panel || !target) return
+    panel.open = true
+    requestAnimationFrame(() => {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      target.focus({ preventScroll: true })
+    })
+  }
   async function refresh() {
     setError('')
     try {
@@ -921,6 +975,8 @@ function App() {
                         </strong>
                         <ImpactNarrative
                           claim={impactNarrativeFor('impactIfUnaddressed')}
+                          evidence={current.event.evidence}
+                          onOpenEvidence={openEvidence}
                         />
                       </article>
                       <article>
@@ -939,6 +995,8 @@ function App() {
                           claim={impactNarrativeFor(
                             'impactDuringAndAfterChange',
                           )}
+                          evidence={current.event.evidence}
+                          onOpenEvidence={openEvidence}
                         />
                       </article>
                       <article>
@@ -1024,10 +1082,11 @@ function App() {
                       {additionalHumanChecks.map((claim) => (
                         <p key={claim.id}>
                           {claim.text}
-                          <small>
-                            関連Evidence ID:{' '}
-                            {evidenceDisplay(claim.evidenceIds)}
-                          </small>
+                          <EvidenceReferences
+                            evidenceIds={claim.evidenceIds}
+                            evidence={current.event.evidence}
+                            onOpenEvidence={openEvidence}
+                          />
                         </p>
                       ))}
                     </>
@@ -1190,10 +1249,11 @@ function App() {
                               .map((claim) => (
                                 <p key={claim.id}>
                                   {claim.text}
-                                  <small>
-                                    関連Evidence ID:{' '}
-                                    {evidenceDisplay(claim.evidenceIds)}
-                                  </small>
+                                  <EvidenceReferences
+                                    evidenceIds={claim.evidenceIds}
+                                    evidence={current.event.evidence}
+                                    onOpenEvidence={openEvidence}
+                                  />
                                 </p>
                               ))}
                           </div>
@@ -1202,13 +1262,18 @@ function App() {
                     ))
                   )}
                 </details>
-                <details className="review-info-group">
+                <details className="review-info-group" ref={evidencePanelRef}>
                   <summary>根拠（{current.event.evidence.length}）</summary>
                   {current.event.evidence.length === 0 && (
                     <p>保存された根拠はありません。</p>
                   )}
-                  {current.event.evidence.map((e) => (
-                    <article className="evidence-item" key={e.id}>
+                  {current.event.evidence.map((e, evidenceIndex) => (
+                    <article
+                      className="evidence-item"
+                      id={`evidence-card-${evidenceIndex}`}
+                      key={e.id}
+                      tabIndex={-1}
+                    >
                       <div className="evidence-heading">
                         <b>
                           {e.sourceType === 'Microsoft'
