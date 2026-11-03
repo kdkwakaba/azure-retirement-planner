@@ -99,12 +99,17 @@ test('GPT-6 Luna explanation request stays within the configured token and work-
 
   assert.equal(requestBody?.max_completion_tokens, 1500)
   assert.equal(requestBody?.reasoning_effort, 'none')
+  assert.equal(requestBody?.verbosity, 'low')
   assert.equal(EXPLANATION_MAX_COMPLETION_TOKENS, 1500)
-  assert.equal(EXPLANATION_MAX_WORK_ITEMS, 5)
+  assert.equal(EXPLANATION_MAX_WORK_ITEMS, 2)
   assert.equal(EXPLANATION_REASONING_EFFORT, 'none')
   assert.match(
     (requestBody?.messages as Array<{ content: string }>)[0]?.content ?? '',
-    /最大5件/,
+    /各0〜1件/,
+  )
+  assert.match(
+    (requestBody?.messages as Array<{ content: string }>)[0]?.content ?? '',
+    /最大2件/,
   )
   const sentInput = JSON.parse(
     (requestBody?.messages as Array<{ content: string }>)[1]?.content ?? '{}',
