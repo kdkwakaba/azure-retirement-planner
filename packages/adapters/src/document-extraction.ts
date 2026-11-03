@@ -3,6 +3,9 @@ import mammoth from 'mammoth'
 import readExcelFile from 'read-excel-file/node'
 import {
   documentTextSchema,
+  documentFactProposalSchema,
+  type DocumentFact,
+  type DocumentFactProposal,
   type DocumentRevision,
   type DocumentText,
 } from '@arp/contracts'
@@ -10,6 +13,64 @@ import {
 const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024
 const MAX_TEXT_CHARACTERS = 200_000
 const MAX_SPREADSHEET_CELLS = 20_000
+
+export function bindDocumentFactProposals(input: {
+  document: DocumentText
+  workloadId: string
+  proposals: DocumentFactProposal[]
+}): DocumentFact[] {
+  const { document, workloadId, proposals } = input
+  const blocks = new Map(document.blocks.map((block) => [block.blockId, block]))
+  const seen = new Set<string>()
+  return proposals.map((rawProposal) => {
+    const proposal = documentFactProposalSchema.parse(rawProposal)
+    const block = blocks.get(proposal.blockId)
+    if (!block)
+      throw new Error('Document fact proposal references an unknown text block')
+    const fingerprint = JSON.stringify([
+      proposal.blockId,
+      proposal.kind,
+      proposal.statement,
+      workloadId,
+    ])
+    if (seen.has(fingerprint))
+      throw new Error('Document fact proposal is duplicated')
+    seen.add(fingerprint)
+    const locator = {
+      heading: block.heading,
+      sheet: block.sheet,
+      table: null,
+      row: block.row,
+      cell: block.cell,
+      page: null,
+    }
+    const factId = createHash('sha256')
+      .update(
+        JSON.stringify({
+          sourceId: block.sourceId,
+          itemId: block.itemId,
+          contentHash: block.contentHash,
+          locator,
+          kind: proposal.kind,
+          statement: proposal.statement,
+          workloadId,
+        }),
+      )
+      .digest('hex')
+    return {
+      factId,
+      workloadId,
+      kind: proposal.kind,
+      statement: proposal.statement,
+      sourceId: block.sourceId,
+      documentItemId: block.itemId,
+      documentContentHash: block.contentHash,
+      locator,
+      reviewStatus: 'Candidate',
+      sampleOnly: block.sampleOnly,
+    }
+  })
+}
 
 function columnName(index: number): string {
   let result = ''
