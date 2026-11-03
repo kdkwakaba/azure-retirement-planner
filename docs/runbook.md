@@ -168,6 +168,14 @@ APIの日次モデル呼出枠は200件で、同時予約をETagで制御する�
 - Runは`Completed`。Decision-1／Explanationはいずれも`Succeeded`。GPT-6 Lunaは`reasoning_effort=none`、`verbosity=low`、Prompt `2026-11-03.5`で、説明9 claims・作業案1件を保存。空応答／JSON切れは解消し、Schema検証を通過した。
 - 業務検証エラーが1件残る。説明の「判断」欄にある`Confirmed Fact` claimにEvidence IDがなく、domain validationは根拠不足と判定した。モデル応答本文は取得・記録していない。説明生成の実行成功は確認したが、根拠完全性と意味品質は成功扱いせず、レビュー対象として残す。
 
+### 2026-11-03 PR #113 配置後の説明出力上限診断
+
+- PR #113の配置後、保存済み実通知1件を再評価（Run `ea1f23a2-649a-4ed2-b2e7-5435562e001a`）。Decision-1は`Succeeded`、説明は`Failed`。失敗Assessmentには通知対象リソース2件が保存され、いずれも利用実態を構成情報だけでは判断できない分類だった。説明本文を含む結果をUIで確認できたとは扱わない。
+- 本文を返さない診断APIでは`finishReason=length`、`contentLength=3444`、JSON parse不成立、prompt 2,457 tokens、completion 1,500 tokens、reasoning 0、total 3,957 tokensを確認した。可視出力が1,500上限まで生成されてJSONが閉じず、Schema検証に失敗した。今回の失敗は内部推論ではなく可視出力枠不足。
+- CLIの読み取り専用照会でGPT-6 Luna version `2026-09-22`、DataZoneStandard deployment容量3、model catalog `maxCapacity=3`を確認。East US 2のDataZoneStandard quotaは3/100（1,000 TPM単位）。quota残量はあるが、現モデルカタログの最大容量がdeploymentの増量を制約する。GlobalStandardも候補SKUとして返るが、Microsoftの説明ではGlobalは任意のAzureリージョンで処理され得る一方、Data Zoneは指定zone内で処理されるため、配置区分変更はデータ処理境界を変える。したがって採用せず、モデルとSKUは変更しない（[deployment types](https://learn.microsoft.com/en-us/azure/ai-services/openai/how-to/deployment-types)）。
+- 2,500上限では要求Token見積もりがprompt 2,457＋completion上限2,500で約4,957 tokensとなり、deploymentの3,000 TPM割当を超える。Azureのレート制限見積もりはpromptと設定上限を含むため、同一分内に説明要求が集中すると後続要求が429になる可能性がある。現行1,500上限でも同じ見積もりが3,957 tokensで割当超過だった。モデル応答の安定性を改善するための出力余裕と、バースト時の429リスクを分けて監視する。詳しくは[Microsoft公式quota説明](https://learn.microsoft.com/azure/foundry/openai/how-to/quota)を参照。
+- 実装変更は`EXPLANATION_MAX_COMPLETION_TOKENS=2500`と説明Prompt版更新に限定し、GPT-6 Luna、`reasoning_effort=none`、`verbosity=low`、10区分Schemaと出力項目数は維持する。CI契約試験で送信上限を確認し、マージ・配置後に保存済み実通知を一度再評価して`finish_reason=stop`、JSON／Schema成功、根拠品質を検証する。2,500でも安定しない場合は上限だけをさらに増やさず、TPMと出力構造を再評価する。
+
 ### 2026-11-03 PR #108 配置後の none 再評価
 
 - PR #108 merge commit `4308fe6b5c2446538587f002c4bc76b0f41b0ffe`のmain CI [#41591044022](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41591044022)成功成果物を使用。CD Plan [#41591167232](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41591167232)、Apply／API・Exporter配置 [#41591318311](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41591318311)が成功。Plan Hash `5f5608b59adc90956c198cb769e4ae719cc99f65281d655a1ff4021d3d1d05db`。What-Ifは専用RG内のAPI／Exporter App Service 2件Modify、Create／Deleteなし。
