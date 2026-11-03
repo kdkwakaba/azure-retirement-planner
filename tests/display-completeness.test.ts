@@ -118,6 +118,13 @@ test('explanation display consolidates repeated facts and keeps official dates i
     evidenceIds: [evidenceId, 'same-date-impact-evidence'],
     decisionRefs: [],
   }
+  const mixedScheduleAndImpact = {
+    id: 'mixed-schedule-and-impact',
+    text: 'Microsoftはclassic Foundry Agent Service APIを2027年3月31日に廃止すると通知しているが、未対応時の具体的影響は提示資料から確認できない。',
+    kind: 'Derived Fact' as const,
+    evidenceIds: [evidenceId],
+    decisionRefs: [],
+  }
   const repeatedFactor = {
     id: 'factor-1',
     text: 'このリソースの利用有無を確認する必要があります。',
@@ -135,7 +142,7 @@ test('explanation display consolidates repeated facts and keeps official dates i
   const explanation = {
     ...source,
     microsoftFacts: [schedule],
-    impact: [impact],
+    impact: [impact, mixedScheduleAndImpact],
     increasingFactors: [repeatedFactor],
     missingInformation: [repeatedMissingInfo],
   }
@@ -152,6 +159,10 @@ test('explanation display consolidates repeated facts and keeps official dates i
   assert.equal(
     displayedImpact[0]!.text,
     '廃止後は対象機能を利用できなくなる可能性があります。',
+  )
+  assert.equal(
+    displayedImpact[1]!.text,
+    '未対応時の具体的影響は提示資料から確認できない。',
   )
   assert.equal(
     sections.filter(([name]) => name === 'increasingFactors').length,
