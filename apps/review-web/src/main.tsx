@@ -5,7 +5,6 @@ import {
   type Assessment,
   type Evidence,
 } from '@arp/contracts'
-import { resourceVerificationReason } from '@arp/domain/resource-verification-reasons'
 import { generalImpactNarratives } from '@arp/domain/impact-narratives'
 import './styles.css'
 import { CorrectionForm } from './CorrectionForm.tsx'
@@ -21,6 +20,7 @@ import {
   explanationSectionDisplay,
   impactDisplay,
   isKnownReviewReason,
+  isModelDecisionStatusOnlyReviewReason,
   isPlanSchedulingNote,
   modelInvocationStatusDisplay,
   officialDeadlineDisplay,
@@ -33,6 +33,7 @@ import {
   priorityDisplay,
   planSchedulingNoteDisplay,
   projectProgressDisplay,
+  resourceConfirmationReasons,
   reviewReasonDisplay,
   routingDisplay,
   sequenceDisplay,
@@ -372,11 +373,8 @@ function App() {
     (count, [, claims]) => count + claims.length,
     0,
   )
-  const resourceReviewReasons = current
-    ? current.resources.flatMap((resource) => {
-        const reason = resourceVerificationReason(resource)
-        return reason ? [`${resource.type}（${resource.id}）: ${reason}`] : []
-      })
+  const resourceReasons = current
+    ? resourceConfirmationReasons(current.resources, current.missingInformation)
     : []
   const discoveryReviewReasons = current
     ? [
@@ -401,13 +399,12 @@ function App() {
     ? [
         ...new Set(
           [
-            ...resourceReviewReasons,
+            ...resourceReasons,
             ...discoveryReviewReasons,
             ...current.reviewReasons.filter(
-              (reason) => !isPlanSchedulingNote(reason),
-            ),
-            ...current.missingInformation.filter(
-              (reason) => !isPlanSchedulingNote(reason),
+              (reason) =>
+                !isPlanSchedulingNote(reason) &&
+                !isModelDecisionStatusOnlyReviewReason(reason),
             ),
             ...current.explanation.humanChecks
               .filter(
