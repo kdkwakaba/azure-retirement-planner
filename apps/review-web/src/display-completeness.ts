@@ -254,11 +254,28 @@ export function decisionStatusDisplay(status: string): string {
 }
 
 export function reviewReasonDisplay(reason: string): string {
-  if (reason.includes('期限または承認済み工程期間が未確定'))
-    return '計画日を算定できません。適用期限と承認済みの工程期間を確認後、計画担当が設定します。'
+  if (
+    reason.includes('期限または承認済み工程期間が未確定') ||
+    reason.includes('計画日を算定できません')
+  )
+    return '計画日を算定できないため、適用期限と承認済みの工程期間の確認が必要です。'
+  if (
+    reason.includes('クラシック API') &&
+    (reason.includes('使用有無') || reason.includes('利用有無'))
+  )
+    return 'クラシック API の使用有無を判断できないため、対象リソースとプロジェクトでの利用状況の確認が必要です。'
   if (reason.includes('担当チーム候補が設定されていません'))
     return '担当チームが選定されていません。情報システム部門が初動調整し、Workload責任者と担当部門を決めます。'
   if (reason.includes('未確認のOwner Team'))
     return '担当チームの根拠がありません。Workload責任者と担当部門を確認してください。'
   return reason
+}
+
+export function isKnownReviewReason(reason: string): boolean {
+  return (
+    reason.includes('期限または承認済み工程期間が未確定') ||
+    reason.includes('計画日を算定できません') ||
+    (reason.includes('クラシック API') &&
+      (reason.includes('使用有無') || reason.includes('利用有無')))
+  )
 }

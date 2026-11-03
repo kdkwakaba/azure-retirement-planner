@@ -19,6 +19,7 @@ import {
   evidenceDisplay,
   explanationSectionDisplay,
   impactDisplay,
+  isKnownReviewReason,
   modelInvocationStatusDisplay,
   officialDeadlineDisplay,
   milestoneDateDisplay,
@@ -368,11 +369,23 @@ function App() {
     0,
   )
   const confirmationReasons = current
-    ? [...new Set([...current.reviewReasons, ...current.missingInformation])]
+    ? [
+        ...new Set(
+          [
+            ...current.reviewReasons,
+            ...current.missingInformation,
+            ...current.explanation.humanChecks
+              .filter((claim) => isKnownReviewReason(claim.text))
+              .map((claim) => claim.text),
+          ].map(reviewReasonDisplay),
+        ),
+      ]
     : []
   const additionalHumanChecks = current
     ? current.explanation.humanChecks.filter(
-        (claim) => !confirmationReasons.includes(claim.text),
+        (claim) =>
+          !isKnownReviewReason(claim.text) &&
+          !confirmationReasons.includes(reviewReasonDisplay(claim.text)),
       )
     : []
   const confirmationReasonCount =
