@@ -86,3 +86,103 @@ export function groundedInput(
     }),
   }
 }
+
+const EXPLANATION_TEXT_LIMITS = {
+  title: 180,
+  body: 600,
+  milestoneScope: 120,
+  evidenceTotal: 1200,
+  resourceReason: 160,
+} as const
+const EXPLANATION_TRUNCATION_MARKER = ' […] '
+
+function excerpt(text: string, maxCharacters: number): string {
+  const characters = Array.from(text)
+  if (characters.length <= maxCharacters) return text
+  const marker = Array.from(EXPLANATION_TRUNCATION_MARKER)
+  const available = Math.max(0, maxCharacters - marker.length)
+  const headLength = Math.ceil(available * 0.65)
+  const tailLength = available - headLength
+  return [
+    ...characters.slice(0, headLength),
+    ...marker,
+    ...(tailLength ? characters.slice(-tailLength) : []),
+  ].join('')
+}
+
+/**
+ * Builds a request-only compact view. The persisted event/evidence and the
+ * Decision-1 input remain untouched; identifiers, official URLs and evidence
+ * rows are retained while long prose is excerpted.
+ */
+export function compactExplanationInput<T>(input: T): T {
+  if (typeof input !== 'object' || input === null) return input
+  const compact = structuredClone(input) as Record<string, unknown>
+  const event = compact.event
+  if (typeof event === 'object' && event !== null) {
+    const eventRecord = event as Record<string, unknown>
+    if (typeof eventRecord.title === 'string')
+      eventRecord.title = excerpt(
+        eventRecord.title,
+        EXPLANATION_TEXT_LIMITS.title,
+      )
+    if (typeof eventRecord.body === 'string')
+      eventRecord.body = excerpt(eventRecord.body, EXPLANATION_TEXT_LIMITS.body)
+    if (Array.isArray(eventRecord.milestones)) {
+      eventRecord.milestones = eventRecord.milestones.map((milestone) => {
+        if (typeof milestone !== 'object' || milestone === null)
+          return milestone
+        const record = milestone as Record<string, unknown>
+        return typeof record.scope === 'string'
+          ? {
+              ...record,
+              scope: excerpt(
+                record.scope,
+                EXPLANATION_TEXT_LIMITS.milestoneScope,
+              ),
+            }
+          : record
+      })
+    }
+    if (Array.isArray(eventRecord.evidence)) {
+      const evidence = eventRecord.evidence
+      const perFactLimit = evidence.length
+        ? Math.max(
+            1,
+            Math.floor(EXPLANATION_TEXT_LIMITS.evidenceTotal / evidence.length),
+          )
+        : 0
+      eventRecord.evidence = evidence.map((item) => {
+        if (typeof item !== 'object' || item === null) return item
+        const record = item as Record<string, unknown>
+        return typeof record.fact === 'string'
+          ? { ...record, fact: excerpt(record.fact, perFactLimit) }
+          : record
+      })
+    }
+  }
+  if (Array.isArray(compact.resources)) {
+    compact.resources = compact.resources.map((resource) => {
+      if (typeof resource !== 'object' || resource === null) return resource
+      const record = resource as Record<string, unknown>
+      return typeof record.classificationReason === 'string'
+        ? {
+            ...record,
+            classificationReason: excerpt(
+              record.classificationReason,
+              EXPLANATION_TEXT_LIMITS.resourceReason,
+            ),
+          }
+        : record
+    })
+  }
+  if (typeof compact.decision === 'object' && compact.decision !== null) {
+    const decision = compact.decision as Record<string, unknown>
+    delete decision.probabilities
+    delete decision.model
+    delete decision.modelVersion
+    delete decision.promptVersion
+    delete decision.ruleVersion
+  }
+  return compact as T
+}

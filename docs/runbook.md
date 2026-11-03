@@ -144,6 +144,12 @@ APIの日次モデル呼出枠は200件で、同時予約をETagで制御する�
 - Foundry上でGPT-6 Lunaの旧容量1、DataZoneStandardクォータ上限100・使用1、モデルカタログの最大容量3を確認。PR #104のBicep変更を適用し、容量3、3 requests/minute・3,000 tokens/minute、deployment Running／Succeededを確認。適用What-IfはDecision-1 NoChange、Lunaの`sku.capacity`と`properties.currentCapacity`のみModify、Create／Deleteなし。クォータ使用量は3/100。
 - PR #104の追加変更では、GPT-6 Lunaを維持したまま`max_completion_tokens`を1,500へ下げ、モデルへの作業案を重要度順で最大5件・簡潔な記述に制限する。10区分のExplanation Schemaと元通知／Evidence入力は維持し、繰り返されるClaim定義をJSON Schema `$defs`参照へまとめてSchemaを7,402から3,579文字へ縮小する。MicrosoftはStructured Outputsの`$defs`／`$ref`をサポート対象としている（[公式仕様](https://learn.microsoft.com/azure/foundry/openai/how-to/structured-outputs)）。これは容量3（3,000 TPM）に合わせる要求量調整であり、prompt token数もレート制限見積もりに含まれるため、HTTP 429解消を保証しない。PR merge・配置後、実通知再評価でExplanation SucceededとSchema検証通過を確認するまで未解決として扱う。
 
+### 2026-11-03 GPT-6 Luna説明要求の入力圧縮
+
+- PR #104配置後の実通知再評価もHTTP 429／Throttledとなったため、説明モデル要求だけに適用する長文抜粋を実装。通知本文、Evidence fact、milestone scope、リソース分類理由を先頭／末尾中心に制限し、Decision確率分布と説明に不要なモデル／Prompt／Rule識別子を送信対象から除く。
+- 元Assessment、保存Evidence、Decision-1入力、Evidence ID・公式URL・全Evidence行・構成識別／型付き属性・選択済みDecision項目は保持する。抜粋したテキストは省略部分を推測しないようモデルへ明示する。これは要求のトークン量を抑える対策であり、3,000 TPM内に収まることや429解消を保証しない。
+- 本変更は未配置。合成試験とCIを確認後、日本語PRで提示する。マージ／配置後の実通知再評価は、実行許可を得てから行う。説明LLM応答・Schema検証・説明品質は未確認。
+
 [GitHub OIDCのimmutable subject仕様](https://docs.github.com/en/actions/reference/security/oidc#immutable-subject-claims)
 
 ## 認証障害の診断
