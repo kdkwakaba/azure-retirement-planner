@@ -1,5 +1,6 @@
 import type {
   Assessment,
+  Explanation,
   Evidence,
   ModelInvocation,
   ResourceImpact,
@@ -8,6 +9,164 @@ import type {
 import { resourceVerificationReason } from '@arp/domain/resource-verification-reasons'
 
 type WorkRouting = NonNullable<WorkItem['workflowRouting']>
+type ExplanationClaim = Explanation['impact'][number]
+
+const explanationDatePattern =
+  /\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b|\d{4}年\d{1,2}月\d{1,2}日|\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}\b|\b\d{1,2}(?:st|nd|rd|th)?\s+(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{4}\b/gi
+
+function normalizeExplanationText(text: string): string {
+  return text
+    .normalize('NFKC')
+    .toLocaleLowerCase()
+    .replace(/[\s\p{P}\p{S}]+/gu, '')
+}
+
+function explanationSentences(text: string): string[] {
+  return text.match(/[^。！？.!?\n]+[。！？.!?]?/g)?.filter(Boolean) ?? []
+}
+
+function explanationDates(text: string): string[] {
+  return [...text.matchAll(explanationDatePattern)].map((match) => {
+    const value = match[0]
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/(?:st|nd|rd|th)\b/gi, '')
+    const numeric = value.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/)
+    const japanese = value.match(/^(\d{4})年(\d{1,2})月(\d{1,2})日$/)
+    const english = value.match(
+      /^(?:(\w+)\s+(\d{1,2}),?\s+(\d{4})|(\d{1,2})\s+(\w+)\s+(\d{4}))$/,
+    )
+    const monthNames = [
+      'jan',
+      'feb',
+      'mar',
+      'apr',
+      'may',
+      'jun',
+      'jul',
+      'aug',
+      'sep',
+      'oct',
+      'nov',
+      'dec',
+    ]
+    const monthNumber = (month: string) =>
+      monthNames.findIndex((name) => month.startsWith(name)) + 1
+    const parts = numeric ?? japanese
+    if (parts)
+      return `${parts[1]}-${parts[2]!.padStart(2, '0')}-${parts[3]!.padStart(2, '0')}`
+    if (english) {
+      const month = monthNumber(english[1] ?? english[5] ?? '')
+      const day = english[2] ?? english[4] ?? ''
+      const year = english[3] ?? english[6] ?? ''
+      if (month)
+        return `${year}-${String(month).padStart(2, '0')}-${day.padStart(2, '0')}`
+    }
+    return normalizeExplanationText(match[0])
+  })
+}
+
+function isScheduleOnlySentence(text: string): boolean {
+  const schedule =
+    /廃止|退役|終了|期限|retir|sunset|endofsupport|deadline/i.test(text)
+  const describesImpact =
+    /停止|利用不可|使用不可|継続利用|影響|機能|アクセス|停止|unavailable|outage|impact|cannot|willnotbeavailable/i.test(
+      normalizeExplanationText(text),
+    )
+  return schedule && !describesImpact
+}
+
+export function deduplicateExplanationClaims(
+  explanation: Explanation,
+): Array<[string, ExplanationClaim[]]> {
+  const entries = Object.entries(explanation).filter(
+    ([name, claims]) => name !== 'humanChecks' && claims.length > 0,
+  ) as Array<[string, ExplanationClaim[]]>
+  const officialFacts = entries.find(([name]) => name === 'microsoftFacts')?.[1]
+  const officialDates = new Set(
+    (officialFacts ?? []).flatMap((claim) => explanationDates(claim.text)),
+  )
+  const preferredEntries = [
+    ...entries.filter(([name]) => name === 'microsoftFacts'),
+    ...entries.filter(([name]) => name !== 'microsoftFacts'),
+  ]
+  const seen = new Map<string, ExplanationClaim>()
+  const officialClaimsByDate = new Map<string, ExplanationClaim>()
+  const deduplicated = new Map<string, ExplanationClaim[]>()
+
+  for (const [name, claims] of preferredEntries) {
+    const kept: ExplanationClaim[] = []
+    for (const claim of claims) {
+      const displayedClaim: ExplanationClaim = {
+        ...claim,
+        evidenceIds: [...claim.evidenceIds],
+        decisionRefs: [...claim.decisionRefs],
+      }
+      if (name === 'microsoftFacts') {
+        for (const date of explanationDates(claim.text))
+          officialClaimsByDate.set(date, displayedClaim)
+      }
+      const remainingSentences = explanationSentences(claim.text).filter(
+        (sentence) => {
+          if (name === 'microsoftFacts') return true
+          const repeatedDates = explanationDates(sentence).filter((date) =>
+            officialDates.has(date),
+          )
+          if (repeatedDates.length && isScheduleOnlySentence(sentence)) {
+            for (const date of repeatedDates) {
+              const officialClaim = officialClaimsByDate.get(date)
+              if (officialClaim) {
+                officialClaim.evidenceIds = [
+                  ...new Set([
+                    ...officialClaim.evidenceIds,
+                    ...displayedClaim.evidenceIds,
+                  ]),
+                ]
+              }
+            }
+            return false
+          }
+          return true
+        },
+      )
+      const uniqueSentences: string[] = []
+      for (const sentence of remainingSentences) {
+        const key = normalizeExplanationText(sentence)
+        if (!key) continue
+        const existing = seen.get(key)
+        if (existing) {
+          existing.evidenceIds = [
+            ...new Set([
+              ...existing.evidenceIds,
+              ...displayedClaim.evidenceIds,
+            ]),
+          ]
+          existing.decisionRefs = [
+            ...new Set([
+              ...existing.decisionRefs,
+              ...displayedClaim.decisionRefs,
+            ]),
+          ]
+          continue
+        }
+        uniqueSentences.push(sentence)
+        seen.set(key, displayedClaim)
+      }
+      if (uniqueSentences.length) {
+        displayedClaim.text = uniqueSentences.join('')
+        kept.push(displayedClaim)
+      }
+    }
+    deduplicated.set(name, kept)
+  }
+
+  return entries
+    .map(([name]): [string, ExplanationClaim[]] => [
+      name,
+      deduplicated.get(name) ?? [],
+    ])
+    .filter(([, claims]) => claims.length > 0)
+}
 
 export function resourceConfirmationReasons(
   resources: ResourceImpact[],

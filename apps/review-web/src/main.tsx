@@ -33,6 +33,7 @@ import {
   priorityDisplay,
   planSchedulingNoteDisplay,
   projectProgressDisplay,
+  deduplicateExplanationClaims,
   resourceConfirmationReasons,
   isResourceUsageVerificationReason,
   reviewReasonDisplay,
@@ -357,8 +358,7 @@ function App() {
   const impactNarrativeFor = (decisionRef: string) =>
     impactNarratives.find((claim) => claim.decisionRefs.includes(decisionRef))
   const explanationSections = current
-    ? Object.entries(current.explanation)
-        .filter(([name, claims]) => name !== 'humanChecks' && claims.length > 0)
+    ? deduplicateExplanationClaims(current.explanation)
         .map(
           ([name, claims]) =>
             [
