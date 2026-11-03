@@ -63,6 +63,62 @@ function areSimilarExplanationClaims(first: string, second: string): boolean {
   return sharedBigrams / smallerSetSize >= 0.85
 }
 
+function hasUncertainty(text: string): boolean {
+  return /不明|未確認|確認でき|把握でき|特定でき|判断でき|判明していない|unknown|unclear|cannot confirm|not known/i.test(
+    text,
+  )
+}
+
+function explanationTopics(text: string): Set<string> {
+  const topics: Array<[string, RegExp]> = [
+    ['usage', /利用|使用|実態|usage|use/i],
+    ['ownership', /担当|所有|責任者|owner|team/i],
+    ['scope', /範囲|対象|scope|coverage/i],
+    ['migration', /移行|切替|後継|migrat|transition/i],
+    ['impact', /影響|停止|outage|impact/i],
+    ['schedule', /日程|日付|廃止日|期限|deadline|retir/i],
+    ['configuration', /構成|設定|sku|config/i],
+    ['project', /プロジェクト|project/i],
+    ['complexity', /難易度|複雑|complexity/i],
+  ]
+  return new Set(
+    topics.filter(([, pattern]) => pattern.test(text)).map(([topic]) => topic),
+  )
+}
+
+function areSimilarExplanationClauses(first: string, second: string): boolean {
+  if (areSimilarExplanationClaims(first, second)) return true
+  if (!hasUncertainty(first) || !hasUncertainty(second)) return false
+
+  const firstTopics = explanationTopics(first)
+  const secondTopics = explanationTopics(second)
+  const sharedTopics = [...firstTopics].filter((topic) =>
+    secondTopics.has(topic),
+  )
+  return sharedTopics.length >= 2
+}
+
+function explanationClauses(text: string): string[] {
+  return text
+    .split(
+      /(?:が|けれど(?:も)?|ものの|一方で)[、，,]\s*|,\s*(?:but|however)\s+|[;；]\s*/gi,
+    )
+    .map((clause) => clause.trim())
+    .filter(Boolean)
+}
+
+function mergeClaimReferences(
+  target: ExplanationClaim,
+  source: ExplanationClaim,
+): void {
+  target.evidenceIds = [
+    ...new Set([...target.evidenceIds, ...source.evidenceIds]),
+  ]
+  target.decisionRefs = [
+    ...new Set([...target.decisionRefs, ...source.decisionRefs]),
+  ]
+}
+
 function explanationSentences(text: string): string[] {
   return text.match(/[^。！？.!?\n]+[。！？.!?]?/g)?.filter(Boolean) ?? []
 }
@@ -156,14 +212,16 @@ export function deduplicateExplanationClaims(
   const officialDates = new Set(
     (officialFacts ?? []).flatMap((claim) => explanationDates(claim.text)),
   )
-  const evidenceEntries = entries.filter(([name]) =>
-    ['microsoftFacts', 'internalFacts'].includes(name),
-  )
+  const preferredCategoryOrder = [
+    'microsoftFacts',
+    'missingInformation',
+    'internalFacts',
+  ]
   const preferredEntries = [
-    ...evidenceEntries,
-    ...entries.filter(
-      ([name]) => !['microsoftFacts', 'internalFacts'].includes(name),
+    ...preferredCategoryOrder.flatMap((name) =>
+      entries.filter(([entryName]) => entryName === name),
     ),
+    ...entries.filter(([name]) => !preferredCategoryOrder.includes(name)),
   ]
   const seen = new Map<
     string,
@@ -214,32 +272,36 @@ export function deduplicateExplanationClaims(
         )
           ? removeRepeatedScheduleClause(originalSentence, officialDates)
           : originalSentence
-        const key = normalizeExplanationText(sentence)
-        if (!key) continue
-        const existing =
-          seen.get(key) ??
-          [...seen.values()].find(
-            (entry) =>
-              entry.section !== name &&
-              areSimilarExplanationClaims(entry.text, sentence),
-          )
-        if (existing) {
-          existing.claim.evidenceIds = [
-            ...new Set([
-              ...existing.claim.evidenceIds,
-              ...displayedClaim.evidenceIds,
-            ]),
-          ]
-          existing.claim.decisionRefs = [
-            ...new Set([
-              ...existing.claim.decisionRefs,
-              ...displayedClaim.decisionRefs,
-            ]),
-          ]
-          continue
+        const clauses = explanationClauses(sentence)
+        const retainedClauses: string[] = []
+        let removedDuplicateClause = false
+        for (const clause of clauses) {
+          const key = normalizeExplanationText(clause)
+          if (!key) continue
+          const existing =
+            seen.get(key) ??
+            [...seen.values()].find(
+              (entry) =>
+                entry.section !== name &&
+                areSimilarExplanationClauses(entry.text, clause),
+            )
+          if (existing) {
+            mergeClaimReferences(existing.claim, displayedClaim)
+            removedDuplicateClause = true
+            continue
+          }
+          retainedClauses.push(clause)
+          seen.set(key, { claim: displayedClaim, section: name, text: clause })
         }
-        uniqueSentences.push(sentence)
-        seen.set(key, { claim: displayedClaim, section: name, text: sentence })
+        if (!retainedClauses.length) continue
+
+        const ending = sentence.match(/[。！？.!?]+$/)?.[0] ?? ''
+        const displayedSentence = removedDuplicateClause
+          ? `${retainedClauses
+              .map((clause) => clause.replace(/[。！？.!?]+$/g, '').trim())
+              .join('。')}${ending}`
+          : sentence
+        uniqueSentences.push(displayedSentence)
       }
       if (uniqueSentences.length) {
         displayedClaim.text = uniqueSentences.join('')

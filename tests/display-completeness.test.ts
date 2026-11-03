@@ -166,11 +166,11 @@ test('explanation display consolidates repeated facts and keeps official dates i
   )
   assert.equal(
     sections.filter(([name]) => name === 'increasingFactors').length,
-    1,
+    0,
   )
   assert.equal(
     sections.some(([name]) => name === 'missingInformation'),
-    false,
+    true,
   )
   assert.equal(
     displayedOfficial[0]!.evidenceIds.includes('same-date-impact-evidence'),
@@ -211,18 +211,68 @@ test('similar facts are consolidated across categories while distinct facts rema
   }
 
   const sections = deduplicateExplanationClaims(explanation)
-  const factors = sections.find(([name]) => name === 'increasingFactors')![1]
-  const missingInformation = sections.find(
-    ([name]) => name === 'missingInformation',
-  )![1]
+  const factors =
+    sections.find(([name]) => name === 'increasingFactors')?.[1] ?? []
+  const missingInformation =
+    sections.find(([name]) => name === 'missingInformation')?.[1] ?? []
 
-  assert.equal(factors.length, 1)
-  assert.equal(missingInformation.length, 1)
-  assert.equal(missingInformation[0]!.id, 'sku-fact')
-  assert.deepEqual(factors[0]!.evidenceIds, [
-    'usage-evidence',
+  assert.equal(factors.length, 0)
+  assert.equal(missingInformation.length, 2)
+  assert.equal(missingInformation[0]!.id, 'usage-impact-missing')
+  assert.equal(missingInformation[1]!.id, 'sku-fact')
+  assert.deepEqual(missingInformation[0]!.evidenceIds, [
     'duplicate-usage-evidence',
+    'usage-evidence',
   ])
+})
+
+test('overlapping unknown details are removed from internal facts while confirmed details remain', () => {
+  const source = fixture().explanation
+  const missingInformation = {
+    id: 'missing-api-details',
+    text: 'リソースとプロジェクトのclassic API利用状況、担当チーム、移行範囲が確認できていない。',
+    kind: 'Unknown' as const,
+    evidenceIds: ['missing-evidence'],
+    decisionRefs: [],
+  }
+  const internalFact = {
+    id: 'inventory-and-usage',
+    text: 'Azure上にJapan EastのAIServicesアカウントと関連プロジェクトが記録されているが、利用状況と所有チームは資料から確認できない。',
+    kind: 'Confirmed Fact' as const,
+    evidenceIds: ['inventory-evidence'],
+    decisionRefs: [],
+  }
+  const explanation = {
+    ...source,
+    impact: [],
+    increasingFactors: [],
+    reducingFactors: [],
+    startRationale: [],
+    missingInformation: [missingInformation],
+    changeConditions: [],
+    microsoftFacts: [],
+    internalFacts: [internalFact],
+    judgments: [],
+    humanChecks: [],
+  }
+
+  const sections = deduplicateExplanationClaims(explanation)
+  const displayedMissingInformation = sections.find(
+    ([name]) => name === 'missingInformation',
+  )![1][0]!
+  const displayedInternalFact = sections.find(
+    ([name]) => name === 'internalFacts',
+  )![1][0]!
+
+  assert.equal(
+    displayedInternalFact.text,
+    'Azure上にJapan EastのAIServicesアカウントと関連プロジェクトが記録されている。',
+  )
+  assert.deepEqual(displayedMissingInformation.evidenceIds, [
+    'missing-evidence',
+    'inventory-evidence',
+  ])
+  assert.equal(internalFact.text.includes('利用状況と所有チーム'), true)
 })
 
 test('usage verification confirmation reasons combine similar resource and missing-information messages', () => {
