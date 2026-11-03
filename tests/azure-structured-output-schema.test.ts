@@ -66,10 +66,10 @@ function visitSchema(value: unknown, path = 'schema'): void {
 }
 
 test('explanation Structured Outputs schema uses Azure-supported keywords and required properties', () => {
-  const schema = explanationResponseJsonSchema([
-    'evidence-1',
-    'evidence-2',
-  ]) as {
+  const schema = explanationResponseJsonSchema(
+    ['evidence-1', 'evidence-2'],
+    ['impactIfUnaddressed', 'priority'],
+  ) as {
     properties: {
       explanation: {
         properties: Record<string, { anyOf: Array<Record<string, unknown>> }>
@@ -81,7 +81,7 @@ test('explanation Structured Outputs schema uses Azure-supported keywords and re
     $defs: {
       explanation_claim: {
         type: string
-        properties: Record<string, unknown>
+        properties: Record<string, { enum?: unknown[] }>
       }
       explanation_work_item: {
         type: string
@@ -138,6 +138,25 @@ test('explanation Structured Outputs schema uses Azure-supported keywords and re
       schema.$defs.explanation_claim.properties.evidenceRefs,
     ).includes('evidence-1'),
   )
+  assert.deepEqual(
+    schema.$defs.explanation_claim.properties.decisionRefs!.enum,
+    undefined,
+  )
+  assert.deepEqual(
+    (
+      schema.$defs.explanation_claim.properties.decisionRefs as unknown as {
+        items: { enum: string[] }
+      }
+    ).items.enum,
+    ['impactIfUnaddressed', 'priority'],
+  )
+  assert.ok(
+    (
+      schema.$defs.explanation_claim.properties.kind as unknown as {
+        enum: string[]
+      }
+    ).enum.includes('Model Decision'),
+  )
   assert.ok(
     JSON.stringify(
       schema.$defs.explanation_claim.properties.evidenceRefs,
@@ -149,4 +168,20 @@ test('explanation Structured Outputs schema uses Azure-supported keywords and re
   assert.ok(schema.$defs.explanation_claim.properties.text)
   assert.ok(schema.$defs.explanation_work_item)
   assert.ok(JSON.stringify(schema).length < 5000)
+})
+
+test('explanation schema disallows Model Decision claims when decision probabilities are unavailable', () => {
+  const schema = explanationResponseJsonSchema(['evidence-1']) as {
+    $defs: {
+      explanation_claim: {
+        properties: Record<string, { enum?: string[] }>
+      }
+    }
+  }
+  assert.equal(
+    schema.$defs.explanation_claim.properties.kind!.enum!.includes(
+      'Model Decision',
+    ),
+    false,
+  )
 })
