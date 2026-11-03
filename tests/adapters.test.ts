@@ -7,6 +7,7 @@ import {
   EXPLANATION_REASONING_EFFORT,
   ensureIssueForExport,
   GitHubClient,
+  safeModelResponseDiagnostics,
   argRows,
   fetchOfficialProfileEvidence,
   decide,
@@ -150,6 +151,44 @@ test('GPT-6 Luna truncation is detected before parsing an empty completion', asy
     /truncated at token limit/,
   )
   assert.equal(responseRecorded, true)
+})
+
+test('model response diagnostics expose metadata but never model content', () => {
+  const secretResponseText = '{"explanation":"private notice content"'
+  const diagnostics = safeModelResponseDiagnostics({
+    choices: [
+      {
+        finish_reason: 'length',
+        message: { content: secretResponseText, refusal: null },
+      },
+    ],
+    usage: {
+      prompt_tokens: 2425,
+      completion_tokens: 1500,
+      total_tokens: 3925,
+      completion_tokens_details: { reasoning_tokens: 1500 },
+    },
+  })
+
+  assert.deepEqual(diagnostics, {
+    responseShapeValid: true,
+    choiceCount: 1,
+    finishReason: 'length',
+    contentType: 'string',
+    contentLength: secretResponseText.length,
+    refusalPresent: false,
+    jsonParseStatus: 'invalid',
+    jsonValueType: null,
+    promptTokens: 2425,
+    completionTokens: 1500,
+    reasoningTokens: 1500,
+    totalTokens: 3925,
+  })
+  assert.equal(JSON.stringify(diagnostics).includes(secretResponseText), false)
+  assert.equal(
+    JSON.stringify(diagnostics).includes('private notice content'),
+    false,
+  )
 })
 
 test('official evidence translation uses the managed-identity Translator contract', async () => {
