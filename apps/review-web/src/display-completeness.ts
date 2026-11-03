@@ -39,6 +39,8 @@ export function resourceConfirmationReasons(
     ...reviewReasons,
   ].filter(
     (reason) =>
+      !isPlanSchedulingNote(reason) &&
+      !isModelDecisionStatusOnlyReviewReason(reason) &&
       !(
         usageVerificationResources.length &&
         isResourceUsageVerificationReason(reason)
