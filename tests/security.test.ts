@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose'
 import {
   createVerifier,
+  compactExplanationInput,
   groundedInput,
   jsonRequest,
   RemoteError,
@@ -91,6 +92,59 @@ test('model input aliases Resource IDs, Workload and Team and only resolves know
     grounded.resolve({ ...a.workItems[0]!, resourceIds: ['unknown-resource'] })
       .resourceIds[0],
     'unknown-resource',
+  )
+})
+test('explanation request compaction preserves evidence metadata without changing the source input', () => {
+  const a = fixture()
+  const officialUrl = 'https://learn.microsoft.com/en-us/azure/synthetic'
+  a.event.body = '本文'.repeat(1200)
+  a.event.evidence.push(
+    ...Array.from({ length: 3 }, (_, index) => ({
+      ...a.event.evidence[0]!,
+      id: `synthetic-evidence-${index}`,
+      fact: `根拠${index}`.repeat(1000),
+      officialUrl,
+    })),
+  )
+  a.decision = {
+    ...a.decision,
+    impactIfUnaddressed: 'High',
+    probabilities: { impactIfUnaddressed: { High: 1 } },
+  }
+  const input = groundedInput(
+    a.event,
+    a.resources,
+    a.workloadId,
+    a.decision,
+  ).state
+  const original = structuredClone(input)
+  const compact = compactExplanationInput(input) as typeof input
+
+  assert.deepEqual(input, original)
+  assert.ok(compact.event.body.length < input.event.body.length)
+  assert.ok(compact.event.body.includes('[…]'))
+  assert.deepEqual(
+    compact.event.evidence.map((item) => item.id),
+    input.event.evidence.map((item) => item.id),
+  )
+  assert.ok(
+    compact.event.evidence.every(
+      (item) =>
+        item.officialUrl === officialUrl ||
+        item.officialUrl === input.event.evidence[0]?.officialUrl,
+    ),
+  )
+  assert.ok(
+    compact.event.evidence.reduce(
+      (sum, item) => sum + Array.from(item.fact).length,
+      0,
+    ) <= 1200,
+  )
+  assert.equal(compact.decision?.impactIfUnaddressed, 'High')
+  assert.equal('probabilities' in (compact.decision ?? {}), false)
+  assert.ok(
+    Buffer.byteLength(JSON.stringify(compact)) <
+      Buffer.byteLength(JSON.stringify(input)),
   )
 })
 test('Workload grounding removes and aliases Resource IDs from other Workloads', () => {
