@@ -117,7 +117,19 @@ test('decision statuses have a Japanese actionable label', () => {
   assert.match(decisionStatusDisplay('Failed'), /手動確認が必要/)
   assert.match(
     reviewReasonDisplay('期限または承認済み工程期間が未確定'),
-    /計画日を算定できません/,
+    /計画日を算定できないため/,
+  )
+  assert.match(
+    reviewReasonDisplay(
+      '計画日を算定できません。適用期限と承認済みの工程期間を確認後、計画担当が設定します。',
+    ),
+    /計画日を算定できないため/,
+  )
+  assert.match(
+    reviewReasonDisplay(
+      '担当者が対象リソースとプロジェクトでクラシック API の使用有無を確認し、必要な対応を判断する。',
+    ),
+    /クラシック API の使用有無を判断できないため/,
   )
   assert.match(
     reviewReasonDisplay('担当チーム候補が設定されていません'),
