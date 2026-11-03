@@ -544,6 +544,10 @@ export const assessmentSchema = z
     id: z.string(),
     reviewDisposition: z.enum(['Active', 'NoAction']).optional(),
     sourceInputHash: z.string().optional(),
+    documentGroundingHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
     reevaluation: z
       .object({
         runId: z.uuid(),
