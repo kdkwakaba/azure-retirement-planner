@@ -34,6 +34,7 @@ import {
   planSchedulingNoteDisplay,
   projectProgressDisplay,
   resourceConfirmationReasons,
+  isResourceUsageVerificationReason,
   reviewReasonDisplay,
   routingDisplay,
   sequenceDisplay,
@@ -374,7 +375,11 @@ function App() {
     0,
   )
   const resourceReasons = current
-    ? resourceConfirmationReasons(current.resources, current.missingInformation)
+    ? resourceConfirmationReasons(
+        current.resources,
+        current.missingInformation,
+        current.reviewReasons,
+      )
     : []
   const discoveryReviewReasons = current
     ? [
@@ -404,13 +409,15 @@ function App() {
             ...current.reviewReasons.filter(
               (reason) =>
                 !isPlanSchedulingNote(reason) &&
+                !isResourceUsageVerificationReason(reason) &&
                 !isModelDecisionStatusOnlyReviewReason(reason),
             ),
             ...current.explanation.humanChecks
               .filter(
                 (claim) =>
                   isKnownReviewReason(claim.text) &&
-                  !isPlanSchedulingNote(claim.text),
+                  !isPlanSchedulingNote(claim.text) &&
+                  !isResourceUsageVerificationReason(claim.text),
               )
               .map((claim) => claim.text),
           ].map(reviewReasonDisplay),
