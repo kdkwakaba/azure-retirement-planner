@@ -12,6 +12,8 @@ import {
   evidenceDisplay,
   explanationSectionDisplay,
   impactDisplay,
+  isKnownReviewReason,
+  isPlanSchedulingNote,
   milestoneDateDisplay,
   milestoneKindDisplay,
   modelInvocationStatusDisplay,
@@ -19,11 +21,13 @@ import {
   ownerTagDisplay,
   modelVersionDisplay,
   plannedDateDisplay,
+  planSchedulingNoteDisplay,
   priorityDisplay,
   projectProgressDisplay,
   reviewReasonDisplay,
   routingDisplay,
   sequenceDisplay,
+  undecidedDecisionFields,
   workloadDisplay,
 } from '../apps/review-web/src/display-completeness.ts'
 
@@ -113,18 +117,17 @@ test('explanation model status states clearly when no generated text is availabl
 })
 
 test('decision statuses have a Japanese actionable label', () => {
-  assert.match(decisionStatusDisplay('Abstained'), /根拠・業務情報の確認が必要/)
+  const decision = fixture().decision
+  assert.match(
+    decisionStatusDisplay('Abstained', undecidedDecisionFields(decision)),
+    /確定できなかった項目: 未対応時の影響度、対応時・対応後の影響度、優先度/,
+  )
   assert.match(decisionStatusDisplay('Failed'), /手動確認が必要/)
-  assert.match(
-    reviewReasonDisplay('期限または承認済み工程期間が未確定'),
-    /計画日を算定できないため/,
-  )
-  assert.match(
-    reviewReasonDisplay(
-      '計画日を算定できません。適用期限と承認済みの工程期間を確認後、計画担当が設定します。',
-    ),
-    /計画日を算定できないため/,
-  )
+  const planDateReason =
+    '計画日を算定できません。適用期限と承認済みの工程期間を確認後、計画担当が設定します。'
+  assert.equal(isPlanSchedulingNote(planDateReason), true)
+  assert.equal(isKnownReviewReason(planDateReason), false)
+  assert.equal(planSchedulingNoteDisplay(planDateReason), planDateReason)
   assert.match(
     reviewReasonDisplay(
       '担当者が対象リソースとプロジェクトでクラシック API の使用有無を確認し、必要な対応を判断する。',

@@ -20,6 +20,7 @@ import {
   explanationSectionDisplay,
   impactDisplay,
   isKnownReviewReason,
+  isPlanSchedulingNote,
   modelInvocationStatusDisplay,
   officialDeadlineDisplay,
   milestoneDateDisplay,
@@ -29,11 +30,13 @@ import {
   modelVersionDisplay,
   plannedDateDisplay,
   priorityDisplay,
+  planSchedulingNoteDisplay,
   projectProgressDisplay,
   reviewReasonDisplay,
   routingDisplay,
   sequenceDisplay,
   workloadDisplay,
+  undecidedDecisionFields,
 } from './display-completeness.ts'
 import { EvidenceCard, safeOfficialEvidenceUrl } from './EvidenceFact.tsx'
 import { summarizeAssessments } from './summary.ts'
@@ -372,18 +375,40 @@ function App() {
     ? [
         ...new Set(
           [
-            ...current.reviewReasons,
-            ...current.missingInformation,
+            ...current.reviewReasons.filter(
+              (reason) => !isPlanSchedulingNote(reason),
+            ),
+            ...current.missingInformation.filter(
+              (reason) => !isPlanSchedulingNote(reason),
+            ),
             ...current.explanation.humanChecks
-              .filter((claim) => isKnownReviewReason(claim.text))
+              .filter(
+                (claim) =>
+                  isKnownReviewReason(claim.text) &&
+                  !isPlanSchedulingNote(claim.text),
+              )
               .map((claim) => claim.text),
           ].map(reviewReasonDisplay),
+        ),
+      ]
+    : []
+  const planningNotes = current
+    ? [
+        ...new Set(
+          [
+            ...current.reviewReasons,
+            ...current.missingInformation,
+            ...current.explanation.humanChecks.map((claim) => claim.text),
+          ]
+            .filter(isPlanSchedulingNote)
+            .map(planSchedulingNoteDisplay),
         ),
       ]
     : []
   const additionalHumanChecks = current
     ? current.explanation.humanChecks.filter(
         (claim) =>
+          !isPlanSchedulingNote(claim.text) &&
           !isKnownReviewReason(claim.text) &&
           !confirmationReasons.includes(reviewReasonDisplay(claim.text)),
       )
@@ -1024,7 +1049,10 @@ function App() {
                     <p>
                       モデル: {current.decision.model} /{' '}
                       {modelVersionDisplay(current.decision.modelVersion)} ·{' '}
-                      {decisionStatusDisplay(current.decision.status)}
+                      {decisionStatusDisplay(
+                        current.decision.status,
+                        undecidedDecisionFields(current.decision),
+                      )}
                     </p>
                     <details>
                       <summary>モデル呼び出しの監査記録</summary>
@@ -1072,6 +1100,18 @@ function App() {
                       setReason('')
                     }}
                   />
+                )}
+                {planningNotes.length > 0 && (
+                  <details className="review-info-group">
+                    <summary>
+                      計画上の留意事項（{planningNotes.length}）
+                    </summary>
+                    <ul>
+                      {planningNotes.map((note) => (
+                        <li key={note}>{note}</li>
+                      ))}
+                    </ul>
+                  </details>
                 )}
                 <details className="review-info-group">
                   <summary>
