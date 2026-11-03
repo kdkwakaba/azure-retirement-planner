@@ -12,6 +12,8 @@ import type {
   WorkItem,
 } from '@arp/contracts'
 import { assessmentSchema, dateSchema, eventSchema } from '@arp/contracts'
+import { resourceVerificationReason } from './resource-verification-reasons.ts'
+export { resourceVerificationReason } from './resource-verification-reasons.ts'
 export {
   evaluateCases,
   evaluateExplanations,
@@ -545,17 +547,8 @@ export function resourceVerificationWorkItems(input: {
       ]),
     ].sort()
     const detail =
-      sample.classificationReason === 'RequiredAttributeMissing'
-        ? `必要なAzure属性「${attributes.join('、')}」が取得結果にありません。現在の構成を読み取り専用で確認してください。`
-        : sample.classificationReason === 'NoApplicableProfile'
-          ? '現在の影響判定プロファイルにこの通知とリソース種別の組合せがありません。公式の適用範囲と実構成を人が確認してください。'
-          : sample.classificationReason === 'NoMatchingProfileCondition'
-            ? '既知の判定プロファイル条件に一致しません。未知の属性値を対象外とはみなさず、公式条件と実構成を人が確認してください。'
-            : sample.classificationReason === 'DependencyEvidence'
-              ? '依存関係の根拠が影響範囲を示すか、人が依存元・依存先を確認してください。'
-              : sample.classificationReason === 'UsageRequiresVerification'
-                ? '制御プレーン情報だけでは利用実態を確認できません。許可された運用手順で利用状況を確認してください。'
-                : '明示対象のリソース情報またはWorkloadとの対応が不足しています。Resource IDと所属を人が確認してください。'
+      resourceVerificationReason(sample) ??
+      '分類理由が記録されていません。リソースの評価状態と根拠を確認してください。'
     const title =
       sample.classificationReason === 'RequiredAttributeMissing'
         ? `影響確認: ${attributes.join('、')} の確認`
@@ -605,6 +598,7 @@ export function resourceVerificationWorkItems(input: {
     }
   })
 }
+
 export function packageHash(assessment: Assessment): string {
   const { packageHash: _ignored, ...content } = assessment
   void _ignored

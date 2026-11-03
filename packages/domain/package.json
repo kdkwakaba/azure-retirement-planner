@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./impact-narratives": "./src/impact-narratives.ts"
+    "./impact-narratives": "./src/impact-narratives.ts",
+    "./resource-verification-reasons": "./src/resource-verification-reasons.ts"
   },
   "dependencies": {
     "@arp/contracts": "*"
