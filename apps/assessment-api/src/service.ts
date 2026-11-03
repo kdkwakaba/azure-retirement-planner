@@ -49,6 +49,8 @@ import {
   PROFILE_RESOURCE_TYPES,
   PROFILE_REGISTRY_VERSION,
   EXPLANATION_PROMPT_VERSION,
+  confirmedDocumentFactEvidence,
+  confirmedDocumentGroundingInputHash,
   failureFacts,
   recordDependencyFailure,
   recordModelInvocation,
@@ -684,6 +686,14 @@ async function assessWorkload(
 ): Promise<string | null> {
   const asOf = new Date().toISOString().slice(0, 10)
   const businessContext = await store.businessContext(workloadId)
+  const documentGrounding = await store.documentGrounding(workloadId, false)
+  const hasConfirmedDocumentFacts = Boolean(
+    documentGrounding?.facts.some((fact) => fact.reviewStatus === 'Confirmed'),
+  )
+  const documentGroundingHash =
+    documentGrounding && hasConfirmedDocumentFacts
+      ? confirmedDocumentGroundingInputHash(documentGrounding)
+      : null
   const policyHash = hash(workflowPolicyData)
   const policyParsed = workflowPolicySchema.safeParse(workflowPolicyData)
   const officialReferenceVersions = event.evidence
@@ -694,6 +704,7 @@ async function assessWorkload(
     evidenceScopeVersion: EVIDENCE_SCOPE_VERSION,
     workflowPolicyHash: policyHash,
     businessContextHash: businessContext ? hash(businessContext) : null,
+    ...(documentGroundingHash ? { documentGroundingHash } : {}),
     eventVersionId: event.versionId,
     ...(officialReferenceVersions.length ? { officialReferenceVersions } : {}),
     workloadId,
@@ -741,6 +752,9 @@ async function assessWorkload(
     evidence: scopeEvidenceToWorkload({
       evidence: [
         ...event.evidence,
+        ...(documentGrounding
+          ? confirmedDocumentFactEvidence(documentGrounding)
+          : []),
         ...evidence.filter((e) =>
           resources.some((r) => r.evidenceIds.includes(e.id)),
         ),
@@ -1086,6 +1100,7 @@ async function assessWorkload(
   const assessment: Assessment = assessmentSchema.parse({
     id: assessmentId,
     sourceInputHash: id,
+    ...(documentGroundingHash ? { documentGroundingHash } : {}),
     ...(reevaluation ? { reevaluation } : {}),
     workflowPolicyVersion: policyParsed.success
       ? policyParsed.data.version
