@@ -11,6 +11,8 @@
     "@azure/storage-blob": "12.34.0",
     "@azure/storage-queue": "12.32.0",
     "jose": "6.2.13",
+    "mammoth": "1.13.0",
+    "read-excel-file": "9.3.14",
     "zod": "4.6.7"
   }
 }

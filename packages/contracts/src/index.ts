@@ -170,6 +170,28 @@ export const documentRevisionSchema = z
     sampleOnly: z.boolean(),
   })
   .strict()
+export const documentTextBlockSchema = z
+  .object({
+    sourceId: z.string().min(1).max(100),
+    itemId: z.string().min(1).max(500),
+    contentHash: z.string().regex(/^[a-f0-9]{64}$/),
+    blockId: z.string().min(1).max(200),
+    kind: z.enum(['Paragraph', 'SpreadsheetCell']),
+    text: z.string().min(1).max(20000),
+    heading: z.string().max(500).nullable(),
+    sheet: z.string().max(200).nullable(),
+    row: z.number().int().positive().nullable(),
+    cell: z.string().max(20).nullable(),
+    sampleOnly: z.boolean(),
+  })
+  .strict()
+export const documentTextSchema = z
+  .object({
+    schemaVersion: z.literal('1'),
+    revision: documentRevisionSchema,
+    blocks: z.array(documentTextBlockSchema).max(20000),
+  })
+  .strict()
 export const documentFactSchema = z
   .object({
     factId: z.string().min(1).max(200),
@@ -602,6 +624,8 @@ export type Evidence = z.infer<typeof evidenceSchema>
 export type BusinessContext = z.infer<typeof businessContextSchema>
 export type DocumentSource = z.infer<typeof documentSourceSchema>
 export type DocumentRevision = z.infer<typeof documentRevisionSchema>
+export type DocumentTextBlock = z.infer<typeof documentTextBlockSchema>
+export type DocumentText = z.infer<typeof documentTextSchema>
 export type DocumentFact = z.infer<typeof documentFactSchema>
 export type DocumentGrounding = z.infer<typeof documentGroundingSchema>
 export type DiscoveryFailure = z.infer<typeof discoveryFailureSchema>
