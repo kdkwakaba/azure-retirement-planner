@@ -161,6 +161,13 @@ APIの日次モデル呼出枠は200件で、同時予約をETagで制御する�
 - 原因再確認に使った一時RBACは`records`コンテナ内の応答Blob 1個のみ、Blob.List拒否の条件付きStorage Blob Data Reader。ユーザーがCLIで割当を削除したことをrole assignment一覧が空であることで確認。Blob読取権限不足のため新応答は取得できなかった。
 - 原文／実データを返さないGovernance限定APIを追加中。最新・現行の再評価Assessmentに限定し、失敗したモデル段階のfinish reason、可視本文の有無・長さ、JSON parse結果、Token内訳だけを返す。本文、任意Blobパス、モデルプロンプトはAPI応答に含めない。PRマージ・配置後に同Runの保存済応答を診断し、根本原因に応じた修正と再評価を続ける。
 
+### 2026-11-03 PR #108 配置後の none 再評価
+
+- PR #108 merge commit `4308fe6b5c2446538587f002c4bc76b0f41b0ffe`のmain CI [#41591044022](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41591044022)成功成果物を使用。CD Plan [#41591167232](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41591167232)、Apply／API・Exporter配置 [#41591318311](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41591318311)が成功。Plan Hash `5f5608b59adc90956c198cb769e4ae719cc99f65281d655a1ff4021d3d1d05db`。What-Ifは専用RG内のAPI／Exporter App Service 2件Modify、Create／Deleteなし。
+- サイトHTTP 200、認証済みCLIでUser／Governance、test mode／decision reevaluation有効を確認。保存済み実通知の現行Assessment 1件だけを再評価（Run `53676a6e-ac53-4190-baf5-2c1171f8ae9d`）。Azure再取得、作業承認、Issue／Project登録は実行していない。
+- Runは`Failed`／`ModelUnavailable`。Governance限定の応答診断は`finishReason=length`、可視本文3,416文字、JSON parse不成立、prompt 2,425 tokens、completion 1,500 tokens、reasoning 0 tokens、total 3,925 tokens。`reasoning_effort=none`は内部推論による枠消費を解消したが、生成本文だけで上限に達してJSONが完了せず、説明Schema検証に失敗した。モデル応答本文は取得・転記していない。
+- そのため追加修正ではGPT-6 Lunaを維持し、`verbosity=low`、説明各区分を0〜1件、作業案を最大2件、短文・完了条件1件へ制限する。PR #109のマージ・配置後に同じ保存済み実通知を再評価する。
+
 [GitHub OIDCのimmutable subject仕様](https://docs.github.com/en/actions/reference/security/oidc#immutable-subject-claims)
 
 ## 認証障害の診断
