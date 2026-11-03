@@ -5,6 +5,7 @@ import {
   type Assessment,
   type Evidence,
 } from '@arp/contracts'
+import { resourceVerificationReason } from '@arp/domain/resource-verification-reasons'
 import { generalImpactNarratives } from '@arp/domain/impact-narratives'
 import './styles.css'
 import { CorrectionForm } from './CorrectionForm.tsx'
@@ -371,10 +372,37 @@ function App() {
     (count, [, claims]) => count + claims.length,
     0,
   )
+  const resourceReviewReasons = current
+    ? current.resources.flatMap((resource) => {
+        const reason = resourceVerificationReason(resource)
+        return reason ? [`${resource.type}（${resource.id}）: ${reason}`] : []
+      })
+    : []
+  const discoveryReviewReasons = current
+    ? [
+        ...(current.discoveryScope?.profileIds.length === 0
+          ? [
+              `この通知に対応するResource Type判定プロファイルがありません。${current.resources.length ? '明示対象以外のAzureリソースは通知内容との関係を判定できません。' : '該当するAzureリソース種別を判定できません。'}公式通知の適用範囲を確認してください。`,
+            ]
+          : []),
+        ...(current.discoveryScope?.failureDetails?.length
+          ? current.discoveryScope.failureDetails.map(
+              (failure) =>
+                `${operationSourceLabels[failure.source]}の取得に失敗したため、影響範囲を判断できません（${failureCategoryLabels[failure.category]}${failure.httpStatus ? ` HTTP ${failure.httpStatus}` : ''}）。`,
+            )
+          : !current.scopeComplete
+            ? [
+                'Azure情報の調査範囲が完了していないため、影響範囲を確定できません。取得結果と対象範囲を確認してください。',
+              ]
+            : []),
+      ]
+    : []
   const confirmationReasons = current
     ? [
         ...new Set(
           [
+            ...resourceReviewReasons,
+            ...discoveryReviewReasons,
             ...current.reviewReasons.filter(
               (reason) => !isPlanSchedulingNote(reason),
             ),
@@ -1234,12 +1262,6 @@ function App() {
                 {current.impactDiscoveryOutcome === 'NoImpactMatched' && (
                   <p>
                     調査範囲内のリソースは、確認済み根拠により対象外と判定されています。
-                  </p>
-                )}
-                {current.discoveryScope?.profileIds.length === 0 && (
-                  <p>
-                    通知に対応するResource
-                    Typeプロファイルがありません。公式の明示対象がある場合はそれだけを表示しています。無関係なインベントリ候補は表示していません。これは対象外の判定ではありません。公式対象サービス種別を人が確認してください。
                   </p>
                 )}
                 <div className="scroll">
