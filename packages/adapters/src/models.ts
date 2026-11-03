@@ -11,9 +11,10 @@ import { compactExplanationInput } from './grounding.ts'
 import { jsonRequest, safeModelEndpoint } from './http.ts'
 
 export const PROMPT_VERSION = '2026-10-24.1'
-export const EXPLANATION_PROMPT_VERSION = '2026-11-03.3'
+export const EXPLANATION_PROMPT_VERSION = '2026-11-03.4'
 export const EXPLANATION_MAX_COMPLETION_TOKENS = 1500
 export const EXPLANATION_MAX_WORK_ITEMS = 5
+export const EXPLANATION_REASONING_EFFORT = 'low'
 const impactOptions = {
   Low: '軽微、許容範囲内',
   Medium: '限定影響、代替で継続可能',
@@ -213,6 +214,7 @@ export async function explain(
             schema: explanationResponseJsonSchema(modelSchema),
           },
         },
+        reasoning_effort: EXPLANATION_REASONING_EFFORT,
         max_completion_tokens: EXPLANATION_MAX_COMPLETION_TOKENS,
       }),
     },
@@ -221,12 +223,29 @@ export async function explain(
   const payload = z
     .object({
       choices: z
-        .array(z.object({ message: z.object({ content: z.string() }) }))
+        .array(
+          z.object({
+            finish_reason: z.string().nullable().optional(),
+            message: z.object({ content: z.string().nullable().optional() }),
+          }),
+        )
         .min(1),
     })
     .parse(raw)
+  const choice = payload.choices[0]!
+  if (choice.finish_reason === 'length')
+    throw new SyntaxError('Explanation completion truncated at token limit')
+  const content = choice.message.content
+  if (typeof content !== 'string' || !content.trim())
+    throw new SyntaxError('Explanation completion has no visible content')
+  let decoded: unknown
+  try {
+    decoded = JSON.parse(content)
+  } catch {
+    throw new SyntaxError('Explanation completion is not valid JSON')
+  }
   return {
-    result: schema.parse(JSON.parse(payload.choices[0]!.message.content)),
+    result: schema.parse(decoded),
     raw: payload,
   }
 }
