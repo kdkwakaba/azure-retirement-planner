@@ -152,7 +152,14 @@ APIの日次モデル呼出枠は200件で、同時予約をETagで制御する�
 - 配置後、サイトHTTP 200、認証済みAPIでtest mode／decision reevaluation／Governance権限を確認。保存済み実通知の現行1件を再評価（Run `3f488fd2-4f9c-4a05-9d3b-dfbbdb2e5fac`）。Decision-1はSucceeded、説明段階は`InvalidResponse`／HTTP statusなしでRun Failed。HTTP 429は再現しなかったが、説明LLMの10区分／作業案Schema検証には到達したと確認できず、実説明品質も未確認。Snapshot保持、Assessment検証エラー0、作業項目1件（フォールバック）を確認。Azure対象再取得・変更、承認、GitHub登録はなし。
 - Application Insightsの直近traces／exceptions／dependenciesには該当記録がなかった。原因確認のため、Bicepで`records`コンテナの該当`model-raw` Blob 1個だけを直接読める条件付きStorage Blob Data Readerを一時付与し、`Blob.List`を拒否した状態で診断した。確認後すぐにロール割当を削除し、恒久的なRBAC変更はない。モデル本文は出力・転記していない。
 - 保存応答の安全なメタデータは`finish_reason=length`、本文0文字、拒否応答なし、prompt 2,425 tokens、completion上限1,500 tokensの全量がreasoning、合計3,925 tokensだった。`max_completion_tokens`はreasoningと可視回答に共通の上限であり、reasoningが全枠を消費して空の本文を返し、その後のJSON解析が`InvalidResponse`となったことが失敗原因。Microsoft公式仕様はChat Completionsでreasoning tokensも`max_completion_tokens`に含まれること、`reasoning_effort`が利用量を抑える制御であることを説明している（[Reasoning models](https://learn.microsoft.com/azure/foundry/openai/how-to/reasoning)）。
-- 修正として説明要求に`reasoning_effort=low`を明示し、`finish_reason=length`／空本文をJSON解析前に検出して失敗を明確にする。出力上限1,500、10区分Schema、作業案上限5件は維持する。修正版PRのCI後、マージ・配置した上で保存済み実通知を1件だけ再評価し、可視応答・Schema検証・Token使用内訳を確認する。実際の修正後応答と説明品質は未確認。
+- PR #106で`reasoning_effort=low`を指定し、`finish_reason=length`／空本文をJSON解析前に検出する修正をmainへ配置した。出力上限1,500、10区分Schema、作業案上限5件は維持。配置後再評価でも説明は失敗した。後続の診断経路・結果は次節に記録する。
+
+### 2026-11-03 PR #106 配置後の再評価
+
+- PR #106 merge commit `97955e0629d34792b253f3cdaa94c50ae976fc50`のmain CI [#41567868528](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41567868528)成功成果物を使用。CD Plan [#41567985919](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41567985919)とApply／API・Exporter配置 [#41568265131](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41568265131)が成功。専用RG内Modify 3、NoChange 19、Ignore 5、Create／Deleteなし。Plan Hashは`5f5608b59adc90956c198cb769e4ae719cc99f65281d655a1ff4021d3d1d05db`。
+- サイトHTTP 200、APIのGovernance権限／test mode／decision reevaluation有効を認証済CLIで確認。保存済み実通知1件を再評価（Run `d33622d9-0b26-48ce-bbc2-e5feed454336`）。Decision-1はSucceeded、説明は`InvalidResponse`（HTTP statusなし）、Runは`ModelUnavailable`。Assessment validation errors 0、作業案1件。`reasoning_effort=low`適用後も説明は成功していない。Azure再取得・変更、承認、GitHub登録はなし。
+- 原因再確認に使った一時RBACは`records`コンテナ内の応答Blob 1個のみ、Blob.List拒否の条件付きStorage Blob Data Reader。ユーザーがCLIで割当を削除したことをrole assignment一覧が空であることで確認。Blob読取権限不足のため新応答は取得できなかった。
+- 原文／実データを返さないGovernance限定APIを追加中。最新・現行の再評価Assessmentに限定し、失敗したモデル段階のfinish reason、可視本文の有無・長さ、JSON parse結果、Token内訳だけを返す。本文、任意Blobパス、モデルプロンプトはAPI応答に含めない。PRマージ・配置後に同Runの保存済応答を診断し、根本原因に応じた修正と再評価を続ける。
 
 [GitHub OIDCのimmutable subject仕様](https://docs.github.com/en/actions/reference/security/oidc#immutable-subject-claims)
 

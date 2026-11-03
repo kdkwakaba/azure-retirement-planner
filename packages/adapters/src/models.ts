@@ -15,6 +15,88 @@ export const EXPLANATION_PROMPT_VERSION = '2026-11-03.4'
 export const EXPLANATION_MAX_COMPLETION_TOKENS = 1500
 export const EXPLANATION_MAX_WORK_ITEMS = 5
 export const EXPLANATION_REASONING_EFFORT = 'low'
+
+export function safeModelResponseDiagnostics(raw: unknown) {
+  const response =
+    typeof raw === 'object' && raw !== null
+      ? (raw as Record<string, unknown>)
+      : {}
+  const choices = Array.isArray(response.choices) ? response.choices : []
+  const choice =
+    typeof choices[0] === 'object' && choices[0] !== null
+      ? (choices[0] as Record<string, unknown>)
+      : {}
+  const message =
+    typeof choice.message === 'object' && choice.message !== null
+      ? (choice.message as Record<string, unknown>)
+      : {}
+  const usage =
+    typeof response.usage === 'object' && response.usage !== null
+      ? (response.usage as Record<string, unknown>)
+      : {}
+  const completionDetails =
+    typeof usage.completion_tokens_details === 'object' &&
+    usage.completion_tokens_details !== null
+      ? (usage.completion_tokens_details as Record<string, unknown>)
+      : {}
+  const content = message.content
+  let jsonParseStatus: 'valid' | 'invalid' | 'not-applicable' = 'not-applicable'
+  let jsonValueType: string | null = null
+  if (typeof content === 'string' && content.length > 0) {
+    try {
+      const decoded: unknown = JSON.parse(content)
+      jsonParseStatus = 'valid'
+      jsonValueType = Array.isArray(decoded)
+        ? 'array'
+        : decoded === null
+          ? 'null'
+          : typeof decoded
+    } catch {
+      jsonParseStatus = 'invalid'
+    }
+  }
+  const safeCount = (value: unknown) =>
+    typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+      ? value
+      : null
+  const finishReason =
+    typeof choice.finish_reason === 'string' &&
+    [
+      'stop',
+      'length',
+      'content_filter',
+      'tool_calls',
+      'function_call',
+    ].includes(choice.finish_reason)
+      ? choice.finish_reason
+      : choice.finish_reason == null
+        ? null
+        : 'other'
+  return {
+    responseShapeValid: choices.length > 0 && 'message' in choice,
+    choiceCount: choices.length,
+    finishReason,
+    contentType:
+      content === null
+        ? 'null'
+        : typeof content === 'string'
+          ? 'string'
+          : content === undefined
+            ? 'missing'
+            : Array.isArray(content)
+              ? 'array'
+              : typeof content,
+    contentLength: typeof content === 'string' ? content.length : null,
+    refusalPresent: Boolean(message.refusal),
+    jsonParseStatus,
+    jsonValueType,
+    promptTokens: safeCount(usage.prompt_tokens),
+    completionTokens: safeCount(usage.completion_tokens),
+    reasoningTokens: safeCount(completionDetails.reasoning_tokens),
+    totalTokens: safeCount(usage.total_tokens),
+  }
+}
+
 const impactOptions = {
   Low: '軽微、許容範囲内',
   Medium: '限定影響、代替で継続可能',

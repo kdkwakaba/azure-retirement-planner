@@ -15,6 +15,7 @@ import {
 } from '@arp/contracts'
 import { hash, verifyApproval } from '@arp/domain'
 import { credential } from './azure.ts'
+import { safeModelResponseDiagnostics } from './models.ts'
 import {
   type GitHubIssueReference,
   type GitHubIssueGroupInput,
@@ -86,6 +87,13 @@ export class AzureStore {
   }
   async assessment(id: string): Promise<Assessment> {
     return assessmentSchema.parse(await this.get('assessments', id))
+  }
+  async modelResponseDiagnostics(
+    assessmentId: string,
+    stage: 'Decision' | 'Explanation',
+  ) {
+    const blob = hash({ id: assessmentId, stage: stage.toLowerCase() })
+    return safeModelResponseDiagnostics(await this.get('model-raw', blob))
   }
   async businessContext(workloadId: string): Promise<BusinessContext | null> {
     try {
