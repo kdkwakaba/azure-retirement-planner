@@ -69,7 +69,28 @@ test('GPT-6 Luna explanation request stays within the configured token and work-
   const result = await explain(
     'https://synthetic.services.ai.azure.com',
     'gpt-6-luna',
-    { event: { title: 'Synthetic notice', evidence: [] }, resources: [] },
+    {
+      event: {
+        title: 'Synthetic notice',
+        body: '通知本文'.repeat(500),
+        evidence: [
+          {
+            id: 'synthetic-evidence',
+            sourceType: 'Microsoft',
+            sourceVersion: 'synthetic-version',
+            observedAt: '2026-08-01T00:00:00.000Z',
+            subjectIds: [],
+            fact: '公式根拠'.repeat(500),
+            officialUrl: 'https://learn.microsoft.com/en-us/azure/synthetic',
+          },
+        ],
+      },
+      resources: [],
+      decision: {
+        impactIfUnaddressed: 'High',
+        probabilities: { impactIfUnaddressed: { High: 1 } },
+      },
+    },
     async () => {},
   )
 
@@ -80,6 +101,24 @@ test('GPT-6 Luna explanation request stays within the configured token and work-
     (requestBody?.messages as Array<{ content: string }>)[0]?.content ?? '',
     /最大5件/,
   )
+  const sentInput = JSON.parse(
+    (requestBody?.messages as Array<{ content: string }>)[1]?.content ?? '{}',
+  ) as {
+    event: {
+      body: string
+      evidence: Array<{ fact: string; officialUrl: string }>
+    }
+    decision: Record<string, unknown>
+  }
+  assert.ok(sentInput.event.body.length < '通知本文'.repeat(500).length)
+  assert.ok(
+    sentInput.event.evidence[0]!.fact.length < '公式根拠'.repeat(500).length,
+  )
+  assert.equal(
+    sentInput.event.evidence[0]!.officialUrl,
+    'https://learn.microsoft.com/en-us/azure/synthetic',
+  )
+  assert.equal('probabilities' in sentInput.decision, false)
   assert.deepEqual(result.result.explanation, explanation)
 })
 
