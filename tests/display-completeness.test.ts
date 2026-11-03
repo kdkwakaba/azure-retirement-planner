@@ -179,6 +179,52 @@ test('explanation display consolidates repeated facts and keeps official dates i
   assert.equal(explanation.impact[0]!.text, impact.text)
 })
 
+test('similar facts are consolidated across categories while distinct facts remain visible', () => {
+  const source = fixture().explanation
+  const explanation = {
+    ...source,
+    increasingFactors: [
+      {
+        id: 'usage-impact-factor',
+        text: '対象リソースの利用状況を確認できないため、影響範囲を特定できない。',
+        kind: 'Unknown' as const,
+        evidenceIds: ['usage-evidence'],
+        decisionRefs: [],
+      },
+    ],
+    missingInformation: [
+      {
+        id: 'usage-impact-missing',
+        text: '対象リソースの使用実態が不明で影響範囲は特定できない。',
+        kind: 'Unknown' as const,
+        evidenceIds: ['duplicate-usage-evidence'],
+        decisionRefs: [],
+      },
+      {
+        id: 'sku-fact',
+        text: '対象リソースのSKUはStandardである。',
+        kind: 'Confirmed Fact' as const,
+        evidenceIds: ['sku-evidence'],
+        decisionRefs: [],
+      },
+    ],
+  }
+
+  const sections = deduplicateExplanationClaims(explanation)
+  const factors = sections.find(([name]) => name === 'increasingFactors')![1]
+  const missingInformation = sections.find(
+    ([name]) => name === 'missingInformation',
+  )![1]
+
+  assert.equal(factors.length, 1)
+  assert.equal(missingInformation.length, 1)
+  assert.equal(missingInformation[0]!.id, 'sku-fact')
+  assert.deepEqual(factors[0]!.evidenceIds, [
+    'usage-evidence',
+    'duplicate-usage-evidence',
+  ])
+})
+
 test('usage verification confirmation reasons combine similar resource and missing-information messages', () => {
   const first = {
     ...fixture().resources[0]!,
