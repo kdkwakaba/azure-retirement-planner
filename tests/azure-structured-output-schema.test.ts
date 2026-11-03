@@ -66,17 +66,24 @@ function visitSchema(value: unknown, path = 'schema'): void {
 }
 
 test('explanation Structured Outputs schema uses Azure-supported keywords and required properties', () => {
-  const schema = explanationResponseJsonSchema() as {
+  const schema = explanationResponseJsonSchema([
+    'evidence-1',
+    'evidence-2',
+  ]) as {
     properties: {
       explanation: {
-        properties: Record<string, { items: unknown }>
+        properties: Record<string, { anyOf: Array<Record<string, unknown>> }>
       }
       workItems: {
-        items: { properties: Record<string, unknown> }
+        properties: Record<string, { anyOf: Array<Record<string, unknown>> }>
       }
     }
     $defs: {
       explanation_claim: {
+        type: string
+        properties: Record<string, unknown>
+      }
+      explanation_work_item: {
         type: string
         properties: Record<string, unknown>
       }
@@ -86,29 +93,60 @@ test('explanation Structured Outputs schema uses Azure-supported keywords and re
   visitSchema(schema)
   assert.equal(
     Object.hasOwn(
-      schema.properties.workItems.items.properties,
+      schema.$defs.explanation_work_item.properties,
       'workflowRouting',
     ),
     false,
   )
   assert.deepEqual(
     (
-      schema.properties.workItems.items.properties.humanApprovalRequired as {
+      schema.$defs.explanation_work_item.properties.humanApprovalRequired as {
         enum?: unknown[]
       }
     ).enum,
     [true],
   )
   assert.equal(
-    JSON.stringify(schema.properties.explanation.properties.impact!.items),
+    JSON.stringify(schema.properties.explanation.properties.impact!.anyOf[0]),
     JSON.stringify({ $ref: '#/$defs/explanation_claim' }),
   )
   assert.equal(
-    JSON.stringify(schema.properties.explanation.properties.humanChecks!.items),
+    JSON.stringify(
+      schema.properties.explanation.properties.humanChecks!.anyOf[0],
+    ),
     JSON.stringify({ $ref: '#/$defs/explanation_claim' }),
   )
+  for (const section of Object.values(schema.properties.explanation.properties))
+    assert.equal(
+      section.anyOf.some((branch) => branch.type === 'array'),
+      false,
+    )
+  assert.deepEqual(Object.keys(schema.properties.workItems.properties), [
+    'item1',
+    'item2',
+  ])
+  assert.equal(
+    JSON.stringify(schema.properties.workItems.properties.item1!.anyOf[0]),
+    JSON.stringify({ $ref: '#/$defs/explanation_work_item' }),
+  )
+  assert.equal(
+    JSON.stringify(schema.properties.workItems.properties.item2!.anyOf[0]),
+    JSON.stringify({ $ref: '#/$defs/explanation_work_item' }),
+  )
+  assert.ok(
+    JSON.stringify(
+      schema.$defs.explanation_claim.properties.evidenceRefs,
+    ).includes('evidence-1'),
+  )
+  assert.ok(
+    JSON.stringify(
+      schema.$defs.explanation_claim.properties.evidenceRefs,
+    ).includes('evidence-2'),
+  )
+  assert.equal(JSON.stringify(schema).includes('actual-evidence-id'), false)
   assert.ok(schema.$defs.explanation_claim)
   assert.equal(schema.$defs.explanation_claim.type, 'object')
   assert.ok(schema.$defs.explanation_claim.properties.text)
-  assert.ok(JSON.stringify(schema).length < 4000)
+  assert.ok(schema.$defs.explanation_work_item)
+  assert.ok(JSON.stringify(schema).length < 5000)
 })
