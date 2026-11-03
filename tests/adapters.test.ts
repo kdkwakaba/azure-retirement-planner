@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   AzureStore,
+  EXPLANATION_MAX_CLAIMS_PER_SECTION,
   EXPLANATION_MAX_COMPLETION_TOKENS,
   EXPLANATION_MAX_WORK_ITEMS,
   EXPLANATION_REASONING_EFFORT,
@@ -39,17 +40,52 @@ test('GPT-6 Luna explanation request stays within the configured token and work-
     expiresOnTimestamp: Date.now() + 3600000,
   }))
   let requestBody: Record<string, unknown> | undefined
+  const claim = {
+    id: 'synthetic-claim',
+    text: '合成根拠を確認する',
+    kind: 'Derived Fact',
+    evidenceRefs: ['evidence-1'],
+    decisionRefs: [],
+  }
   const explanation = {
-    impact: [],
-    increasingFactors: [],
-    reducingFactors: [],
-    startRationale: [],
-    missingInformation: [],
-    changeConditions: [],
-    microsoftFacts: [],
-    internalFacts: [],
-    judgments: [],
-    humanChecks: [],
+    impact: claim,
+    increasingFactors: null,
+    reducingFactors: null,
+    startRationale: null,
+    missingInformation: null,
+    changeConditions: null,
+    microsoftFacts: null,
+    internalFacts: null,
+    judgments: null,
+    humanChecks: null,
+  }
+  const workItem = {
+    id: 'synthetic-work-item',
+    category: 'Impact Verification',
+    title: '合成根拠の確認',
+    description: '提示された根拠を確認する。',
+    workloadId: 'workload-1',
+    resourceIds: [],
+    ownerTeam: null,
+    necessity: 'Recommended',
+    priority: null,
+    plannedStartDate: null,
+    dueDate: null,
+    applicableMilestoneIds: [],
+    prerequisites: [],
+    completionCriteria: ['確認結果を記録する'],
+    humanApprovalRequired: true,
+    evidenceRefs: ['evidence-1'],
+    sourceType: 'Mixed',
+    officialReferenceIds: [],
+    dependencyIds: [],
+    status: 'Draft',
+    confidence: {
+      kind: 'EvidenceSupport',
+      value: null,
+      method: 'Synthetic test',
+      limitations: [],
+    },
   }
   t.mock.method(
     globalThis,
@@ -61,7 +97,10 @@ test('GPT-6 Luna explanation request stays within the configured token and work-
           {
             finish_reason: 'stop',
             message: {
-              content: JSON.stringify({ explanation, workItems: [] }),
+              content: JSON.stringify({
+                explanation,
+                workItems: { item1: workItem, item2: null },
+              }),
             },
           },
         ],
@@ -76,6 +115,7 @@ test('GPT-6 Luna explanation request stays within the configured token and work-
       event: {
         title: 'Synthetic notice',
         body: '通知本文'.repeat(500),
+        milestones: [{ evidenceIds: ['synthetic-evidence'] }],
         evidence: [
           {
             id: 'synthetic-evidence',
@@ -88,7 +128,7 @@ test('GPT-6 Luna explanation request stays within the configured token and work-
           },
         ],
       },
-      resources: [],
+      resources: [{ evidenceIds: ['synthetic-evidence'] }],
       decision: {
         impactIfUnaddressed: 'High',
         probabilities: { impactIfUnaddressed: { High: 1 } },
@@ -101,11 +141,12 @@ test('GPT-6 Luna explanation request stays within the configured token and work-
   assert.equal(requestBody?.reasoning_effort, 'none')
   assert.equal(requestBody?.verbosity, 'low')
   assert.equal(EXPLANATION_MAX_COMPLETION_TOKENS, 2500)
+  assert.equal(EXPLANATION_MAX_CLAIMS_PER_SECTION, 1)
   assert.equal(EXPLANATION_MAX_WORK_ITEMS, 2)
   assert.equal(EXPLANATION_REASONING_EFFORT, 'none')
   assert.match(
     (requestBody?.messages as Array<{ content: string }>)[0]?.content ?? '',
-    /各0〜1件/,
+    /各説明区分は1件またはnull/,
   )
   assert.match(
     (requestBody?.messages as Array<{ content: string }>)[0]?.content ?? '',
@@ -116,8 +157,10 @@ test('GPT-6 Luna explanation request stays within the configured token and work-
   ) as {
     event: {
       body: string
-      evidence: Array<{ fact: string; officialUrl: string }>
+      milestones: Array<{ evidenceIds: string[] }>
+      evidence: Array<{ id: string; fact: string; officialUrl: string }>
     }
+    resources: Array<{ evidenceIds: string[] }>
     decision: Record<string, unknown>
   }
   assert.ok(sentInput.event.body.length < '通知本文'.repeat(500).length)
@@ -128,8 +171,81 @@ test('GPT-6 Luna explanation request stays within the configured token and work-
     sentInput.event.evidence[0]!.officialUrl,
     'https://learn.microsoft.com/en-us/azure/synthetic',
   )
+  assert.equal(sentInput.event.evidence[0]!.id, 'evidence-1')
+  assert.deepEqual(sentInput.event.milestones[0]!.evidenceIds, ['evidence-1'])
+  assert.deepEqual(sentInput.resources[0]!.evidenceIds, ['evidence-1'])
+  assert.equal(
+    JSON.stringify(requestBody).includes('synthetic-evidence'),
+    false,
+  )
   assert.equal('probabilities' in sentInput.decision, false)
-  assert.deepEqual(result.result.explanation, explanation)
+  assert.deepEqual(result.result.explanation.impact, [
+    {
+      id: claim.id,
+      text: claim.text,
+      kind: claim.kind,
+      evidenceIds: ['synthetic-evidence'],
+      decisionRefs: [],
+    },
+  ])
+  assert.deepEqual(result.result.workItems[0]?.evidenceIds, [
+    'synthetic-evidence',
+  ])
+  assert.equal(result.result.explanation.microsoftFacts.length, 0)
+})
+
+test('GPT-6 Luna explanation rejects evidence references outside the request candidates', async (t) => {
+  t.mock.method(credential, 'getToken', async () => ({
+    token: 'synthetic',
+    expiresOnTimestamp: Date.now() + 3600000,
+  }))
+  t.mock.method(globalThis, 'fetch', async () =>
+    Response.json({
+      choices: [
+        {
+          finish_reason: 'stop',
+          message: {
+            content: JSON.stringify({
+              explanation: {
+                impact: {
+                  id: 'synthetic-claim',
+                  text: '合成説明',
+                  kind: 'Derived Fact',
+                  evidenceRefs: ['evidence-forged'],
+                  decisionRefs: [],
+                },
+                increasingFactors: null,
+                reducingFactors: null,
+                startRationale: null,
+                missingInformation: null,
+                changeConditions: null,
+                microsoftFacts: null,
+                internalFacts: null,
+                judgments: null,
+                humanChecks: null,
+              },
+              workItems: { item1: null, item2: null },
+            }),
+          },
+        },
+      ],
+    }),
+  )
+
+  await assert.rejects(
+    explain(
+      'https://synthetic.services.ai.azure.com',
+      'gpt-6-luna',
+      {
+        event: {
+          evidence: [{ id: 'synthetic-evidence' }],
+          milestones: [],
+        },
+        resources: [],
+      },
+      async () => {},
+    ),
+  )
 })
 
 test('GPT-6 Luna truncation is detected before parsing an empty completion', async (t) => {
