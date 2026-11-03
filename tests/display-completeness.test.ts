@@ -48,7 +48,7 @@ test('incomplete assessment values display their reason and next decision', () =
   assert.match(approvalDisplay(routing), /Workload責任者.*ガバナンス責任者/)
   assert.match(sequenceDisplay(routing), /個別の順序指定なし.*前提作業なし/)
   assert.match(projectProgressDisplay(null), /登録状態と同期結果を確認/)
-  assert.match(evidenceDisplay([]), /承認前に根拠を追加/)
+  assert.match(evidenceDisplay([], [])[0]!.label, /根拠が紐付いていません/)
   assert.match(ownerTagDisplay(null), /実担当をWorkload責任者と確認/)
   assert.match(modelVersionDisplay(null), /監査記録を確認/)
   assert.equal(explanationSectionDisplay('missingInformation'), '不足情報')
@@ -70,7 +70,24 @@ test('known values remain visible without being replaced by fallback text', () =
   assert.equal(ownerTagDisplay('app-team'), 'app-team')
   assert.equal(modelVersionDisplay('1'), '1')
   assert.equal(projectProgressDisplay('In Progress'), 'In Progress')
-  assert.equal(evidenceDisplay(['evidence-1']), 'evidence-1')
+  const evidence = fixture().event.evidence[0]!
+  const azureEvidence = {
+    ...evidence,
+    id: 'azure-evidence-1',
+    sourceType: 'Azure' as const,
+    observedAt: '2026-08-02T00:00:00.000Z',
+  }
+  assert.deepEqual(
+    evidenceDisplay([evidence.id, azureEvidence.id], [evidence, azureEvidence]),
+    [
+      { label: 'Microsoft公式情報（2026-08-01）', evidenceIndex: 0 },
+      { label: 'Azure構成情報（2026-08-02）', evidenceIndex: 1 },
+    ],
+  )
+  assert.equal(
+    evidenceDisplay(['missing'], []).at(0)?.label,
+    '参照先の根拠を特定できません',
+  )
   assert.equal(
     milestoneDateDisplay(null, '26 August 2026'),
     '公式原文の記載: 26 August 2026（日付の適用範囲を確認）',

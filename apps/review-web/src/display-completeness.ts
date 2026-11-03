@@ -1,4 +1,9 @@
-import type { Assessment, ModelInvocation, WorkItem } from '@arp/contracts'
+import type {
+  Assessment,
+  Evidence,
+  ModelInvocation,
+  WorkItem,
+} from '@arp/contracts'
 
 type WorkRouting = NonNullable<WorkItem['workflowRouting']>
 
@@ -178,10 +183,36 @@ export function projectProgressDisplay(status: string | null): string {
   return status ?? 'Project Status未取得（登録状態と同期結果を確認）'
 }
 
-export function evidenceDisplay(evidenceIds: string[]): string {
-  return evidenceIds.length
-    ? evidenceIds.join(', ')
-    : '根拠なし。確定事実として扱わず、承認前に根拠を追加'
+export function evidenceDisplay(
+  evidenceIds: string[],
+  evidence: Evidence[],
+): Array<{ label: string; evidenceIndex: number | null }> {
+  if (!evidenceIds.length)
+    return [
+      {
+        label: '根拠が紐付いていません',
+        evidenceIndex: null,
+      },
+    ]
+
+  const sourceLabels: Record<Evidence['sourceType'], string> = {
+    Microsoft: 'Microsoft公式情報',
+    Azure: 'Azure構成情報',
+    Internal: '社内情報',
+    Rule: '評価ルール',
+    Human: '人による確認',
+  }
+  return [...new Set(evidenceIds)].map((id) => {
+    const evidenceIndex = evidence.findIndex((item) => item.id === id)
+    const item = evidence[evidenceIndex]
+    if (!item)
+      return { label: '参照先の根拠を特定できません', evidenceIndex: null }
+    const observedDate = item.observedAt.slice(0, 10)
+    return {
+      label: `${sourceLabels[item.sourceType]}（${observedDate}）`,
+      evidenceIndex,
+    }
+  })
 }
 
 export function officialDeadlineDisplay(): string {
