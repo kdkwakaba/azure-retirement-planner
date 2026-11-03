@@ -24,6 +24,7 @@ import {
   normalizeNotice,
   packageHash,
   priorityFor,
+  resourceVerificationReason,
   resourceVerificationWorkItems,
   validateAssessment,
   verifyApproval,
@@ -75,6 +76,46 @@ test('general impact narratives describe lifecycle consequences without inventin
   assessment.explanation.impact.push(...narratives)
   assert.deepEqual(validateAssessment(assessment), [])
   assert.equal(IMPACT_NARRATIVE_VERSION, '2026-11-02.1')
+})
+
+test('resource verification reasons describe the specific unavailable evidence', () => {
+  const resource = fixture().resources[0]!
+  const usageReason = resourceVerificationReason({
+    ...resource,
+    classification: 'Verification Required',
+    classificationReason: 'UsageRequiresVerification',
+    verificationRequired: true,
+  })
+  assert.match(usageReason ?? '', /利用実態を判断できません/)
+  assert.match(usageReason ?? '', /接続元アプリの設定、コード参照、実行状況/)
+
+  const missingAttributeReason = resourceVerificationReason({
+    ...resource,
+    classification: 'Verification Required',
+    classificationReason: 'RequiredAttributeMissing',
+    missingAttributes: ['sku.name'],
+    verificationRequired: true,
+  })
+  assert.match(missingAttributeReason ?? '', /sku\.name/)
+  assert.match(missingAttributeReason ?? '', /実値を読み取り専用で確認/)
+
+  const profileReason = resourceVerificationReason({
+    ...resource,
+    type: 'Microsoft.Storage/storageAccounts',
+    classification: 'Unknown',
+    classificationReason: 'NoApplicableProfile',
+    verificationRequired: false,
+  })
+  assert.match(profileReason ?? '', /Microsoft\.Storage\/storageAccounts/)
+  assert.equal(
+    resourceVerificationReason({
+      ...resource,
+      classification: 'Probable',
+      classificationReason: 'ProfileConditionMatched',
+      verificationRequired: false,
+    }),
+    null,
+  )
 })
 
 test('creation block general impact does not claim existing resources will stop', () => {
