@@ -161,6 +161,13 @@ APIの日次モデル呼出枠は200件で、同時予約をETagで制御する�
 - 原因再確認に使った一時RBACは`records`コンテナ内の応答Blob 1個のみ、Blob.List拒否の条件付きStorage Blob Data Reader。ユーザーがCLIで割当を削除したことをrole assignment一覧が空であることで確認。Blob読取権限不足のため新応答は取得できなかった。
 - 原文／実データを返さないGovernance限定APIを追加中。最新・現行の再評価Assessmentに限定し、失敗したモデル段階のfinish reason、可視本文の有無・長さ、JSON parse結果、Token内訳だけを返す。本文、任意Blobパス、モデルプロンプトはAPI応答に含めない。PRマージ・配置後に同Runの保存済応答を診断し、根本原因に応じた修正と再評価を続ける。
 
+### 2026-11-03 PR #109 配置後の none 再評価
+
+- PR #109 merge commit `f7c22955881884ec2aeb7598e4eb7ced48973eda`のmain CI [#41593297460](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41593297460)成功成果物を使用。CD Plan [#41593488988](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41593488988)、Apply／API・Exporter配置 [#41593653994](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41593653994)が成功。Plan Hash `5f5608b59adc90956c198cb769e4ae719cc99f65281d655a1ff4021d3d1d05db`。What-Ifは専用RG内Modify 3、NoChange 19、Ignore 5、Create／Deleteなし。
+- 配置後、サイトHTTP 200、CLI認証User／Governance、test mode／decision reevaluation有効を確認。保存済み実通知の現行Assessment 1件を再評価（Run `9f1e105e-7d65-463b-a611-930e1392d3d8`）。Azure情報の再取得、作業承認、Issue／Project登録は行っていない。
+- Runは`Completed`。Decision-1／Explanationはいずれも`Succeeded`。GPT-6 Lunaは`reasoning_effort=none`、`verbosity=low`、Prompt `2026-11-03.5`で、説明9 claims・作業案1件を保存。空応答／JSON切れは解消し、Schema検証を通過した。
+- 業務検証エラーが1件残る。説明の「判断」欄にある`Confirmed Fact` claimにEvidence IDがなく、domain validationは根拠不足と判定した。モデル応答本文は取得・記録していない。説明生成の実行成功は確認したが、根拠完全性と意味品質は成功扱いせず、レビュー対象として残す。
+
 ### 2026-11-03 PR #108 配置後の none 再評価
 
 - PR #108 merge commit `4308fe6b5c2446538587f002c4bc76b0f41b0ffe`のmain CI [#41591044022](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41591044022)成功成果物を使用。CD Plan [#41591167232](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41591167232)、Apply／API・Exporter配置 [#41591318311](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41591318311)が成功。Plan Hash `5f5608b59adc90956c198cb769e4ae719cc99f65281d655a1ff4021d3d1d05db`。What-Ifは専用RG内のAPI／Exporter App Service 2件Modify、Create／Deleteなし。
