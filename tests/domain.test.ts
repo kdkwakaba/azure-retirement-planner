@@ -944,6 +944,7 @@ test('unknown deadline and high uncertainty force review', () => {
   assert.equal(r.priority, 'P2')
   assert.ok(r.reviewReasons.includes('Critical workloadを含む'))
   assert.ok(r.reviewReasons.includes('代替未定'))
+  assert.equal(r.reviewReasons.includes('モデル判断を確定できない'), false)
 })
 test('read-only user cannot approve', () =>
   assert.throws(() =>
