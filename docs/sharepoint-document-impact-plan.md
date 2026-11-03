@@ -1,6 +1,6 @@
 # SharePoint設計書を利用した業務影響評価の実装計画
 
-2026-11-04 / 状態: 段階2の一部を実装。DOCX／XLSXテキスト解析、入力上限付きのLLM事実抽出アダプター、引用ブロックに結び付く候補検証を実装済み。モデルの実接続・SharePoint接続・抽出結果の永続化・業務評価への接続は未実装。
+2026-11-04 / 状態: 段階2の一部を実装。DOCX／XLSXテキスト解析、入力上限付きのLLM事実抽出アダプター、引用ブロックに結び付く候補検証、不変Blob＋Table現行参照による抽出結果保存を実装済み。モデルの実接続・SharePoint接続・原文バイナリ保存・Assessmentへの接続は未実装。
 
 ## 目的と合意した範囲
 
@@ -17,7 +17,7 @@ SharePointに格納した複数の設計書・ドキュメントから、業務�
 | 対象 | 現在 | 追加計画 |
 |---|---|---|
 | `packages/contracts/src/index.ts` | Evidence、Assessment、簡易BusinessContextの契約 | 参照元設定、文書版、抽出事実、依存関係、確認状態、サンプル識別 |
-| `packages/adapters/src/store.ts` | 業務情報の不変Blob版とTableの現行参照 | 文書取得版・解析版・抽出結果・参照元別の取得状況 |
+| `packages/adapters/src/store.ts` | 業務情報の不変Blob版とTableの現行参照。事実候補集合をsampleOnly／Workload別に保存・読込 | 文書取得版・原文バイナリ・参照元別の取得状況 |
 | `packages/adapters/src/identity.ts` | Azure管理・推論・Storage・Key VaultのMI Scopeを許可 | Microsoft GraphのScopeと専用接続処理 |
 | `packages/adapters/src/grounding.ts` | 通知・型付き構成・Evidenceのモデル入力 | 通知とWorkloadに関連する文書事実・依存経路・出典 |
 | `packages/adapters/src/models.ts` | Decision-1の型付き判断と説明LLM | 文書抽出用の別Prompt／Schema、判断質問・説明入力の改訂 |
@@ -94,7 +94,7 @@ LLMは文書から事実候補を抽出し、Decision-1は型付き判断、ル�
 | 段階 | 作業 | 完了条件 |
 |---|---|---|
 | 1 | 参照元配列、文書版、抽出事実、依存関係、サンプル分離の契約と評価資材 | 1フォルダ設定、複数参照元の契約試験、旧データ互換を確認 |
-| 2 | DOCX／XLSX解析、出典保存、構造化抽出と検証 | DOCX段落／XLSXシート・セルのテキスト抽出はPR #125で追加。候補Schema検証、実在ブロックへの参照確認、文書版・位置・サンプル区分の付与に加え、別Prompt版・Managed Identity・Structured Outputsを使う抽出アダプターを追加。1回あたり60ブロック／12,000文字／出力1,500 Tokenに制限。実モデル接続、複数バッチ制御・累積予算管理、抽出結果Blob保存、表・見出しのDOCX細粒度引用、3文書受入確認は未完了 |
+| 2 | DOCX／XLSX解析、出典保存、構造化抽出と検証 | DOCX段落／XLSXシート・セル抽出、候補Schema・引用元検証、上限付きLLM抽出アダプター、不変Blob保存とsampleOnly／Workload別Tableポインターを追加。実モデル接続、複数バッチ制御・累積予算管理、原文バイナリ保存、Assessment接続、表・見出しのDOCX細粒度引用、3文書受入確認は未完了 |
 | 3 | 依存照合、Decision-1・説明入力、評価Hash・承認管理 | High／Low／未確定のケースを区別し、重要な更新で承認失効 |
 | 4 | SharePoint接続、Bootstrap、フォルダ全ページ取得、変更検出 | 限定権限で複数文書を実取得。追加・更新・不在・取得失敗を区別 |
 | 5 | 初期1フォルダの設定・同期・確認・訂正・根拠表示UI | Entra認証下でサンプル表示、文書版、具体的影響と不足理由を確認 |
