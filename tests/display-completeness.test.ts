@@ -145,6 +145,32 @@ test('usage verification confirmation reasons combine similar resource and missi
   )
 })
 
+test('confirmation reasons omit model status and planning notes from missing information', () => {
+  const resource = {
+    ...fixture().resources[0]!,
+    classification: 'Verification Required' as const,
+    classificationReason: 'UsageRequiresVerification' as const,
+    verificationRequired: true,
+  }
+  const reasons = resourceConfirmationReasons(
+    [resource],
+    [
+      'モデル判断を確定できない',
+      '期限または承認済み工程期間が未確定',
+      '別の確認理由は表示する',
+    ],
+  )
+  assert.equal(
+    reasons.some((reason) => reason === 'モデル判断を確定できない'),
+    false,
+  )
+  assert.equal(
+    reasons.some((reason) => reason === '期限または承認済み工程期間が未確定'),
+    false,
+  )
+  assert.ok(reasons.includes('別の確認理由は表示する'))
+})
+
 test('explanation model status states clearly when no generated text is available', () => {
   assert.match(
     modelInvocationStatusDisplay({
