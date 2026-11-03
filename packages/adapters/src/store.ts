@@ -6,12 +6,14 @@ import type {
   Approval,
   BusinessContext,
   DecisionReevaluationRun,
+  DocumentGrounding,
 } from '@arp/contracts'
 import {
   assessmentSchema,
   approvalSchema,
   decisionReevaluationRunSchema,
   businessContextSchema,
+  documentGroundingSchema,
 } from '@arp/contracts'
 import { hash, verifyApproval } from '@arp/domain'
 import { credential } from './azure.ts'
@@ -124,6 +126,58 @@ export class AzureStore {
       },
       'Replace',
     )
+  }
+  async documentGrounding(
+    workloadId: string,
+    sampleOnly: boolean,
+  ): Promise<DocumentGrounding | null> {
+    const rowKey = hash({ workloadId, sampleOnly })
+    let entity: Record<string, unknown>
+    try {
+      entity = await this.table.getEntity('document-grounding', rowKey)
+    } catch (error) {
+      if ((error as { statusCode?: number }).statusCode === 404) return null
+      throw error
+    }
+    if (
+      entity.entityKind !== 'document-grounding-head' ||
+      typeof entity.groundingHash !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(entity.groundingHash)
+    )
+      throw new Error('Document grounding index is invalid')
+    const grounding = documentGroundingSchema.parse(
+      await this.get('document-grounding', entity.groundingHash),
+    )
+    if (
+      grounding.workloadId !== workloadId ||
+      grounding.sampleOnly !== sampleOnly ||
+      grounding.sourceConfigurationVersion !==
+        entity.sourceConfigurationVersion ||
+      hash(grounding) !== entity.groundingHash
+    )
+      throw new Error('Document grounding index does not match its record')
+    return grounding
+  }
+  async saveDocumentGrounding(value: DocumentGrounding): Promise<string> {
+    const grounding = documentGroundingSchema.parse(value)
+    const groundingHash = hash(grounding)
+    await this.put('document-grounding', groundingHash, grounding)
+    await this.table.upsertEntity(
+      {
+        partitionKey: 'document-grounding',
+        rowKey: hash({
+          workloadId: grounding.workloadId,
+          sampleOnly: grounding.sampleOnly,
+        }),
+        entityKind: 'document-grounding-head',
+        workloadId: grounding.workloadId,
+        sampleOnly: grounding.sampleOnly,
+        sourceConfigurationVersion: grounding.sourceConfigurationVersion,
+        groundingHash,
+      },
+      'Replace',
+    )
+    return groundingHash
   }
   async createDecisionReevaluation(
     run: DecisionReevaluationRun,
