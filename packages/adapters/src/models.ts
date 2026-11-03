@@ -14,7 +14,7 @@ export const PROMPT_VERSION = '2026-10-24.1'
 export const EXPLANATION_PROMPT_VERSION = '2026-11-03.4'
 export const EXPLANATION_MAX_COMPLETION_TOKENS = 1500
 export const EXPLANATION_MAX_WORK_ITEMS = 5
-export const EXPLANATION_REASONING_EFFORT = 'low'
+export const EXPLANATION_REASONING_EFFORT = 'none'
 
 export function safeModelResponseDiagnostics(raw: unknown) {
   const response =
