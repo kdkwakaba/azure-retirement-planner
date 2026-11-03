@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { documentGroundingSchema, documentSourceSchema } from '@arp/contracts'
+import {
+  assessmentSchema,
+  documentGroundingSchema,
+  documentSourceSchema,
+} from '@arp/contracts'
+import {
+  confirmedDocumentFactEvidence,
+  confirmedDocumentGroundingInputHash,
+} from '@arp/adapters'
+import { packageHash } from '@arp/domain'
+import { fixture } from './fixtures.ts'
 
 const revision = {
   sourceId: 'sample-folder',
@@ -90,4 +100,102 @@ test('document grounding requires every extracted fact to cite its exact revisio
     }).success,
     false,
   )
+})
+
+test('only human-confirmed facts from live grounding become assessment evidence', () => {
+  const grounding = documentGroundingSchema.parse({
+    schemaVersion: '1',
+    workloadId: 'sample-workload',
+    sampleOnly: false,
+    sourceConfigurationVersion: '1',
+    documentRevisions: [{ ...revision, sampleOnly: false }],
+    facts: [
+      { ...fact, sampleOnly: false, reviewStatus: 'Candidate' },
+      {
+        ...fact,
+        factId: 'fact-confirmed',
+        sampleOnly: false,
+        reviewStatus: 'Confirmed',
+      },
+    ],
+    observedAt: '2026-11-02T00:00:00.000Z',
+  })
+  const evidence = confirmedDocumentFactEvidence(grounding)
+  assert.equal(evidence.length, 1)
+  assert.match(evidence[0]!.fact, /受注処理が対象APIを利用する/)
+  assert.match(evidence[0]!.fact, /architecture.docx/)
+  assert.deepEqual(evidence[0]!.subjectIds, ['sample-workload'])
+  assert.throws(
+    () =>
+      confirmedDocumentFactEvidence({
+        ...grounding,
+        sampleOnly: true,
+        documentRevisions: grounding.documentRevisions.map((item) => ({
+          ...item,
+          sampleOnly: true,
+        })),
+        facts: grounding.facts.map((item) => ({ ...item, sampleOnly: true })),
+      }),
+    /Sample document grounding/,
+  )
+})
+
+test('confirmed document grounding hash ignores retrieval time and unconfirmed candidates', () => {
+  const grounding = documentGroundingSchema.parse({
+    schemaVersion: '1',
+    workloadId: 'sample-workload',
+    sampleOnly: false,
+    sourceConfigurationVersion: '1',
+    documentRevisions: [{ ...revision, sampleOnly: false }],
+    facts: [{ ...fact, sampleOnly: false }],
+    observedAt: '2026-11-02T00:00:00.000Z',
+  })
+  const originalHash = confirmedDocumentGroundingInputHash(grounding)
+  assert.equal(
+    confirmedDocumentGroundingInputHash({
+      ...grounding,
+      observedAt: '2026-11-03T00:00:00.000Z',
+      documentRevisions: grounding.documentRevisions.map((item) => ({
+        ...item,
+        observedAt: '2026-11-03T00:00:00.000Z',
+      })),
+    }),
+    originalHash,
+  )
+  assert.equal(
+    confirmedDocumentGroundingInputHash({
+      ...grounding,
+      facts: grounding.facts.map((item) => ({
+        ...item,
+        statement: '別の未確認候補',
+      })),
+    }),
+    originalHash,
+  )
+  assert.notEqual(
+    confirmedDocumentGroundingInputHash({
+      ...grounding,
+      facts: grounding.facts.map((item) => ({
+        ...item,
+        reviewStatus: 'Confirmed',
+      })),
+    }),
+    originalHash,
+  )
+})
+
+test('Assessment records confirmed document grounding hash compatibly and includes it in approval hash', () => {
+  const legacy = fixture()
+  assert.equal(assessmentSchema.parse(legacy).documentGroundingHash, undefined)
+  const withGrounding = {
+    ...legacy,
+    documentGroundingHash: 'f'.repeat(64),
+    packageHash: '',
+  }
+  withGrounding.packageHash = packageHash(withGrounding)
+  assert.equal(
+    assessmentSchema.parse(withGrounding).documentGroundingHash,
+    'f'.repeat(64),
+  )
+  assert.notEqual(withGrounding.packageHash, legacy.packageHash)
 })

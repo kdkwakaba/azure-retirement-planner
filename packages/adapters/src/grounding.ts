@@ -1,9 +1,93 @@
 import type {
   Decision,
+  DocumentGrounding,
+  Evidence,
   LifecycleEvent,
   ResourceImpact,
   WorkItem,
 } from '@arp/contracts'
+import { documentGroundingSchema } from '@arp/contracts'
+import { hash } from '@arp/domain'
+
+export function confirmedDocumentGroundingInputHash(
+  value: DocumentGrounding,
+): string {
+  const grounding = documentGroundingSchema.parse(value)
+  const facts = grounding.facts.filter(
+    (fact) => fact.reviewStatus === 'Confirmed',
+  )
+  const revisionKeys = new Set(
+    facts.map(
+      (fact) =>
+        `${fact.sourceId}:${fact.documentItemId}:${fact.documentContentHash}`,
+    ),
+  )
+  return hash({
+    workloadId: grounding.workloadId,
+    sampleOnly: grounding.sampleOnly,
+    sourceConfigurationVersion: grounding.sourceConfigurationVersion,
+    documentRevisions: grounding.documentRevisions
+      .filter((revision) =>
+        revisionKeys.has(
+          `${revision.sourceId}:${revision.itemId}:${revision.contentHash}`,
+        ),
+      )
+      .map(({ sourceId, itemId, name, contentHash }) => ({
+        sourceId,
+        itemId,
+        name,
+        contentHash,
+      }))
+      .sort((a, b) =>
+        `${a.sourceId}:${a.itemId}`.localeCompare(`${b.sourceId}:${b.itemId}`),
+      ),
+    facts: facts.toSorted((a, b) => a.factId.localeCompare(b.factId)),
+  })
+}
+
+export function confirmedDocumentFactEvidence(
+  value: DocumentGrounding,
+): Evidence[] {
+  const grounding = documentGroundingSchema.parse(value)
+  if (grounding.sampleOnly)
+    throw new Error('Sample document grounding cannot enter a live assessment')
+  const revisions = new Map(
+    grounding.documentRevisions.map((revision) => [
+      `${revision.sourceId}:${revision.itemId}:${revision.contentHash}`,
+      revision,
+    ]),
+  )
+  return grounding.facts.flatMap((fact) => {
+    if (fact.reviewStatus !== 'Confirmed') return []
+    const revision = revisions.get(
+      `${fact.sourceId}:${fact.documentItemId}:${fact.documentContentHash}`,
+    )
+    if (!revision) throw new Error('Confirmed document fact revision missing')
+    const location = [
+      fact.locator.heading,
+      fact.locator.sheet,
+      fact.locator.table,
+      fact.locator.row === null ? null : `行${fact.locator.row}`,
+      fact.locator.cell === null ? null : `セル${fact.locator.cell}`,
+      fact.locator.page === null ? null : `ページ${fact.locator.page}`,
+    ].filter((value): value is string => Boolean(value))
+    return [
+      {
+        id: hash({
+          kind: 'confirmed-document-fact',
+          sourceConfigurationVersion: grounding.sourceConfigurationVersion,
+          factId: fact.factId,
+        }),
+        sourceType: 'Internal' as const,
+        sourceVersion: fact.documentContentHash,
+        observedAt: revision.observedAt,
+        subjectIds: [grounding.workloadId],
+        fact: `確認済み文書事実: ${fact.statement}。出典: ${revision.name}${location.length ? `（${location.join(' / ')}）` : ''}`,
+        officialUrl: null,
+      },
+    ]
+  })
+}
 
 export function groundedInput(
   event: LifecycleEvent,
