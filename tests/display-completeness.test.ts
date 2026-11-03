@@ -118,8 +118,12 @@ test('usage verification confirmation reasons combine similar resource and missi
       '制御プレーン情報から利用実態を確認できないMicrosoft.CognitiveServices/accountsがあります。利用状況を確認してください。',
       '別の不足情報は引き続き確認が必要です。',
     ],
+    [
+      '制御プレーン情報から利用実態を確認できないMicrosoft.CognitiveServices/accounts/projectsがあります。許可された確認手段で利用状況を確認してください。',
+      '業務重要度・移行方式・工程期間・適用期限の人間確認が必要',
+    ],
   )
-  assert.equal(reasons.length, 2)
+  assert.equal(reasons.length, 3)
   assert.equal(
     reasons.filter((reason) =>
       reason.includes('管理プレーン情報だけでは利用有無を判断できず'),
@@ -134,6 +138,11 @@ test('usage verification confirmation reasons combine similar resource and missi
     false,
   )
   assert.ok(reasons.includes('別の不足情報は引き続き確認が必要です。'))
+  assert.ok(
+    reasons.includes(
+      '業務重要度・移行方式・工程期間・適用期限の人間確認が必要',
+    ),
+  )
 })
 
 test('explanation model status states clearly when no generated text is available', () => {
