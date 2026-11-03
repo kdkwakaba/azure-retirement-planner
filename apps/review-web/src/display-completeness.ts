@@ -12,6 +12,7 @@ type WorkRouting = NonNullable<WorkItem['workflowRouting']>
 export function resourceConfirmationReasons(
   resources: ResourceImpact[],
   missingInformation: string[],
+  reviewReasons: string[] = [],
 ): string[] {
   const usageVerificationResources = resources.filter(
     (resource) =>
@@ -33,11 +34,14 @@ export function resourceConfirmationReasons(
   const usageVerificationReason = usageVerificationResources.length
     ? `利用実態を確認できない対象リソース（${usageVerificationResources.length}件）があります。Azureの管理プレーン情報だけでは利用有無を判断できず、接続元アプリの設定、コード参照、実行状況も取得していません。対象Workloadでの利用有無を確認してください。`
     : null
-  const remainingMissingInformation = missingInformation.filter(
+  const remainingMissingInformation = [
+    ...missingInformation,
+    ...reviewReasons,
+  ].filter(
     (reason) =>
       !(
         usageVerificationResources.length &&
-        reason.startsWith('制御プレーン情報から利用実態を確認できない')
+        isResourceUsageVerificationReason(reason)
       ),
   )
   return [
@@ -51,6 +55,10 @@ export function resourceConfirmationReasons(
 
 export function isModelDecisionStatusOnlyReviewReason(reason: string): boolean {
   return reason === 'モデル判断を確定できない'
+}
+
+export function isResourceUsageVerificationReason(reason: string): boolean {
+  return reason.startsWith('制御プレーン情報から利用実態を確認できない')
 }
 
 export function priorityDisplay(priority: string | null): string {
