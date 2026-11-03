@@ -32,7 +32,11 @@ import {
 } from '../packages/adapters/src/azure.ts'
 import { fixture, tenant, resourceId } from './fixtures.ts'
 import { hash } from '@arp/domain'
-import { categorySchema, type Approval } from '@arp/contracts'
+import {
+  categorySchema,
+  documentGroundingSchema,
+  type Approval,
+} from '@arp/contracts'
 
 test('GPT-6 Luna explanation request stays within the configured token and work-item budgets', async (t) => {
   t.mock.method(credential, 'getToken', async () => ({
@@ -992,6 +996,112 @@ test('parent Issue outbox persists its identity and does not create duplicates',
   assert.equal(issueCreates, 1)
   assert.ok(rows.size === 1)
   assert.equal([...rows.values()][0]?.state, 'IssueCreated')
+})
+
+test('document grounding storage keeps sample and live revisions separate', async (t) => {
+  const store = new AzureStore('syntheticaccount')
+  const tableRows = new Map<string, Record<string, unknown>>()
+  const blobRows = new Map<string, unknown>()
+  store.table = {
+    getEntity: async (partitionKey: string, rowKey: string) => {
+      const entity = tableRows.get(`${partitionKey}/${rowKey}`)
+      if (!entity)
+        throw Object.assign(new Error('not found'), { statusCode: 404 })
+      return entity
+    },
+    upsertEntity: async (entity: Record<string, unknown>) => {
+      tableRows.set(`${entity.partitionKey}/${entity.rowKey}`, entity)
+    },
+  } as unknown as typeof store.table
+  t.mock.method(
+    store,
+    'put',
+    async (collection: string, id: string, value: unknown) => {
+      blobRows.set(`${collection}/${id}`, value)
+    },
+  )
+  t.mock.method(store, 'get', async (collection: string, id: string) => {
+    const value = blobRows.get(`${collection}/${id}`)
+    if (!value) throw new Error('missing synthetic grounding')
+    return value
+  })
+  const base = {
+    schemaVersion: '1' as const,
+    workloadId: 'sample-workload',
+    sourceConfigurationVersion: 'config-v1',
+    documentRevisions: [
+      {
+        sourceId: 'sample-folder',
+        itemId: 'document-1',
+        name: '設計書.docx',
+        extension: '.docx' as const,
+        eTag: 'etag-1',
+        lastModifiedAt: '2026-11-04T00:00:00.000Z',
+        contentHash: 'd'.repeat(64),
+        observedAt: '2026-11-04T00:00:00.000Z',
+        sampleOnly: true,
+      },
+    ],
+    facts: [],
+    observedAt: '2026-11-04T00:00:00.000Z',
+  }
+  const sample = documentGroundingSchema.parse({ ...base, sampleOnly: true })
+  const live = documentGroundingSchema.parse({
+    ...base,
+    sampleOnly: false,
+    documentRevisions: base.documentRevisions.map((revision) => ({
+      ...revision,
+      sampleOnly: false,
+    })),
+  })
+  const sampleHash = await store.saveDocumentGrounding(sample)
+  const liveHash = await store.saveDocumentGrounding(live)
+  assert.notEqual(sampleHash, liveHash)
+  assert.equal(
+    (await store.documentGrounding('sample-workload', true))?.sampleOnly,
+    true,
+  )
+  assert.equal(
+    (await store.documentGrounding('sample-workload', false))?.sampleOnly,
+    false,
+  )
+  assert.equal(tableRows.size, 2)
+  assert.equal(blobRows.size, 2)
+})
+
+test('invalid mixed-sample document grounding is rejected before persistence', async (t) => {
+  const store = new AzureStore('syntheticaccount')
+  const put = t.mock.method(store, 'put', async () => {})
+  const grounding = {
+    schemaVersion: '1',
+    workloadId: 'sample-workload',
+    sampleOnly: true,
+    sourceConfigurationVersion: 'config-v1',
+    documentRevisions: [],
+    facts: [
+      {
+        factId: 'fact-1',
+        workloadId: 'sample-workload',
+        kind: 'BusinessProcess',
+        statement: '合成処理',
+        sourceId: 'sample-folder',
+        documentItemId: 'document-1',
+        documentContentHash: 'e'.repeat(64),
+        locator: {
+          heading: null,
+          table: null,
+          row: null,
+          cell: null,
+          page: null,
+        },
+        reviewStatus: 'Candidate',
+        sampleOnly: false,
+      },
+    ],
+    observedAt: '2026-11-04T00:00:00.000Z',
+  }
+  await assert.rejects(store.saveDocumentGrounding(grounding as never))
+  assert.equal(put.mock.callCount(), 0)
 })
 test('TST-22: Project retry reuses the persisted Issue instead of creating another', async (t) => {
   const client = new GitHubClient(
