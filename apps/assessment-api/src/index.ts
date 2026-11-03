@@ -143,6 +143,41 @@ app.http('api', {
           .parse({ runId: request.query.get('runId') })
         return reply(200, await store.decisionReevaluation(query.runId))
       }
+      if (
+        request.method === 'GET' &&
+        path === 'decision-reevaluation-response-diagnostics'
+      ) {
+        requireUserRole(principal, apiRolePolicy.decisionReevaluation)
+        if (
+          process.env.TEST_MODE_ENABLED !== 'true' ||
+          process.env.DECISION_REEVALUATION_ENABLED !== 'true'
+        )
+          return reply(404, { error: 'Decision reevaluation is disabled' })
+        const query = z
+          .object({ assessmentId: z.string().regex(/^[a-f0-9]{64}$/) })
+          .strict()
+          .parse({ assessmentId: request.query.get('assessmentId') })
+        const assessment = await store.assessment(query.assessmentId)
+        if (!assessment.reevaluation)
+          return reply(404, { error: 'Reevaluation assessment not found' })
+        const logicalId = hash({
+          eventId: assessment.event.id,
+          workloadId: assessment.workloadId,
+        })
+        const head = await store.head(logicalId)
+        if (!head || head.assessmentId !== assessment.id)
+          return reply(409, { error: 'Assessment is not the current version' })
+        const failedStages = (assessment.modelInvocations ?? [])
+          .filter((invocation) => invocation.status === 'Failed')
+          .map((invocation) => invocation.stage)
+        const diagnostics = await Promise.all(
+          failedStages.map(async (stage) => ({
+            stage,
+            ...(await store.modelResponseDiagnostics(assessment.id, stage)),
+          })),
+        )
+        return reply(200, { assessmentId: assessment.id, diagnostics })
+      }
       if (request.method === 'GET' && path === 'uat/export-status') {
         if (
           process.env.TEST_MODE_ENABLED !== 'true' ||
