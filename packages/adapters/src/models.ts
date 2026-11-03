@@ -13,7 +13,7 @@ import { compactExplanationInput } from './grounding.ts'
 import { jsonRequest, safeModelEndpoint } from './http.ts'
 
 export const PROMPT_VERSION = '2026-10-24.1'
-export const EXPLANATION_PROMPT_VERSION = '2026-11-03.7'
+export const EXPLANATION_PROMPT_VERSION = '2026-11-03.8'
 export const EXPLANATION_MAX_COMPLETION_TOKENS = 2500
 export const EXPLANATION_MAX_WORK_ITEMS = 2
 export const EXPLANATION_REASONING_EFFORT = 'none'
@@ -261,16 +261,45 @@ const explanationSections = [
   'humanChecks',
 ] as const satisfies readonly (keyof Explanation)[]
 
-function modelExplanationSchema(evidenceAliases: string[]) {
+function modelExplanationSchema(
+  evidenceAliases: string[],
+  decisionReferenceKeys: string[],
+) {
   const evidenceReference = z.enum(
     (evidenceAliases.length ? evidenceAliases : ['evidence-unavailable']) as [
       string,
       ...string[],
     ],
   )
+  const modelDecisionReference = decisionReferenceKeys.length
+    ? z.enum(decisionReferenceKeys as [string, ...string[]])
+    : null
   const modelClaimSchema = claimSchema
-    .omit({ evidenceIds: true })
-    .extend({ evidenceRefs: z.array(evidenceReference) })
+    .omit({ evidenceIds: true, kind: true, decisionRefs: true })
+    .extend({
+      kind: modelDecisionReference
+        ? z.enum([
+            'Confirmed Fact',
+            'Derived Fact',
+            'General Impact',
+            'Model Decision',
+            'Assumption',
+            'Unknown',
+            'Recommendation',
+          ])
+        : z.enum([
+            'Confirmed Fact',
+            'Derived Fact',
+            'General Impact',
+            'Assumption',
+            'Unknown',
+            'Recommendation',
+          ]),
+      evidenceRefs: z.array(evidenceReference),
+      decisionRefs: modelDecisionReference
+        ? z.array(modelDecisionReference)
+        : z.array(z.string()),
+    })
   const modelWorkItemSchema = workItemSchema
     .omit({ workflowRouting: true, evidenceIds: true })
     .extend({ evidenceRefs: z.array(evidenceReference).min(1) })
@@ -369,7 +398,20 @@ export async function explain(
     })
     .strict()
   const aliased = aliasExplanationEvidence(input)
-  const modelSchema = modelExplanationSchema(aliased.evidenceAliases)
+  const inputRecord = aliased.modelInput as Record<string, unknown>
+  const decision = inputRecord.decision
+  const decisionProbabilities =
+    typeof decision === 'object' && decision !== null
+      ? (decision as Record<string, unknown>).probabilities
+      : null
+  const decisionReferenceKeys =
+    typeof decisionProbabilities === 'object' && decisionProbabilities !== null
+      ? Object.keys(decisionProbabilities)
+      : []
+  const modelSchema = modelExplanationSchema(
+    aliased.evidenceAliases,
+    decisionReferenceKeys,
+  )
   const token = await credential.getToken(
     'https://cognitiveservices.azure.com/.default',
   )
@@ -400,7 +442,10 @@ export async function explain(
           json_schema: {
             name: 'grounded_assessment',
             strict: true,
-            schema: explanationResponseJsonSchema(aliased.evidenceAliases),
+            schema: explanationResponseJsonSchema(
+              aliased.evidenceAliases,
+              decisionReferenceKeys,
+            ),
           },
         },
         reasoning_effort: EXPLANATION_REASONING_EFFORT,
@@ -548,8 +593,12 @@ function nullableObjectBranch(value: unknown): {
 
 export function explanationResponseJsonSchema(
   evidenceAliases: string[] = ['evidence-1'],
+  decisionReferenceKeys: string[] = [],
 ): unknown {
-  const schema = modelExplanationSchema(evidenceAliases).response
+  const schema = modelExplanationSchema(
+    evidenceAliases,
+    decisionReferenceKeys,
+  ).response
   const sanitized = sanitizeStructuredOutputSchema(
     z.toJSONSchema(schema, { target: 'draft-7' }),
   )
