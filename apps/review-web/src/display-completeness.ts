@@ -240,10 +240,32 @@ export function milestoneDateDisplay(
   return '日付を特定できていません（公式通知の原文を確認）'
 }
 
-export function decisionStatusDisplay(status: string): string {
+export function undecidedDecisionFields(
+  decision: Assessment['decision'],
+): string[] {
+  const fields: Array<[keyof Assessment['decision'], string]> = [
+    ['impactIfUnaddressed', '未対応時の影響度'],
+    ['impactDuringAndAfterChange', '対応時・対応後の影響度'],
+    ['priority', '優先度'],
+    ['startWindow', '対応開始時期'],
+    ['complexity', '移行難易度'],
+    ['projectRequired', 'プロジェクト化の要否'],
+    ['ownerTeam', '担当チーム'],
+  ]
+  return fields
+    .filter(([key]) => decision[key] === null)
+    .map(([, label]) => label)
+}
+
+export function decisionStatusDisplay(
+  status: string,
+  undecidedFields: string[] = [],
+): string {
   const labels: Record<string, string> = {
     Proposed: '判断案あり（人の確認前）',
-    Abstained: '判断保留（根拠・業務情報の確認が必要）',
+    Abstained: undecidedFields.length
+      ? `モデル判断保留（確定できなかった項目: ${undecidedFields.join('、')}）`
+      : 'モデル判断保留（未確定項目が結果に記録されていません）',
     Unavailable: '判断機能を利用できず保留',
     NotRequired: '定型結果のため判断機能は不要',
     NotConfigured: '判断機能が構成されていません。手動確認が必要',
@@ -254,11 +276,34 @@ export function decisionStatusDisplay(status: string): string {
 }
 
 export function reviewReasonDisplay(reason: string): string {
-  if (reason.includes('期限または承認済み工程期間が未確定'))
-    return '計画日を算定できません。適用期限と承認済みの工程期間を確認後、計画担当が設定します。'
+  if (
+    reason.includes('クラシック API') &&
+    (reason.includes('使用有無') || reason.includes('利用有無'))
+  )
+    return 'クラシック API の使用有無を判断できないため、対象リソースとプロジェクトでの利用状況の確認が必要です。'
   if (reason.includes('担当チーム候補が設定されていません'))
     return '担当チームが選定されていません。情報システム部門が初動調整し、Workload責任者と担当部門を決めます。'
   if (reason.includes('未確認のOwner Team'))
     return '担当チームの根拠がありません。Workload責任者と担当部門を確認してください。'
+  return reason
+}
+
+export function isKnownReviewReason(reason: string): boolean {
+  return (
+    reason.includes('クラシック API') &&
+    (reason.includes('使用有無') || reason.includes('利用有無'))
+  )
+}
+
+export function isPlanSchedulingNote(reason: string): boolean {
+  return (
+    reason.includes('期限または承認済み工程期間が未確定') ||
+    reason.includes('計画日を算定できません')
+  )
+}
+
+export function planSchedulingNoteDisplay(reason: string): string {
+  if (reason.includes('期限または承認済み工程期間が未確定'))
+    return '計画日を算定できません。適用期限と承認済みの工程期間を確認後、計画担当が設定します。'
   return reason
 }
