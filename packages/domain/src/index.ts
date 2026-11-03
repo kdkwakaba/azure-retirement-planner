@@ -209,8 +209,6 @@ export function applyRules(input: {
     if ((sorted[0] ?? 0) < 0.8 || (sorted[0] ?? 0) - (sorted[1] ?? 0) < 0.2)
       reasons.push(`判断確率の確認が必要: ${question}`)
   }
-  if (input.decision.status !== 'Proposed')
-    reasons.push('モデル判断を確定できない')
   return {
     priority: highestPriority(floor, input.decision.priority),
     slackDays: slack,

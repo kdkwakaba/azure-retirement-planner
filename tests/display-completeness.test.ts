@@ -13,6 +13,7 @@ import {
   explanationSectionDisplay,
   impactDisplay,
   isKnownReviewReason,
+  isModelDecisionStatusOnlyReviewReason,
   isPlanSchedulingNote,
   milestoneDateDisplay,
   milestoneKindDisplay,
@@ -24,6 +25,7 @@ import {
   planSchedulingNoteDisplay,
   priorityDisplay,
   projectProgressDisplay,
+  resourceConfirmationReasons,
   reviewReasonDisplay,
   routingDisplay,
   sequenceDisplay,
@@ -98,6 +100,42 @@ test('known values remain visible without being replaced by fallback text', () =
   )
 })
 
+test('usage verification confirmation reasons combine similar resource and missing-information messages', () => {
+  const first = {
+    ...fixture().resources[0]!,
+    classification: 'Verification Required' as const,
+    classificationReason: 'UsageRequiresVerification' as const,
+    verificationRequired: true,
+  }
+  const second = {
+    ...first,
+    id: `${first.id}/projects/test-project`,
+    type: 'Microsoft.CognitiveServices/accounts/projects',
+  }
+  const reasons = resourceConfirmationReasons(
+    [first, second],
+    [
+      '制御プレーン情報から利用実態を確認できないMicrosoft.CognitiveServices/accountsがあります。利用状況を確認してください。',
+      '別の不足情報は引き続き確認が必要です。',
+    ],
+  )
+  assert.equal(reasons.length, 2)
+  assert.equal(
+    reasons.filter((reason) =>
+      reason.includes('管理プレーン情報だけでは利用有無を判断できず'),
+    ).length,
+    1,
+  )
+  assert.match(reasons[0]!, /対象リソース（2件）/)
+  assert.equal(
+    reasons.some((reason) =>
+      reason.startsWith('制御プレーン情報から利用実態を確認できない'),
+    ),
+    false,
+  )
+  assert.ok(reasons.includes('別の不足情報は引き続き確認が必要です。'))
+})
+
 test('explanation model status states clearly when no generated text is available', () => {
   assert.match(
     modelInvocationStatusDisplay({
@@ -137,6 +175,16 @@ test('decision statuses have a Japanese actionable label', () => {
   assert.match(
     reviewReasonDisplay('担当チーム候補が設定されていません'),
     /情報システム部門が初動調整/,
+  )
+  assert.equal(
+    isModelDecisionStatusOnlyReviewReason('モデル判断を確定できない'),
+    true,
+  )
+  assert.equal(
+    isModelDecisionStatusOnlyReviewReason(
+      '判断確率の確認が必要: impactIfUnaddressed',
+    ),
+    false,
   )
   assert.match(criticalWorkloadDisplay(false), /非該当の人間確認とは区別/)
   assert.match(
