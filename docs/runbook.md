@@ -142,7 +142,7 @@ APIの日次モデル呼出枠は200件で、同時予約をETagで制御する�
 - PR #103のStructured Outputs Schema修正を含むmain commit `612a56b4c2bbd0fa13e1e438d4f814cd64396c4c`を[CI #41550736477](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41550736477)と[CD #41551188892](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41551188892)で検査・配置。
 - 2026-11-03に保存済み実通知1件をAPI Managed Identity経由で再評価。Decision-1はSucceeded／Abstained。説明LLMはHTTP 429／Throttledとなり、Structured Outputs応答の受信・Schema検証には到達しなかった。実説明品質とSchema互換性の実呼出し確認は未完了。
 - Foundry上でGPT-6 Lunaの旧容量1、DataZoneStandardクォータ上限100・使用1、モデルカタログの最大容量3を確認。PR #104のBicep変更を適用し、容量3、3 requests/minute・3,000 tokens/minute、deployment Running／Succeededを確認。適用What-IfはDecision-1 NoChange、Lunaの`sku.capacity`と`properties.currentCapacity`のみModify、Create／Deleteなし。クォータ使用量は3/100。
-- アプリは`max_completion_tokens=6000`を指定するため、3,000 TPMでは説明要求を受け付けられない可能性が残る。Microsoftのレート制限計算はpromptと最大出力token数を含む。モデルリクエスト上限を容量内へ調整し、再評価で説明LLM SucceededとSchema検証通過を確認するまで、この不具合は未解決として扱う。
+- PR #104の追加変更では、GPT-6 Lunaを維持したまま`max_completion_tokens`を1,500へ下げ、モデルへの作業案を重要度順で最大5件・簡潔な記述に制限する。10区分のExplanation Schemaと元通知／Evidence入力は維持し、繰り返されるClaim定義をJSON Schema `$defs`参照へまとめてSchemaを7,402から3,579文字へ縮小する。MicrosoftはStructured Outputsの`$defs`／`$ref`をサポート対象としている（[公式仕様](https://learn.microsoft.com/azure/foundry/openai/how-to/structured-outputs)）。これは容量3（3,000 TPM）に合わせる要求量調整であり、prompt token数もレート制限見積もりに含まれるため、HTTP 429解消を保証しない。PR merge・配置後、実通知再評価でExplanation SucceededとSchema検証通過を確認するまで未解決として扱う。
 
 [GitHub OIDCのimmutable subject仕様](https://docs.github.com/en/actions/reference/security/oidc#immutable-subject-claims)
 

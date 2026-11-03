@@ -68,8 +68,17 @@ function visitSchema(value: unknown, path = 'schema'): void {
 test('explanation Structured Outputs schema uses Azure-supported keywords and required properties', () => {
   const schema = explanationResponseJsonSchema() as {
     properties: {
+      explanation: {
+        properties: Record<string, { items: unknown }>
+      }
       workItems: {
         items: { properties: Record<string, unknown> }
+      }
+    }
+    $defs: {
+      explanation_claim: {
+        type: string
+        properties: Record<string, unknown>
       }
     }
   }
@@ -90,4 +99,16 @@ test('explanation Structured Outputs schema uses Azure-supported keywords and re
     ).enum,
     [true],
   )
+  assert.equal(
+    JSON.stringify(schema.properties.explanation.properties.impact!.items),
+    JSON.stringify({ $ref: '#/$defs/explanation_claim' }),
+  )
+  assert.equal(
+    JSON.stringify(schema.properties.explanation.properties.humanChecks!.items),
+    JSON.stringify({ $ref: '#/$defs/explanation_claim' }),
+  )
+  assert.ok(schema.$defs.explanation_claim)
+  assert.equal(schema.$defs.explanation_claim.type, 'object')
+  assert.ok(schema.$defs.explanation_claim.properties.text)
+  assert.ok(JSON.stringify(schema).length < 4000)
 })
