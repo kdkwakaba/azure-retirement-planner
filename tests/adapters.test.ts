@@ -152,6 +152,14 @@ test('GPT-6 Luna explanation request stays within the configured token and work-
     (requestBody?.messages as Array<{ content: string }>)[0]?.content ?? '',
     /最大2件/,
   )
+  assert.match(
+    (requestBody?.messages as Array<{ content: string }>)[0]?.content ?? '',
+    /impactは具体的な影響のみを説明し、日付・期限・廃止日程は記載しない/,
+  )
+  assert.match(
+    (requestBody?.messages as Array<{ content: string }>)[0]?.content ?? '',
+    /Microsoft公式の日程・仕様はmicrosoftFactsに記載する/,
+  )
   const sentInput = JSON.parse(
     (requestBody?.messages as Array<{ content: string }>)[1]?.content ?? '{}',
   ) as {

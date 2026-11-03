@@ -8,6 +8,7 @@ import {
   assessmentStatusDisplay,
   coordinationDisplay,
   criticalWorkloadDisplay,
+  deduplicateExplanationClaims,
   decisionStatusDisplay,
   evidenceDisplay,
   explanationSectionDisplay,
@@ -98,6 +99,73 @@ test('known values remain visible without being replaced by fallback text', () =
     milestoneDateDisplay(null, '26 August 2026'),
     '公式原文の記載: 26 August 2026（日付の適用範囲を確認）',
   )
+})
+
+test('explanation display consolidates repeated facts and keeps official dates in Microsoft facts', () => {
+  const source = fixture().explanation
+  const evidenceId = fixture().event.evidence[0]!.id
+  const schedule = {
+    id: 'official-date',
+    text: 'Microsoft公式の廃止日は31 March 2027です。',
+    kind: 'Confirmed Fact' as const,
+    evidenceIds: [evidenceId],
+    decisionRefs: [],
+  }
+  const impact = {
+    id: 'impact-with-duplicated-date',
+    text: '2027-03-31が廃止日です。廃止後は対象機能を利用できなくなる可能性があります。',
+    kind: 'Derived Fact' as const,
+    evidenceIds: [evidenceId, 'same-date-impact-evidence'],
+    decisionRefs: [],
+  }
+  const repeatedFactor = {
+    id: 'factor-1',
+    text: 'このリソースの利用有無を確認する必要があります。',
+    kind: 'Derived Fact' as const,
+    evidenceIds: [evidenceId],
+    decisionRefs: [],
+  }
+  const repeatedMissingInfo = {
+    id: 'missing-1',
+    text: 'このリソースの利用有無を確認する必要があります。',
+    kind: 'Unknown' as const,
+    evidenceIds: [evidenceId],
+    decisionRefs: [],
+  }
+  const explanation = {
+    ...source,
+    microsoftFacts: [schedule],
+    impact: [impact],
+    increasingFactors: [repeatedFactor],
+    missingInformation: [repeatedMissingInfo],
+  }
+
+  const sections = deduplicateExplanationClaims(explanation)
+  const displayedOfficial = sections.find(
+    ([name]) => name === 'microsoftFacts',
+  )![1]
+  const displayedImpact = sections.find(([name]) => name === 'impact')![1]
+  assert.equal(
+    displayedOfficial[0]!.text,
+    'Microsoft公式の廃止日は31 March 2027です。',
+  )
+  assert.equal(
+    displayedImpact[0]!.text,
+    '廃止後は対象機能を利用できなくなる可能性があります。',
+  )
+  assert.equal(
+    sections.filter(([name]) => name === 'increasingFactors').length,
+    1,
+  )
+  assert.equal(
+    sections.some(([name]) => name === 'missingInformation'),
+    false,
+  )
+  assert.equal(
+    displayedOfficial[0]!.evidenceIds.includes('same-date-impact-evidence'),
+    true,
+  )
+  assert.equal(explanation.impact[0]!.text, impact.text)
 })
 
 test('usage verification confirmation reasons combine similar resource and missing-information messages', () => {
