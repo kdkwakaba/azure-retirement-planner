@@ -148,7 +148,11 @@ APIの日次モデル呼出枠は200件で、同時予約をETagで制御する�
 
 - PR #104配置後の実通知再評価もHTTP 429／Throttledとなったため、説明モデル要求だけに適用する長文抜粋を実装。通知本文、Evidence fact、milestone scope、リソース分類理由を先頭／末尾中心に制限し、Decision確率分布と説明に不要なモデル／Prompt／Rule識別子を送信対象から除く。
 - 元Assessment、保存Evidence、Decision-1入力、Evidence ID・公式URL・全Evidence行・構成識別／型付き属性・選択済みDecision項目は保持する。抜粋したテキストは省略部分を推測しないようモデルへ明示する。これは要求のトークン量を抑える対策であり、3,000 TPM内に収まることや429解消を保証しない。
-- 本変更は未配置。合成試験とCIを確認後、日本語PRで提示する。マージ／配置後の実通知再評価は、実行許可を得てから行う。説明LLM応答・Schema検証・説明品質は未確認。
+- PR #105をmain commit `24999ec7771cd487bbb5939564f761f8d66a9e69`でマージ。main CI [#41563758186](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41563758186)成功後、手動CD Plan [#41563890450](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41563890450)とApply／API・Exporter配置 [#41564072345](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41564072345)が成功した。Plan Hashは`5f5608b59adc90956c198cb769e4ae719cc99f65281d655a1ff4021d3d1d05db`で、専用RG内Modify 3、NoChange 19、Ignore 5。Create／Delete／Unsupported／Deployはなし。
+- 配置後、サイトHTTP 200、認証済みAPIでtest mode／decision reevaluation／Governance権限を確認。保存済み実通知の現行1件を再評価（Run `3f488fd2-4f9c-4a05-9d3b-dfbbdb2e5fac`）。Decision-1はSucceeded、説明段階は`InvalidResponse`／HTTP statusなしでRun Failed。HTTP 429は再現しなかったが、説明LLMの10区分／作業案Schema検証には到達したと確認できず、実説明品質も未確認。Snapshot保持、Assessment検証エラー0、作業項目1件（フォールバック）を確認。Azure対象再取得・変更、承認、GitHub登録はなし。
+- Application Insightsの直近traces／exceptions／dependenciesには該当記録がなかった。原因確認のため、Bicepで`records`コンテナの該当`model-raw` Blob 1個だけを直接読める条件付きStorage Blob Data Readerを一時付与し、`Blob.List`を拒否した状態で診断した。確認後すぐにロール割当を削除し、恒久的なRBAC変更はない。モデル本文は出力・転記していない。
+- 保存応答の安全なメタデータは`finish_reason=length`、本文0文字、拒否応答なし、prompt 2,425 tokens、completion上限1,500 tokensの全量がreasoning、合計3,925 tokensだった。`max_completion_tokens`はreasoningと可視回答に共通の上限であり、reasoningが全枠を消費して空の本文を返し、その後のJSON解析が`InvalidResponse`となったことが失敗原因。Microsoft公式仕様はChat Completionsでreasoning tokensも`max_completion_tokens`に含まれること、`reasoning_effort`が利用量を抑える制御であることを説明している（[Reasoning models](https://learn.microsoft.com/azure/foundry/openai/how-to/reasoning)）。
+- 修正として説明要求に`reasoning_effort=low`を明示し、`finish_reason=length`／空本文をJSON解析前に検出して失敗を明確にする。出力上限1,500、10区分Schema、作業案上限5件は維持する。修正版PRのCI後、マージ・配置した上で保存済み実通知を1件だけ再評価し、可視応答・Schema検証・Token使用内訳を確認する。実際の修正後応答と説明品質は未確認。
 
 [GitHub OIDCのimmutable subject仕様](https://docs.github.com/en/actions/reference/security/oidc#immutable-subject-claims)
 
