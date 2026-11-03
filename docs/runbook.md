@@ -176,6 +176,13 @@ APIの日次モデル呼出枠は200件で、同時予約をETagで制御する�
 - 2,500上限では要求Token見積もりがprompt 2,457＋completion上限2,500で約4,957 tokensとなり、deploymentの3,000 TPM割当を超える。Azureのレート制限見積もりはpromptと設定上限を含むため、同一分内に説明要求が集中すると後続要求が429になる可能性がある。現行1,500上限でも同じ見積もりが3,957 tokensで割当超過だった。モデル応答の安定性を改善するための出力余裕と、バースト時の429リスクを分けて監視する。詳しくは[Microsoft公式quota説明](https://learn.microsoft.com/azure/foundry/openai/how-to/quota)を参照。
 - 実装変更は`EXPLANATION_MAX_COMPLETION_TOKENS=2500`と説明Prompt版更新に限定し、GPT-6 Luna、`reasoning_effort=none`、`verbosity=low`、10区分Schemaと出力項目数は維持する。CI契約試験で送信上限を確認し、マージ・配置後に保存済み実通知を一度再評価して`finish_reason=stop`、JSON／Schema成功、根拠品質を検証する。2,500でも安定しない場合は上限だけをさらに増やさず、TPMと出力構造を再評価する。
 
+### 説明LLMのEvidence参照と件数制約
+
+- PR #114配置後の実通知再評価は説明LLMの応答・JSON・Schema検証に成功したが、11件のClaim中4件にEvidence ID欠落／不明ID参照があり、業務検証で拒否された。説明Schemaは配列の件数上限をプロンプトだけで依頼していたため、モデルは区分内へ複数件を返せる形だった。
+- Azure Structured Outputsの公式仕様では`enum`とnullable `anyOf`は利用できる一方、`maxItems`は非対応。従って文字列配列の件数制約をSchemaへ書く方法は使わず、各説明区分をClaimまたはnullの固定プロパティ、作業案を2つのClaimまたはnullの固定プロパティに変更する（[Structured Outputs JSON Schema制約](https://learn.microsoft.com/azure/foundry/openai/how-to/structured-outputs)）。
+- リクエスト用コピー内のEvidence IDを`evidence-N`へ別名化し、Claim／作業案の出力Schemaでは、そのリクエストに存在する別名だけを`enum`として許可する。モデル応答をアプリが元のEvidence IDへ解決し、許可候補外・重複参照は結果保存前に拒否する。保存済み通知・Evidence原本やDecision-1入力は書き換えない。
+- 実装後は合成契約テストで区分件数上限、Evidence enum、別名から実IDへの対応、候補外参照拒否を確認する。main配置後は保存済み実通知でAPI Managed Identityを通した説明品質を再評価するまで、実環境品質を合格扱いしない。
+
 ### 2026-11-03 PR #108 配置後の none 再評価
 
 - PR #108 merge commit `4308fe6b5c2446538587f002c4bc76b0f41b0ffe`のmain CI [#41591044022](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41591044022)成功成果物を使用。CD Plan [#41591167232](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41591167232)、Apply／API・Exporter配置 [#41591318311](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/41591318311)が成功。Plan Hash `5f5608b59adc90956c198cb769e4ae719cc99f65281d655a1ff4021d3d1d05db`。What-Ifは専用RG内のAPI／Exporter App Service 2件Modify、Create／Deleteなし。
