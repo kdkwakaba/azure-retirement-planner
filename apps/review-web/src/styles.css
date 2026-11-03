@@ -223,6 +223,22 @@ small {
   color: #526c6d;
   overflow-wrap: anywhere;
 }
+.evidence-references {
+  display: block;
+  line-height: 1.7;
+}
+.evidence-reference {
+  margin: 2px 4px;
+  padding: 3px 8px;
+  color: #155e56;
+  background: #e8f4f0;
+  border: 1px solid #a9cec2;
+  border-radius: 999px;
+  font-size: 12px;
+}
+.evidence-reference:hover {
+  background: #d4ebe3;
+}
 .operations-summary {
   margin-bottom: 20px;
 }
