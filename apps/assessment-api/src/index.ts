@@ -7,6 +7,7 @@ import {
   approvalSchema,
   businessContextSchema,
   correctionSchema,
+  documentSourceSchema,
 } from '@arp/contracts'
 import {
   hash,
@@ -37,6 +38,7 @@ import {
   applyReviewWorkflowPolicy,
   isTestReevaluation,
   processDecisionReevaluation,
+  processSharePointSync,
   synchronize,
 } from './service.ts'
 import {
@@ -262,6 +264,22 @@ app.http('api', {
       }
       if (request.method === 'GET' && path === 'project-progress')
         return reply(200, await store.projectProgress())
+      if (request.method === 'GET' && path === 'sharepoint-source') {
+        requireUserRole(principal, apiRolePolicy.businessContext)
+        const query = z
+          .object({ sourceId: z.string().min(1).max(100) })
+          .strict()
+          .parse({ sourceId: request.query.get('sourceId') })
+        return reply(200, await store.sharePointSource(query.sourceId))
+      }
+      if (request.method === 'GET' && path === 'sharepoint-sync-status') {
+        requireUserRole(principal, apiRolePolicy.sync)
+        const query = z
+          .object({ runId: z.uuid() })
+          .strict()
+          .parse({ runId: request.query.get('runId') })
+        return reply(200, await store.sharePointSyncRun(query.runId))
+      }
       if (request.method === 'GET' && path === 'business-context') {
         const query = z
           .object({ workloadId: z.string().min(1).max(200) })
@@ -292,6 +310,57 @@ app.http('api', {
             reviewedAt: new Date().toISOString(),
           })
           return reply(200, await store.businessContext(payload.workloadId))
+        }
+        if (path === 'sharepoint-source') {
+          requireUserRole(principal, apiRolePolicy.businessContext)
+          const content = await request.text()
+          if (Buffer.byteLength(content) > 200000)
+            return reply(413, { error: 'Request too large' })
+          const source = documentSourceSchema.parse(JSON.parse(content))
+          if (
+            source.tenantId !== config().tenantId ||
+            source.sampleOnly !== true
+          )
+            return reply(400, {
+              error: 'Only same-tenant sample SharePoint sources are allowed',
+            })
+          const sourceHash = await store.saveSharePointSource(source)
+          return reply(200, { source, sourceHash })
+        }
+        if (path === 'sharepoint-sync') {
+          requireUserRole(principal, apiRolePolicy.sync)
+          if (process.env.SHAREPOINT_SYNC_ENABLED !== 'true')
+            return reply(503, { error: 'SharePoint document sync disabled' })
+          const body = z
+            .object({ sourceId: z.string().min(1).max(100) })
+            .strict()
+            .parse(JSON.parse(await request.text()))
+          const registered = await store.sharePointSource(body.sourceId)
+          if (!registered)
+            return reply(404, { error: 'SharePoint source not found' })
+          if (
+            registered.source.tenantId !== config().tenantId ||
+            registered.source.sampleOnly !== true
+          )
+            return reply(400, { error: 'SharePoint source is not eligible' })
+          const now = new Date().toISOString()
+          const run = await store.createSharePointSyncRun({
+            runId: randomUUID(),
+            source: registered.source,
+            sourceConfigurationHash: registered.sourceHash,
+            requestedBy: principal.id,
+            requestedAt: now,
+          })
+          try {
+            await store.dispatchSharePointSyncs()
+          } catch (error) {
+            logProcessingFailure(
+              'sharepoint-sync-dispatch',
+              error,
+              correlationId,
+            )
+          }
+          return reply(202, await store.sharePointSyncRun(run.runId))
         }
         if (path === 'sync') {
           requireUserRole(principal, apiRolePolicy.sync)
@@ -989,6 +1058,34 @@ app.storageQueue('assess', {
           .parse(message)
         await processDecisionReevaluation(job.runId)
       } else await assessSnapshot(message)
+    }),
+})
+app.storageQueue('sharepointDocumentSync', {
+  queueName: 'sharepoint-document-syncs',
+  connection: 'DATA_QUEUE',
+  handler: async (message) =>
+    withProcessingFailureLog('sharepoint-document-sync', async () => {
+      const job = z.object({ runId: z.uuid() }).strict().parse(message)
+      await processSharePointSync(job.runId)
+    }),
+})
+app.storageQueue('sharepointDocumentSyncPoison', {
+  queueName: 'sharepoint-document-syncs-poison',
+  connection: 'DATA_QUEUE',
+  handler: async (message) =>
+    withProcessingFailureLog('sharepoint-document-sync-poison', async () => {
+      const job = z.object({ runId: z.uuid() }).strict().parse(message)
+      await new AzureStore(config().account).failExhaustedSharePointSyncRun(
+        job.runId,
+      )
+    }),
+})
+app.timer('sharepointDocumentSyncDispatch', {
+  schedule: '0 */1 * * * *',
+  handler: async () =>
+    withProcessingFailureLog('sharepoint-document-sync-dispatch', async () => {
+      if (process.env.SHAREPOINT_SYNC_ENABLED !== 'true') return
+      await new AzureStore(config().account).dispatchSharePointSyncs()
     }),
 })
 app.timer('decisionReevaluationDispatch', {

@@ -222,6 +222,68 @@ export const sharePointSnapshotSchema = z
       seen.add(document.itemId)
     })
   })
+export const sharePointSyncRunSchema = z
+  .object({
+    runId: z.uuid(),
+    sourceId: z.string().min(1).max(100),
+    sourceConfigurationHash: z.string().regex(/^[a-f0-9]{64}$/),
+    configurationVersion: z.string().min(1).max(100),
+    sampleOnly: z.boolean(),
+    requestedBy: z.uuid(),
+    requestedAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+    state: z.enum([
+      'Pending',
+      'Queued',
+      'Processing',
+      'Retrying',
+      'Succeeded',
+      'Failed',
+    ]),
+    attemptCount: z.number().int().min(0).max(10),
+    snapshotHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .nullable(),
+    addedItemIds: z.array(z.string().min(1).max(500)).max(100),
+    changedItemIds: z.array(z.string().min(1).max(500)).max(100),
+    removedItemIds: z.array(z.string().min(1).max(500)).max(100),
+    unchangedItemIds: z.array(z.string().min(1).max(500)).max(100),
+    errorCategory: z
+      .enum([
+        'Unauthorized',
+        'Forbidden',
+        'Throttled',
+        'UpstreamUnavailable',
+        'Timeout',
+        'InvalidResponse',
+        'NetworkError',
+        'Unknown',
+      ])
+      .nullable(),
+    errorHttpStatus: z.number().int().min(100).max(599).nullable(),
+  })
+  .strict()
+  .superRefine((run, context) => {
+    if (run.sampleOnly !== true)
+      context.addIssue({
+        code: 'custom',
+        path: ['sampleOnly'],
+        message: 'Initial SharePoint sync is restricted to sample sources',
+      })
+    if (run.state === 'Succeeded' && run.snapshotHash === null)
+      context.addIssue({
+        code: 'custom',
+        path: ['snapshotHash'],
+        message: 'Successful SharePoint sync requires a snapshot',
+      })
+    if (run.state === 'Failed' && run.errorCategory === null)
+      context.addIssue({
+        code: 'custom',
+        path: ['errorCategory'],
+        message: 'Failed SharePoint sync requires a safe error category',
+      })
+  })
 export const documentTextBlockSchema = z
   .object({
     sourceId: z.string().min(1).max(100),
@@ -695,6 +757,7 @@ export type Evidence = z.infer<typeof evidenceSchema>
 export type BusinessContext = z.infer<typeof businessContextSchema>
 export type DocumentSource = z.infer<typeof documentSourceSchema>
 export type SharePointSnapshot = z.infer<typeof sharePointSnapshotSchema>
+export type SharePointSyncRun = z.infer<typeof sharePointSyncRunSchema>
 export type DocumentRevision = z.infer<typeof documentRevisionSchema>
 export type DocumentTextBlock = z.infer<typeof documentTextBlockSchema>
 export type DocumentText = z.infer<typeof documentTextSchema>

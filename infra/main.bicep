@@ -40,6 +40,7 @@ param exportEnabled bool = false
 param testModeEnabled bool = false
 param syntheticUatEnabled bool = false
 param decisionReevaluationEnabled bool = false
+param sharePointSyncEnabled bool = false
 param processingFailureAlertsEnabled bool = false
 param processingFailureAlertActionGroupId string = ''
 
@@ -69,7 +70,7 @@ resource records 'Microsoft.Storage/storageAccounts/blobServices/containers@2023
 resource tableService 'Microsoft.Storage/storageAccounts/tableServices@2023-05-01' = { parent: dataStorage, name: 'default' }
 resource state 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-05-01' = { parent: tableService, name: 'ArpState' }
 resource queueService 'Microsoft.Storage/storageAccounts/queueServices@2023-05-01' existing = { parent: dataStorage, name: 'default' }
-resource queues 'Microsoft.Storage/storageAccounts/queueServices/queues@2023-05-01' = [for name in ['assessments','assessments-poison','exports','exports-poison']: { parent: queueService, name: name }]
+resource queues 'Microsoft.Storage/storageAccounts/queueServices/queues@2023-05-01' = [for name in ['assessments','assessments-poison','exports','exports-poison','sharepoint-document-syncs','sharepoint-document-syncs-poison']: { parent: queueService, name: name }]
 resource vault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: '${prefix}-kv-${suffix}'
   location: location
@@ -191,6 +192,7 @@ resource functions 'Microsoft.Web/sites@2024-11-01' = [for (name,i) in ['api','e
         { name: 'TEST_MODE_ENABLED', value: toLower(string(testModeEnabled)) }
         { name: 'SYNTHETIC_UAT_ENABLED', value: toLower(string(syntheticUatEnabled)) }
         { name: 'DECISION_REEVALUATION_ENABLED', value: toLower(string(decisionReevaluationEnabled)) }
+        { name: 'SHAREPOINT_SYNC_ENABLED', value: toLower(string(sharePointSyncEnabled)) }
         { name: 'SYNC_ENABLED', value: toLower(string(syncEnabled)) }
         { name: 'PROJECT_PROGRESS_SYNC_ENABLED', value: toLower(string(projectProgressSyncEnabled)) }
         { name: 'INGEST_ENABLED', value: toLower(string(ingestEnabled)) }
