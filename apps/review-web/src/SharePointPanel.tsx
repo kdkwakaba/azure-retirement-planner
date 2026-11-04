@@ -313,6 +313,7 @@ export function SharePointPanel({
           grounding: documentGroundingSchema,
           groundingHash: z.string().regex(/^[a-f0-9]{64}$/),
           addedCandidateCount: z.number().int().nonnegative(),
+          updatedLinkCandidateCount: z.number().int().nonnegative(),
           promptVersion: z.string(),
           alreadyExtracted: z.boolean(),
         })
@@ -321,6 +322,10 @@ export function SharePointPanel({
             sourceId: selectedSource.sourceId,
             workloadId: selectedWorkloadId,
             itemId,
+            assessmentId:
+              assessment?.workloadId === selectedWorkloadId
+                ? assessment.id
+                : null,
           }),
         )
       setGrounding(result.grounding)
@@ -340,8 +345,8 @@ export function SharePointPanel({
       )
       setNotice(
         result.alreadyExtracted
-          ? `この文書・版は抽出済みです（抽出版 ${result.promptVersion}）。`
-          : `文書から候補${result.addedCandidateCount}件を追加しました（抽出版 ${result.promptVersion}）。内容を確認してください。`,
+          ? '保存済みのモデル抽出を再利用し、Resource ID／名前の完全一致候補を再計算しました（モデル呼出しなし）。'
+          : `文書から候補${result.addedCandidateCount}件を追加、リソース候補${result.updatedLinkCandidateCount}件を更新しました（抽出版 ${result.promptVersion}）。内容を確認してください。`,
       )
     } catch (reason) {
       setError(
@@ -682,33 +687,49 @@ export function SharePointPanel({
                             <legend>対象Azureリソースとの対応（任意）</legend>
                             {assessment?.workloadId === selectedWorkloadId &&
                             assessment.resources.length > 0 ? (
-                              assessment.resources.map((resource) => (
-                                <label key={resource.id}>
-                                  <input
-                                    checked={(
-                                      selectedResourceIds[fact.factId] ?? []
-                                    ).includes(resource.id)}
-                                    onChange={(event) =>
-                                      setSelectedResourceIds((previous) => {
-                                        const ids = new Set(
-                                          previous[fact.factId] ?? [],
-                                        )
-                                        if (event.target.checked)
-                                          ids.add(resource.id)
-                                        else ids.delete(resource.id)
-                                        return {
-                                          ...previous,
-                                          [fact.factId]: [...ids],
-                                        }
-                                      })
-                                    }
-                                    type="checkbox"
-                                  />
-                                  <span>
-                                    {resource.type} — {resource.id}
-                                  </span>
-                                </label>
-                              ))
+                              assessment.resources.map((resource) => {
+                                const candidate =
+                                  fact.resourceLinkCandidates?.find(
+                                    (item) => item.resourceId === resource.id,
+                                  )
+                                return (
+                                  <label key={resource.id}>
+                                    <input
+                                      checked={(
+                                        selectedResourceIds[fact.factId] ?? []
+                                      ).includes(resource.id)}
+                                      onChange={(event) =>
+                                        setSelectedResourceIds((previous) => {
+                                          const ids = new Set(
+                                            previous[fact.factId] ?? [],
+                                          )
+                                          if (event.target.checked)
+                                            ids.add(resource.id)
+                                          else ids.delete(resource.id)
+                                          return {
+                                            ...previous,
+                                            [fact.factId]: [...ids],
+                                          }
+                                        })
+                                      }
+                                      type="checkbox"
+                                    />
+                                    <span>
+                                      {resource.type} — {resource.id}
+                                      {candidate && (
+                                        <small>
+                                          文書に
+                                          {candidate.matchKind ===
+                                          'ExactResourceId'
+                                            ? 'Resource ID'
+                                            : 'リソース名'}
+                                          の完全一致あり（候補。確認が必要）
+                                        </small>
+                                      )}
+                                    </span>
+                                  </label>
+                                )
+                              })
                             ) : (
                               <p>
                                 同じWorkloadの評価を選択すると、その評価に含まれるAzureリソースだけを紐付けできます。文書の記述と一致するリソースがなければ空欄のままにしてください。

@@ -9,6 +9,7 @@ import {
   type DocumentFactProposal,
   type DocumentRevision,
   type DocumentText,
+  type ResourceImpact,
 } from '@arp/contracts'
 import { credential } from './azure.ts'
 import { jsonRequest, safeModelEndpoint } from './http.ts'
@@ -31,6 +32,9 @@ const unsupportedSchemaKeywords = new Set([
   'minimum',
   'pattern',
 ])
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
 
 function sanitizeStructuredOutputSchema(schema: unknown): unknown {
   if (Array.isArray(schema))
@@ -68,12 +72,52 @@ function extractionResponseJsonSchema(): unknown {
   )
 }
 
+export function bindDocumentFactProposalsFromResponse(input: {
+  document: DocumentText
+  workloadId: string
+  raw: unknown
+  availableResources?: ResourceImpact[]
+}): DocumentFact[] {
+  const payload = z
+    .object({
+      choices: z
+        .array(
+          z.object({
+            finish_reason: z.string().nullable().optional(),
+            message: z.object({ content: z.string().nullable().optional() }),
+          }),
+        )
+        .min(1),
+    })
+    .parse(input.raw)
+  const choice = payload.choices[0]!
+  if (choice.finish_reason === 'length')
+    throw new SyntaxError('Document fact extraction truncated at token limit')
+  const content = choice.message.content
+  if (typeof content !== 'string' || !content.trim())
+    throw new SyntaxError('Document fact extraction has no visible content')
+  let decoded: unknown
+  try {
+    decoded = JSON.parse(content)
+  } catch {
+    throw new SyntaxError('Document fact extraction is not valid JSON')
+  }
+  const result = factProposalResponseSchema().parse(decoded)
+  return bindDocumentFactProposals({
+    document: input.document,
+    workloadId: input.workloadId,
+    proposals: result.proposals,
+    availableResources: input.availableResources,
+  })
+}
+
 export function bindDocumentFactProposals(input: {
   document: DocumentText
   workloadId: string
   proposals: DocumentFactProposal[]
+  availableResources?: ResourceImpact[]
 }): DocumentFact[] {
-  const { document, workloadId, proposals } = input
+  const { document, workloadId, proposals, availableResources = [] } = input
   const blocks = new Map(document.blocks.map((block) => [block.blockId, block]))
   if (blocks.size !== document.blocks.length)
     throw new Error('Document text contains duplicate block IDs')
@@ -113,6 +157,37 @@ export function bindDocumentFactProposals(input: {
         }),
       )
       .digest('hex')
+    const resourceLinkCandidates: NonNullable<
+      DocumentFact['resourceLinkCandidates']
+    > = []
+    if (proposal.kind === 'ResourceDependency')
+      for (const resource of availableResources) {
+        const resourceId = resource.id
+        if (
+          new RegExp(
+            `(?<![A-Za-z0-9._-])${escapeRegex(resourceId)}(?![A-Za-z0-9._-])`,
+            'iu',
+          ).test(block.text)
+        ) {
+          resourceLinkCandidates.push({
+            resourceId,
+            matchKind: 'ExactResourceId',
+          })
+          continue
+        }
+        const name = resource.properties.name
+        if (typeof name !== 'string' || name.length < 3) continue
+        if (
+          new RegExp(
+            `(?<![A-Za-z0-9._-])${escapeRegex(name)}(?![A-Za-z0-9._-])`,
+            'iu',
+          ).test(block.text)
+        )
+          resourceLinkCandidates.push({
+            resourceId,
+            matchKind: 'ExactResourceName',
+          })
+      }
     return {
       factId,
       workloadId,
@@ -123,6 +198,7 @@ export function bindDocumentFactProposals(input: {
       documentContentHash: block.contentHash,
       locator,
       reviewStatus: 'Candidate',
+      ...(resourceLinkCandidates.length ? { resourceLinkCandidates } : {}),
       sampleOnly: block.sampleOnly,
     }
   })
@@ -134,6 +210,7 @@ export async function extractDocumentFacts(
   document: DocumentText,
   workloadId: string,
   recordRaw: (raw: unknown) => Promise<void>,
+  availableResources: ResourceImpact[] = [],
 ): Promise<{ facts: DocumentFact[]; raw: unknown; promptVersion: string }> {
   if (!workloadId.trim() || workloadId.length > 200)
     throw new Error('Invalid document fact workload ID')
@@ -202,39 +279,15 @@ export async function extractDocumentFacts(
     },
   )
   await recordRaw(raw)
-  const payload = z
-    .object({
-      choices: z
-        .array(
-          z.object({
-            finish_reason: z.string().nullable().optional(),
-            message: z.object({ content: z.string().nullable().optional() }),
-          }),
-        )
-        .min(1),
-    })
-    .parse(raw)
-  const choice = payload.choices[0]!
-  if (choice.finish_reason === 'length')
-    throw new SyntaxError('Document fact extraction truncated at token limit')
-  const content = choice.message.content
-  if (typeof content !== 'string' || !content.trim())
-    throw new SyntaxError('Document fact extraction has no visible content')
-  let decoded: unknown
-  try {
-    decoded = JSON.parse(content)
-  } catch {
-    throw new SyntaxError('Document fact extraction is not valid JSON')
-  }
-  const result = factProposalResponseSchema().parse(decoded)
-  const facts = bindDocumentFactProposals({
+  const facts = bindDocumentFactProposalsFromResponse({
     document,
     workloadId,
-    proposals: result.proposals,
+    raw,
+    availableResources,
   })
   return {
     facts,
-    raw: payload,
+    raw,
     promptVersion: DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION,
   }
 }

@@ -172,6 +172,18 @@ test('resource dependency links are explicit and stay scoped to the selected Azu
   const evidence = confirmedDocumentFactEvidence(grounding)
   assert.deepEqual(evidence[0]?.subjectIds, ['sample-workload', resourceId])
   assert.equal(
+    confirmedDocumentGroundingInputHash({
+      ...grounding,
+      facts: grounding.facts.map((item) => ({
+        ...item,
+        resourceLinkCandidates: [
+          { resourceId, matchKind: 'ExactResourceName' as const },
+        ],
+      })),
+    }),
+    confirmedDocumentGroundingInputHash(grounding),
+  )
+  assert.equal(
     scopeEvidenceToWorkload({
       evidence,
       eventId: 'event-1',

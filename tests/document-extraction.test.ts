@@ -89,6 +89,100 @@ test('fact proposals inherit exact source and sample metadata from cited blocks'
   )
 })
 
+test('resource dependency suggestions require an exact ID or resource-name token match', () => {
+  const resourceId =
+    '/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/order-api'
+  const document = documentTextSchema.parse({
+    schemaVersion: '1',
+    revision: { ...metadata, contentHash: 'c'.repeat(64) },
+    blocks: [
+      {
+        sourceId: metadata.sourceId,
+        itemId: metadata.itemId,
+        contentHash: 'c'.repeat(64),
+        blockId: 'dependency-paragraph',
+        kind: 'Paragraph',
+        text: '本番処理はorder-api-proxyを呼ぶ。',
+        heading: '接続先',
+        sheet: null,
+        row: null,
+        cell: null,
+        sampleOnly: true,
+      },
+    ],
+  })
+  const fact = bindDocumentFactProposals({
+    document,
+    workloadId: 'sample-workload',
+    proposals: [
+      {
+        blockId: 'dependency-paragraph',
+        kind: 'ResourceDependency',
+        statement: '本番処理はorder-apiを利用する。',
+      },
+    ],
+    availableResources: [
+      {
+        id: resourceId,
+        properties: { name: 'order-api' },
+      } as never,
+    ],
+  })
+  assert.equal(fact[0]?.resourceLinkCandidates, undefined)
+  const nameDocument = documentTextSchema.parse({
+    ...document,
+    blocks: [
+      {
+        ...document.blocks[0]!,
+        text: '本番処理はorder-apiを利用する。',
+      },
+    ],
+  })
+  assert.deepEqual(
+    bindDocumentFactProposals({
+      document: nameDocument,
+      workloadId: 'sample-workload',
+      proposals: [
+        {
+          blockId: 'dependency-paragraph',
+          kind: 'ResourceDependency',
+          statement: '本番処理はorder-apiを利用する。',
+        },
+      ],
+      availableResources: [
+        { id: resourceId, properties: { name: 'order-api' } } as never,
+      ],
+    })[0]?.resourceLinkCandidates,
+    [{ resourceId, matchKind: 'ExactResourceName' }],
+  )
+  const idDocument = documentTextSchema.parse({
+    ...document,
+    blocks: [
+      {
+        ...document.blocks[0]!,
+        text: `本番処理は${resourceId}に依存する。`,
+      },
+    ],
+  })
+  assert.deepEqual(
+    bindDocumentFactProposals({
+      document: idDocument,
+      workloadId: 'sample-workload',
+      proposals: [
+        {
+          blockId: 'dependency-paragraph',
+          kind: 'ResourceDependency',
+          statement: '本番処理は対象リソースに依存する。',
+        },
+      ],
+      availableResources: [
+        { id: resourceId, properties: { name: 'unmentioned-name' } } as never,
+      ],
+    })[0]?.resourceLinkCandidates,
+    [{ resourceId, matchKind: 'ExactResourceId' }],
+  )
+})
+
 test('document fact extraction uses a bounded untrusted-input prompt and binds citations', async (t) => {
   t.mock.method(credential, 'getToken', async () => ({
     token: 'synthetic',
