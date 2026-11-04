@@ -429,6 +429,7 @@ app.http('api', {
           }
         }
         if (path === 'sharepoint-facts/extract') {
+          processingStage = 'sharepoint-fact-extraction-request'
           requireUserRole(principal, apiRolePolicy.businessContext)
           if (process.env.SHAREPOINT_FACT_EXTRACTION_ENABLED !== 'true')
             return reply(503, { error: 'SharePoint fact extraction disabled' })
@@ -441,6 +442,7 @@ app.http('api', {
             })
             .strict()
             .parse(JSON.parse(await request.text()))
+          processingStage = 'sharepoint-fact-source-read'
           const registered = await store.sharePointSource(body.sourceId)
           if (
             !registered ||
@@ -448,6 +450,7 @@ app.http('api', {
             !registered.source.workloadIds.includes(body.workloadId)
           )
             return reply(404, { error: 'Eligible sample source not found' })
+          processingStage = 'sharepoint-fact-assessment-read'
           const assessment = body.assessmentId
             ? await store.assessment(body.assessmentId)
             : null
@@ -455,6 +458,7 @@ app.http('api', {
             return reply(409, {
               error: 'Selected assessment belongs to a different Workload',
             })
+          processingStage = 'sharepoint-fact-snapshot-read'
           const snapshot = await store.sharePointSnapshot(body.sourceId)
           const revision = snapshot?.documents.find(
             (document) => document.itemId === body.itemId,
@@ -469,6 +473,7 @@ app.http('api', {
             return reply(409, {
               error: 'Document is not in the current snapshot',
             })
+          processingStage = 'sharepoint-fact-grounding-read'
           const existing = await store.documentGrounding(body.workloadId, true)
           if (
             existing &&
@@ -481,10 +486,12 @@ app.http('api', {
           const endpoint = required('EXPLANATION_ENDPOINT')
           const deployment = required('EXPLANATION_DEPLOYMENT')
           const modelVersion = required('EXPLANATION_MODEL_VERSION')
+          processingStage = 'sharepoint-fact-document-read'
           const document = await store.sharePointDocument(
             body.sourceId,
             revision.contentHash,
           )
+          processingStage = 'sharepoint-fact-document-parse'
           const extractedText = await extractDocumentText(document, {
             sourceId: revision.sourceId,
             itemId: revision.itemId,
@@ -516,6 +523,7 @@ app.http('api', {
           let raw: unknown
           let reusedExtraction = false
           if (priorExtraction) {
+            processingStage = 'sharepoint-fact-cached-response-read'
             try {
               raw = await store.get('model-raw', rawId)
               reusedExtraction = true
@@ -541,7 +549,9 @@ app.http('api', {
               promptVersion: DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION,
             }
           } else {
+            processingStage = 'sharepoint-fact-budget-reservation'
             await store.reserveModelCall(config().modelCalls)
+            processingStage = 'sharepoint-fact-model-extraction'
             extraction = await extractDocumentFacts(
               endpoint,
               deployment,
@@ -638,6 +648,7 @@ app.http('api', {
             observedAt: new Date().toISOString(),
           })
           let groundingHash: string
+          processingStage = 'sharepoint-fact-grounding-save'
           try {
             groundingHash = await store.saveDocumentGrounding(
               grounding,
