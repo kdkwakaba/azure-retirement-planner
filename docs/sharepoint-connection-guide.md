@@ -73,12 +73,74 @@ GET https://graph.microsoft.com/v1.0/drives/{Drive ID}/items/{Folder Item ID}/ch
 
 ID検索に使ったGraph Explorerの利用者権限は、アプリの権限には引き継がれない。同期時の接続主体はAPI Function Appの**システム割り当てManaged Identity**。
 
-1. `infra/main.bicep`のデプロイ出力`apiPrincipalId`、またはAPI Function AppのIdentity設定からAPI Managed IdentityのPrincipal/Object IDを確認する。
-2. Entra管理者がMicrosoft Graphの**Application permission** `Sites.Selected`を当該Managed Identityへ付与し、管理者同意する。
-3. 管理者の別の権限付き実行コンテキストから、対象サイトへ当該Managed Identityの**Client ID/App ID**を指定し、`read`ロールを付与する。権限付与に必要な強いGraph権限をアプリの実行Identityへ与えない。
-4. 権限が伝播した後、アプリの同期を検証する。
+### 3.1 Graphアプリケーション権限はBicepで管理
 
-`Sites.Selected`の同意だけでは対象サイトを読めない。選択したサイトへの個別許可も必要。サイト単位で`read`を付与するとGraph上の認可範囲はサイトであり、アプリが同期するフォルダを指定してもGraph権限自体はフォルダ単位には狭まらない。テストフォルダの同じサイトに他の機密文書がある場合は、専用サイトを使うか、フォルダ／ライブラリ単位権限のサポートを別途確認する。
+Microsoft Graph Bicep拡張の`infra/bootstrap/sharepoint/permissions.bicep`が、API Managed IdentityへGraphの**Application permission** `Sites.Selected`を割り当てる。デプロイ担当者はMicrosoft Graph上のアプリロール割当てを管理できる権限が必要。この特権はAPI実行Identityや通常のGitHub CDへ付けない。
+
+PowerShellでARP本体のResource Group名を設定し、APIのPrincipal/Object IDを出力から取得する。続けて、既存Resource Groupをスコープに専用Bootstrap Bicepを実行する。
+
+```powershell
+$resourceGroup = '<ARP_RESOURCE_GROUP>'
+$apiPrincipalId = az deployment group show `
+  --resource-group $resourceGroup `
+  --name arp-release `
+  --query properties.outputs.apiPrincipalId.value `
+  --output tsv
+
+if (-not $apiPrincipalId) {
+  throw 'API Managed IdentityのPrincipal IDを取得できません。'
+}
+
+$apiClientId = az ad sp show `
+  --id $apiPrincipalId `
+  --query appId `
+  --output tsv
+
+if (-not $apiClientId) {
+  throw 'API Managed IdentityのClient IDを取得できません。'
+}
+
+az deployment group create `
+  --resource-group $resourceGroup `
+  --name arp-sharepoint-graph-permissions `
+  --template-file infra/bootstrap/sharepoint/permissions.bicep `
+  --parameters apiPrincipalId=$apiPrincipalId
+```
+
+このGraph拡張の実行には、Microsoft Graphの`AppRoleAssignment.ReadWrite.All`と`Application.Read.All`が必要。Microsoft GraphなどMicrosoftファーストパーティへの権限付与には`Privileged Role Administrator`が必要とされる。Microsoft Graphのアプリ権限割当ては強い権限操作なので、特権管理者がこの専用Bootstrapとして実行する。Microsoft Graph Bicep拡張はGraphリソースを宣言管理する仕組みで、通常のAzure RBACとは別に認証・認可される。
+
+### 3.2 対象サイトの`read`許可は管理者が一度設定
+
+現行Microsoft Graph Bicep拡張のリソース一覧にはSharePointサイト権限がないため、この許可はGraph Explorerで一度だけ設定する。サイト許可作成APIではGraphの`Sites.FullControl.All`が必要。委任アクセスでは実行ユーザーが管理者ロールを持ち、対象サイトのメンバーである必要がある。API実行Identityにはこの権限を付与しない。
+
+1. 上のコマンドで得た`$apiClientId`を控える。これはサイト許可の`application.id`に使うClient ID/App ID。Bicepへ渡した`$apiPrincipalId`はObject IDなので取り違えない。
+2. Graph Explorerに、対象サイトのメンバーであるSharePoint／Global Administratorでサインインする。
+3. 先に`GET https://graph.microsoft.com/v1.0/sites/{Site ID}/permissions`を実行して、API Managed Identityへの許可が既にあるか確認する。既に`read`があれば再作成しない。
+4. Graph Explorerの「Modify permissions」で委任アクセス許可`Sites.FullControl.All`を確認し、管理者同意する。テナントの同意ポリシーで自分で同意できない場合は、管理者手続きでGraph Explorerへ同意する。
+5. 次を`POST`し、Bodyに示すJSONを設定する。`application.id`にはAPI Managed Identityの**Client ID/App ID**を指定する。
+
+   ```http
+   POST https://graph.microsoft.com/v1.0/sites/{Site ID}/permissions
+   Content-Type: application/json
+   ```
+
+   ```json
+   {
+     "roles": ["read"],
+     "grantedToIdentities": [
+       {
+         "application": {
+           "id": "<API Managed IdentityのClient ID/App ID>",
+           "displayName": "<API Function App名>"
+         }
+       }
+     ]
+   }
+   ```
+
+6. 応答が`201 Created`で`roles: ["read"]`となることを確認する。
+
+`Sites.Selected`のBicep同意だけでは対象サイトを読めない。Bicepのアプリ権限割当てと、このサイト個別許可の両方が必要。サイト単位で`read`を付与するとGraph上の認可範囲はサイトであり、アプリが同期するフォルダを指定してもGraph権限自体はフォルダ単位には狭まらない。テストフォルダの同じサイトに他の機密文書がある場合は、専用サイトを使うか、フォルダ／ライブラリ単位権限のサポートを別途確認する。
 
 ## 4. 同期機能を有効化
 
@@ -91,7 +153,7 @@ Bicepパラメーターは次のとおり。
 
 接続確認ではフォルダ同期だけを有効にし、モデルを使う事実抽出は無効のままにする。**現行の`infra/environments/poc.bicepparam`と手動デプロイWorkflowではこの2つを指定できない。** そのままではBicep既定値`false`となり同期できない。Bicepの環境パラメーターと手動CD経路で同期フラグを渡せる変更をPRで行い、マージ後にレビュー済みの手動CDでデプロイする。Portal上の一時的な設定変更だけを恒久設定として扱わない。
 
-GraphのApplication permission／SharePointサイト個別許可はAzure RBACとは別であり、現行Bicep Bootstrap／通常CDでは作成されない。管理者の手順で分離して管理する。
+GraphのApplication permission／SharePointサイト個別許可はAzure RBACとは別。`Sites.Selected`は専用Bicep Bootstrapで管理し、サイト個別許可だけを通常CDから分離した管理者手順で設定する。
 
 ## 5. アプリでSourceを登録して同期
 
@@ -115,3 +177,6 @@ GraphのApplication permission／SharePointサイト個別許可はAzure RBACと
 - [サイト既定Driveを取得](https://learn.microsoft.com/en-us/graph/api/drive-get?view=graph-rest-1.0)
 - [フォルダの子項目を一覧](https://learn.microsoft.com/en-us/graph/api/driveitem-list-children?view=graph-rest-1.0)
 - [Selected権限の概要](https://learn.microsoft.com/en-us/graph/permissions-selected-overview)
+- [Microsoft Graph Bicep拡張](https://learn.microsoft.com/en-us/graph/templates/bicep/overview-bicep-templates-for-graph)
+- [Graphアプリロール割当てのBicepリソース](https://learn.microsoft.com/en-us/graph/templates/bicep/reference/approleassignedto?view=graph-bicep-1.0)
+- [サイト権限の作成APIと必要権限](https://learn.microsoft.com/en-us/graph/api/site-post-permissions?view=graph-rest-1.0)

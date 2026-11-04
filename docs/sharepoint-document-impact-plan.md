@@ -63,7 +63,7 @@ SharePointに格納した複数の設計書・ドキュメントから、業務�
 - Queue再試行が尽きるとPoison Queue処理がFailedを記録する。未完了・失敗RunはSnapshotの削除差分に使わない。
 - Governance向けSource登録・更新画面、Operator／Governance向け同期起動・状態表示・取得済み文書一覧を実装済み。Governanceは文書を選び、既存の日次モデル呼出枠を使って明示的に事実候補を抽出し、出典位置を確認して文面修正・確認済み／除外を保存できる。確認者と時刻をGrounding版に記録する。抽出は文書内容Hash・Prompt版・Deployment・Model版ごとに冪等化する。Site URLからIDを解決する機能は未実装。
 - `GET /api/sharepoint-facts`と`POST /api/sharepoint-facts/extract`／`review`はGovernance限定。抽出は`SHAREPOINT_FACT_EXTRACTION_ENABLED`がtrueの場合だけ実行可能。sampleOnly=trueの事実は通常の実通知評価へ流れない。
-- Graph権限とSite grantは未設定。既定では同期フラグを無効にし、画面実装だけで実接続可能とは扱わない。
+- API Managed IdentityへのGraph `Sites.Selected`割当てをMicrosoft Graph Bicep拡張の専用Bootstrapとして宣言管理する。対象Siteへの`read` grantはGraph Bicepで宣言できないため管理者のGraph Explorer手順として分離。いずれもAzure環境には未適用。既定では同期フラグを無効にし、画面実装だけで実接続可能とは扱わない。手順は[SharePoint接続ガイド](sharepoint-connection-guide.md)を参照。
 
 抽出契約には、処理名、利用者、稼働時間、停止時の結果、依存方向、利用API／機能、環境、代替手段、許容停止時間、変更案、出典版・引用・位置、確認状態を持たせる。数値・機能利用・停止時間が記載されていなければ創作しない。文書に利用記載があっても実行時の利用を確認したことにはせず、Azure観測と文書記載を区別する。
 
