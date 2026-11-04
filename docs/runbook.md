@@ -15,6 +15,7 @@ az bicep build --file infra/evaluation-subscription.bicep --stdout
 az bicep build --file infra/bootstrap/oidc.bicep --stdout
 az bicep build --file infra/bootstrap/foundry.bicep --stdout
 az bicep build --file infra/bootstrap/permissions.bicep --stdout
+az bicep build --file infra/bootstrap/sharepoint/permissions.bicep --stdout
 ```
 
 `verify`はruntime/format/lint/typecheck/test/build/artifacts/docs/auditを順に実行。アプリはAzure配信を標準とし、ローカル認証回避・サンプル自動表示は実装しない。`.artifacts/`はコードのみの配置成果物、実入出力は含めない。各アプリの`host.json`、独立したruntime依存、UIを同梱する。CIのPRではAzure・モデル・GitHub登録を呼ばない。
