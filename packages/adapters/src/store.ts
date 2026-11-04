@@ -2,13 +2,16 @@ import { BlobServiceClient } from '@azure/storage-blob'
 import { TableClient, type TransactionAction } from '@azure/data-tables'
 import { QueueServiceClient } from '@azure/storage-queue'
 import { createHash } from 'node:crypto'
+import { z } from 'zod'
 import type {
   Assessment,
   Approval,
   BusinessContext,
   DecisionReevaluationRun,
   DocumentGrounding,
+  DocumentSource,
   SharePointSnapshot,
+  SharePointSyncRun,
 } from '@arp/contracts'
 import {
   assessmentSchema,
@@ -16,7 +19,9 @@ import {
   decisionReevaluationRunSchema,
   businessContextSchema,
   documentGroundingSchema,
+  documentSourceSchema,
   sharePointSnapshotSchema,
+  sharePointSyncRunSchema,
 } from '@arp/contracts'
 import { hash, verifyApproval } from '@arp/domain'
 import { credential } from './azure.ts'
@@ -293,6 +298,307 @@ export class AzureStore {
       }
     }
     throw new Error('SharePoint snapshot update conflict')
+  }
+  async saveSharePointSource(value: DocumentSource): Promise<string> {
+    const source = documentSourceSchema.parse(value)
+    if (!source.sampleOnly)
+      throw new Error('Only sample SharePoint sources can be registered')
+    const sourceHash = hash(source)
+    const current = await this.sharePointSource(source.sourceId)
+    if (
+      current &&
+      current.sourceHash !== sourceHash &&
+      current.source.configurationVersion === source.configurationVersion
+    )
+      throw new Error(
+        'SharePoint source changes require a new configuration version',
+      )
+    await this.put('sharepoint-sources', sourceHash, source)
+    await this.table.upsertEntity(
+      {
+        partitionKey: 'sharepoint-source',
+        rowKey: hash(source.sourceId),
+        entityKind: 'sharepoint-source-head',
+        sourceId: source.sourceId,
+        sampleOnly: source.sampleOnly,
+        configurationVersion: source.configurationVersion,
+        sourceHash,
+      },
+      'Replace',
+    )
+    return sourceHash
+  }
+  async sharePointSource(sourceId: string): Promise<{
+    source: DocumentSource
+    sourceHash: string
+  } | null> {
+    let entity: Record<string, unknown>
+    try {
+      entity = await this.table.getEntity('sharepoint-source', hash(sourceId))
+    } catch (error) {
+      if ((error as { statusCode?: number }).statusCode === 404) return null
+      throw error
+    }
+    if (
+      entity.entityKind !== 'sharepoint-source-head' ||
+      entity.sourceId !== sourceId ||
+      typeof entity.sourceHash !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(entity.sourceHash)
+    )
+      throw new Error('SharePoint source index is invalid')
+    const source = documentSourceSchema.parse(
+      await this.get('sharepoint-sources', entity.sourceHash),
+    )
+    if (
+      source.sourceId !== sourceId ||
+      source.configurationVersion !== entity.configurationVersion ||
+      source.sampleOnly !== entity.sampleOnly ||
+      hash(source) !== entity.sourceHash
+    )
+      throw new Error('SharePoint source index does not match its record')
+    return { source, sourceHash: entity.sourceHash }
+  }
+  async sharePointSourceByHash(sourceHash: string): Promise<DocumentSource> {
+    if (!/^[a-f0-9]{64}$/.test(sourceHash))
+      throw new Error('Invalid SharePoint source hash')
+    return documentSourceSchema.parse(
+      await this.get('sharepoint-sources', sourceHash),
+    )
+  }
+  async createSharePointSyncRun(input: {
+    runId: string
+    source: DocumentSource
+    sourceConfigurationHash: string
+    requestedBy: string
+    requestedAt: string
+  }): Promise<SharePointSyncRun> {
+    const source = documentSourceSchema.parse(input.source)
+    if (
+      !source.sampleOnly ||
+      !/^[a-f0-9]{64}$/.test(input.sourceConfigurationHash) ||
+      input.sourceConfigurationHash !== hash(source)
+    )
+      throw new Error('Invalid SharePoint sync source')
+    const run = sharePointSyncRunSchema.parse({
+      runId: input.runId,
+      sourceId: source.sourceId,
+      sourceConfigurationHash: input.sourceConfigurationHash,
+      configurationVersion: source.configurationVersion,
+      sampleOnly: source.sampleOnly,
+      requestedBy: input.requestedBy,
+      requestedAt: input.requestedAt,
+      updatedAt: input.requestedAt,
+      state: 'Pending',
+      attemptCount: 0,
+      snapshotHash: null,
+      addedItemIds: [],
+      changedItemIds: [],
+      removedItemIds: [],
+      unchangedItemIds: [],
+      errorCategory: null,
+      errorHttpStatus: null,
+    })
+    await this.table.createEntity({
+      partitionKey: 'sharepoint-sync',
+      rowKey: run.runId,
+      entityKind: 'sharepoint-sync-run',
+      ...run,
+    })
+    return run
+  }
+  async sharePointSyncRun(runId: string): Promise<SharePointSyncRun> {
+    if (!z.uuid().safeParse(runId).success)
+      throw new Error('Invalid SharePoint sync run ID')
+    const entity = await this.table.getEntity<Record<string, unknown>>(
+      'sharepoint-sync',
+      runId,
+    )
+    if (entity.entityKind !== 'sharepoint-sync-run')
+      throw new Error('SharePoint sync run record is invalid')
+    return sharePointSyncRunSchema.parse({
+      runId: entity.runId,
+      sourceId: entity.sourceId,
+      sourceConfigurationHash: entity.sourceConfigurationHash,
+      configurationVersion: entity.configurationVersion,
+      sampleOnly: entity.sampleOnly,
+      requestedBy: entity.requestedBy,
+      requestedAt: entity.requestedAt,
+      updatedAt: entity.updatedAt,
+      state: entity.state,
+      attemptCount: entity.attemptCount,
+      snapshotHash: entity.snapshotHash ?? null,
+      addedItemIds: entity.addedItemIds ?? [],
+      changedItemIds: entity.changedItemIds ?? [],
+      removedItemIds: entity.removedItemIds ?? [],
+      unchangedItemIds: entity.unchangedItemIds ?? [],
+      errorCategory: entity.errorCategory ?? null,
+      errorHttpStatus: entity.errorHttpStatus ?? null,
+    })
+  }
+  async dispatchSharePointSyncs(): Promise<void> {
+    for await (const row of this.table.listEntities<Record<string, unknown>>({
+      queryOptions: {
+        filter:
+          "PartitionKey eq 'sharepoint-sync' and entityKind eq 'sharepoint-sync-run' and state eq 'Pending'",
+      },
+    })) {
+      if (typeof row.rowKey !== 'string')
+        throw new Error('SharePoint sync run key missing')
+      try {
+        await this.table.updateEntity(
+          {
+            partitionKey: 'sharepoint-sync',
+            rowKey: row.rowKey,
+            entityKind: 'sharepoint-sync-run',
+            state: 'Queued',
+            updatedAt: new Date().toISOString(),
+          },
+          'Merge',
+          { etag: row.etag as string },
+        )
+      } catch (error) {
+        if ((error as { statusCode?: number }).statusCode === 412) continue
+        throw error
+      }
+      try {
+        await this.queues
+          .getQueueClient('sharepoint-document-syncs')
+          .sendMessage(
+            Buffer.from(JSON.stringify({ runId: row.rowKey })).toString(
+              'base64',
+            ),
+          )
+      } catch (error) {
+        try {
+          const queued = await this.table.getEntity<Record<string, unknown>>(
+            'sharepoint-sync',
+            row.rowKey,
+          )
+          if (queued.state === 'Queued')
+            await this.table.updateEntity(
+              {
+                partitionKey: 'sharepoint-sync',
+                rowKey: row.rowKey,
+                entityKind: 'sharepoint-sync-run',
+                state: 'Pending',
+                updatedAt: new Date().toISOString(),
+              },
+              'Merge',
+              { etag: queued.etag as string },
+            )
+        } catch (restoreError) {
+          if ((restoreError as { statusCode?: number }).statusCode !== 412)
+            throw restoreError
+        }
+        throw error
+      }
+    }
+  }
+  async claimSharePointSyncRun(
+    runId: string,
+  ): Promise<SharePointSyncRun | null> {
+    const row = await this.table.getEntity<Record<string, unknown>>(
+      'sharepoint-sync',
+      runId,
+    )
+    if (
+      row.entityKind !== 'sharepoint-sync-run' ||
+      !['Queued', 'Retrying', 'Processing'].includes(String(row.state))
+    )
+      return null
+    try {
+      await this.table.updateEntity(
+        {
+          partitionKey: 'sharepoint-sync',
+          rowKey: runId,
+          entityKind: 'sharepoint-sync-run',
+          state: 'Processing',
+          attemptCount: Number(row.attemptCount ?? 0) + 1,
+          updatedAt: new Date().toISOString(),
+        },
+        'Merge',
+        { etag: row.etag as string },
+      )
+    } catch (error) {
+      if ((error as { statusCode?: number }).statusCode === 412) return null
+      throw error
+    }
+    return this.sharePointSyncRun(runId)
+  }
+  async retrySharePointSyncRun(
+    runId: string,
+    category: SharePointSyncRun['errorCategory'],
+    httpStatus: number | null,
+  ): Promise<void> {
+    const row = await this.table.getEntity<Record<string, unknown>>(
+      'sharepoint-sync',
+      runId,
+    )
+    if (row.state !== 'Processing') return
+    await this.table.updateEntity(
+      {
+        partitionKey: 'sharepoint-sync',
+        rowKey: runId,
+        entityKind: 'sharepoint-sync-run',
+        state: 'Retrying',
+        errorCategory: category ?? 'Unknown',
+        errorHttpStatus: httpStatus,
+        updatedAt: new Date().toISOString(),
+      },
+      'Merge',
+      { etag: row.etag as string },
+    )
+  }
+  async finishSharePointSyncRun(
+    runId: string,
+    state: 'Succeeded' | 'Failed',
+    result?: {
+      snapshotHash: string
+      addedItemIds: string[]
+      changedItemIds: string[]
+      removedItemIds: string[]
+      unchangedItemIds: string[]
+    },
+    category: SharePointSyncRun['errorCategory'] = null,
+    httpStatus: number | null = null,
+  ): Promise<void> {
+    const row = await this.table.getEntity<Record<string, unknown>>(
+      'sharepoint-sync',
+      runId,
+    )
+    const update = sharePointSyncRunSchema.parse({
+      ...(await this.sharePointSyncRun(runId)),
+      state,
+      updatedAt: new Date().toISOString(),
+      snapshotHash: result?.snapshotHash ?? null,
+      addedItemIds: result?.addedItemIds ?? [],
+      changedItemIds: result?.changedItemIds ?? [],
+      removedItemIds: result?.removedItemIds ?? [],
+      unchangedItemIds: result?.unchangedItemIds ?? [],
+      errorCategory: state === 'Failed' ? (category ?? 'Unknown') : null,
+      errorHttpStatus: state === 'Failed' ? httpStatus : null,
+    })
+    await this.table.updateEntity(
+      {
+        partitionKey: 'sharepoint-sync',
+        rowKey: runId,
+        entityKind: 'sharepoint-sync-run',
+        ...update,
+      },
+      'Replace',
+      { etag: row.etag as string },
+    )
+  }
+  async failExhaustedSharePointSyncRun(runId: string): Promise<void> {
+    const run = await this.sharePointSyncRun(runId)
+    if (['Succeeded', 'Failed'].includes(run.state)) return
+    await this.finishSharePointSyncRun(
+      runId,
+      'Failed',
+      undefined,
+      run.errorCategory ?? 'Unknown',
+      run.errorHttpStatus,
+    )
   }
   async createDecisionReevaluation(
     run: DecisionReevaluationRun,
