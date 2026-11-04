@@ -44,6 +44,32 @@ export interface Head {
   entityKind: string
   disposition?: 'Active' | 'NoAction'
 }
+
+function serializeSharePointSyncRun(run: SharePointSyncRun) {
+  return {
+    ...run,
+    addedItemIds: JSON.stringify(run.addedItemIds),
+    changedItemIds: JSON.stringify(run.changedItemIds),
+    removedItemIds: JSON.stringify(run.removedItemIds),
+    unchangedItemIds: JSON.stringify(run.unchangedItemIds),
+  }
+}
+
+function deserializeSharePointSyncItemIds(value: unknown): string[] {
+  if (Array.isArray(value))
+    return value.every((item) => typeof item === 'string') ? value : []
+  if (typeof value !== 'string') return []
+  try {
+    const parsed: unknown = JSON.parse(value)
+    return Array.isArray(parsed) &&
+      parsed.every((item) => typeof item === 'string')
+      ? parsed
+      : []
+  } catch {
+    return []
+  }
+}
+
 export class AzureStore {
   blobs: BlobServiceClient
   table: TableClient
@@ -491,7 +517,7 @@ export class AzureStore {
       partitionKey: 'sharepoint-sync',
       rowKey: run.runId,
       entityKind: 'sharepoint-sync-run',
-      ...run,
+      ...serializeSharePointSyncRun(run),
     })
     return run
   }
@@ -516,10 +542,12 @@ export class AzureStore {
       state: entity.state,
       attemptCount: entity.attemptCount,
       snapshotHash: entity.snapshotHash ?? null,
-      addedItemIds: entity.addedItemIds ?? [],
-      changedItemIds: entity.changedItemIds ?? [],
-      removedItemIds: entity.removedItemIds ?? [],
-      unchangedItemIds: entity.unchangedItemIds ?? [],
+      addedItemIds: deserializeSharePointSyncItemIds(entity.addedItemIds),
+      changedItemIds: deserializeSharePointSyncItemIds(entity.changedItemIds),
+      removedItemIds: deserializeSharePointSyncItemIds(entity.removedItemIds),
+      unchangedItemIds: deserializeSharePointSyncItemIds(
+        entity.unchangedItemIds,
+      ),
       errorCategory: entity.errorCategory ?? null,
       errorHttpStatus: entity.errorHttpStatus ?? null,
     })
@@ -672,7 +700,7 @@ export class AzureStore {
         partitionKey: 'sharepoint-sync',
         rowKey: runId,
         entityKind: 'sharepoint-sync-run',
-        ...update,
+        ...serializeSharePointSyncRun(update),
       },
       'Replace',
       { etag: row.etag as string },

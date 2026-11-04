@@ -52,6 +52,8 @@ function fakeStore() {
   const store = new AzureStore('syntheticaccount')
   store.table = {
     createEntity: async (entity: Record<string, unknown>) => {
+      if (Object.values(entity).some(Array.isArray))
+        throw new Error('Azure Table entities cannot contain arrays')
       const key = `${entity.partitionKey}/${entity.rowKey}`
       if (rows.has(key))
         throw Object.assign(new Error('conflict'), { statusCode: 409 })
@@ -67,6 +69,8 @@ function fakeStore() {
       mode: 'Merge' | 'Replace',
       options?: { etag?: string },
     ) => {
+      if (Object.values(entity).some(Array.isArray))
+        throw new Error('Azure Table entities cannot contain arrays')
       const key = `${entity.partitionKey}/${entity.rowKey}`
       const row = rows.get(key)
       if (!row) throw Object.assign(new Error('missing'), { statusCode: 404 })
@@ -169,12 +173,22 @@ test('SharePoint source changes require a new configuration version', async (t) 
 
 test('SharePoint sync queue transitions through retry to a persisted result', async () => {
   const { store, rows, sentMessages } = fakeStore()
-  await store.table.createEntity({
-    partitionKey: 'sharepoint-sync',
-    rowKey: runFixture().runId,
-    entityKind: 'sharepoint-sync-run',
-    ...runFixture(),
+  await store.createSharePointSyncRun({
+    runId: runFixture().runId,
+    source,
+    sourceConfigurationHash: hash(source),
+    requestedBy: runFixture().requestedBy,
+    requestedAt: runFixture().requestedAt,
   })
+  const pendingEntity = rows.get(`sharepoint-sync/${runFixture().runId}`)
+  assert.ok(pendingEntity)
+  for (const field of [
+    'addedItemIds',
+    'changedItemIds',
+    'removedItemIds',
+    'unchangedItemIds',
+  ])
+    assert.equal(typeof pendingEntity[field], 'string')
   await store.dispatchSharePointSyncs()
   assert.equal(sentMessages.length, 1)
   assert.equal(sentMessages[0]?.startsWith('sharepoint-document-syncs:'), true)
@@ -210,12 +224,25 @@ test('SharePoint sync poison handling records exhaustion without exception text'
     errorCategory: 'Forbidden',
     errorHttpStatus: 403,
   })
-  await store.table.createEntity({
-    partitionKey: 'sharepoint-sync',
-    rowKey: run.runId,
-    entityKind: 'sharepoint-sync-run',
-    ...run,
+  await store.createSharePointSyncRun({
+    runId: run.runId,
+    source,
+    sourceConfigurationHash: hash(source),
+    requestedBy: run.requestedBy,
+    requestedAt: run.requestedAt,
   })
+  await store.table.updateEntity(
+    {
+      partitionKey: 'sharepoint-sync',
+      rowKey: run.runId,
+      entityKind: 'sharepoint-sync-run',
+      state: run.state,
+      attemptCount: run.attemptCount,
+      errorCategory: run.errorCategory,
+      errorHttpStatus: run.errorHttpStatus,
+    },
+    'Merge',
+  )
   await store.failExhaustedSharePointSyncRun(run.runId)
   const result = await store.sharePointSyncRun(run.runId)
   assert.equal(result.state, 'Failed')
