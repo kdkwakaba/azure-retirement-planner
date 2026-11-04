@@ -326,6 +326,17 @@ export const documentFactSchema = z
       .array(z.string().regex(/^\/subscriptions\//i))
       .max(100)
       .optional(),
+    resourceLinkCandidates: z
+      .array(
+        z
+          .object({
+            resourceId: z.string().regex(/^\/subscriptions\//i),
+            matchKind: z.enum(['ExactResourceId', 'ExactResourceName']),
+          })
+          .strict(),
+      )
+      .max(100)
+      .optional(),
     locator: z
       .object({
         heading: z.string().max(500).nullable(),
@@ -412,6 +423,15 @@ export const documentGroundingSchema = z
           code: 'custom',
           path: ['facts', index, 'resourceIds'],
           message: 'Only resource dependency facts can link Azure resources',
+        })
+      if (
+        fact.kind !== 'ResourceDependency' &&
+        fact.resourceLinkCandidates?.length
+      )
+        context.addIssue({
+          code: 'custom',
+          path: ['facts', index, 'resourceLinkCandidates'],
+          message: 'Only resource dependency facts can suggest Azure resources',
         })
       if (
         !revisions.has(
