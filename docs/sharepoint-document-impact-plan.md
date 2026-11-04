@@ -1,6 +1,6 @@
 # SharePoint設計書を利用した業務影響評価の実装計画
 
-2026-11-04 / 状態: 段階2・3と段階4の一部、段階5を実装。DOCX／XLSX解析、候補抽出・検証・不変保存、確認済み事実の評価接続、DocumentSource設定に基づくGraph読み取り専用取得、文書バイナリの内容Hash保存と全件列挙済みSnapshotの履歴・差分、サンプル限定のGovernance設定・手動Queue起動・状態取得・再試行／Poison記録を追加。Governanceが選んだ文書から明示的に候補を抽出し、出典位置を見ながら修正・確認・除外するUIを追加。同期と事実抽出はそれぞれBicep設定で既定無効。sampleOnlyはSource設定から伝播し、自動推定しない。Graphアプリ権限・選択Site付与、実接続、実モデル品質、Azure依存経路との照合は未実装。
+2026-11-04 / 状態: 段階2・3の一部、段階4の一部、段階5を実装。DOCX／XLSX解析、候補抽出・検証・不変保存、確認済み事実の評価接続、DocumentSource設定に基づくGraph読み取り専用取得、文書バイナリの内容Hash保存と全件列挙済みSnapshotの履歴・差分、サンプル限定のGovernance設定・手動Queue起動・状態取得・再試行／Poison記録を追加。Governanceが選んだ文書から明示的に候補を抽出し、出典位置を見ながら修正・確認・除外できる。ResourceDependency候補は表示中AssessmentのResource IDをGovernanceが明示選択して紐付けられる。同期と事実抽出はそれぞれBicep設定で既定無効。sampleOnlyはSource設定から伝播し、自動推定しない。Graphアプリ権限・選択Site付与、実接続、実モデル品質、文書内容からのリソース名候補抽出、複数段依存経路の照合は未実装。
 
 ## 目的と合意した範囲
 
@@ -20,7 +20,7 @@ SharePointに格納した複数の設計書・ドキュメントから、業務�
 | `packages/adapters/src/store.ts` | 業務情報の不変Blob版とTableの現行参照。事実候補集合をsampleOnly／Workload別に保存・読込。SharePoint原本・Snapshot・ソース設定・同期Runを保存 | Queue起動・再試行の運用表示、失敗状態の回復確認 |
 | `packages/adapters/src/identity.ts` | Azure管理・推論・Storage・Key Vault・Microsoft GraphのMI Scopeを許可 | Graphアプリ権限の専用Bootstrap・選択Siteへのread付与 |
 | `packages/adapters/src/sharepoint.ts` | 設定されたTenant／Site／Drive／Folder配下を読み取り専用で列挙・取得。ページ・深さ・件数・各ファイル／総容量を制限。原文不変保存とSnapshot差分を追加 | 権限設定、接続実証、結果の文書解析・候補化 |
-| `packages/adapters/src/grounding.ts` | 通知・型付き構成・Evidenceのモデル入力。人間確認済みでsampleOnly=falseの文書事実だけをEvidenceへ変換 | 文書とAzureリソースの依存経路、文書事実の確認・訂正 |
+| `packages/adapters/src/grounding.ts` | 通知・型付き構成・Evidenceのモデル入力。人間確認済みでsampleOnly=falseの文書事実だけをEvidenceへ変換 | 文書記述からリソース候補を抽出する仕組み、複数段の業務処理→リソース依存経路 |
 | `packages/adapters/src/models.ts` | Decision-1の型付き判断と説明LLM | 文書抽出用の別Prompt／Schema、判断質問・説明入力の改訂 |
 | `apps/assessment-api/src/service.ts` | 業務情報Hash・Evidenceを含む評価、再評価。確認済み文書Grounding Hashを入力HashとAssessmentへ記録 | 文書候補の確認状態を扱うUI・API、Workload・通知条件に沿った依存照合 |
 | `apps/review-web` | 影響2軸、説明、根拠、レビュー | 文書出典、依存関係、サンプル表示、抽出内容の確認・訂正 |
@@ -107,7 +107,7 @@ LLMは文書から事実候補を抽出し、Decision-1は型付き判断、ル�
 |---|---|---|
 | 1 | 参照元配列、文書版、抽出事実、依存関係、サンプル分離の契約と評価資材 | 1フォルダ設定、複数参照元の契約試験、旧データ互換を確認 |
 | 2 | DOCX／XLSX解析、出典保存、構造化抽出と検証 | DOCX段落／XLSXシート・セル抽出、候補Schema・引用元検証、上限付きLLM抽出アダプター、不変Blob保存とsampleOnly／Workload別Tableポインターを追加。専用Sample Sourceから選択した1文書の明示抽出を追加し、日次既存モデル呼出枠を予約。実モデル接続・品質、複数バッチ制御・累積予算管理、表・見出しのDOCX細粒度引用、3文書受入確認は未完了 |
-| 3 | 依存照合、Decision-1・説明入力、評価Hash・承認管理 | 確認済み文書事実をWorkload EvidenceとしてDecision／説明へ渡し、確認済み内容の変更でAssessment Hashを更新する初期接続を追加。文書候補のレビューUI、Azureリソースへの依存照合、Workload関係・影響品質試験は未完了 |
+| 3 | 依存照合、Decision-1・説明入力、評価Hash・承認管理 | 確認済み文書事実をWorkload EvidenceとしてDecision／説明へ渡し、確認済み内容の変更でAssessment Hashを更新。Governanceが表示中Assessmentの実在Resource IDをResourceDependency事実へ明示的に紐付ける初期機能を追加し、APIはWorkloadとAssessment内Resource IDを再検証。文書記述からの自動候補抽出、複数段依存、Workload関係・影響品質試験は未完了 |
 | 4 | SharePoint接続、Bootstrap、フォルダ全ページ取得、変更検出 | 読取専用コネクター、原本・Snapshotの不変保存、追加・変更・不在の算出を実装。GovernanceによるサンプルSource設定、明示Queue起動、状態API、Queue再試行・Poison状態記録を追加。Graph権限・Site grant Bootstrap、実接続、運用画面、Source更新の監査・無効化、結果の文書解析接続は未完了 |
 | 5 | 初期1フォルダの設定・同期・確認・訂正・根拠表示UI | Entra認証下の1フォルダ設定、Queue起動・状態ポーリング、Snapshotの文書名・更新日時・Hash表示、Governance限定の文書単位抽出・Fact訂正・確認／除外・出典位置表示を追加。Source設定とFact管理をGovernance、同期をOperator／Governanceに制限。Graph実接続後の画面UATは未完了 |
 | 6 | 専用サンプルフォルダからの一貫した実接続・品質評価 | 高影響の誤Low、根拠なし断定、他Workload混入を点検し合否を記録 |

@@ -2,7 +2,7 @@
 
 2026-11-03。状態はコードの実装と接続検証を分ける。ローカル検査合格はPoC成功・実環境動作・モデル品質の証明ではない。
 
-2026-11-04追加計画: IMP-09/09bの業務情報連携、IMP-11/12の判断・説明、IMP-13/14の根拠・承認、IMP-19の品質評価を拡張する[SharePoint設計書による影響評価計画](sharepoint-document-impact-plan.md)を作成。初期は専用サンプル用フォルダ1件の複数文書、将来は複数フォルダを参照する。PR #125でDOCX／XLSX抽出、PR #126で候補引用検証、PR #127で上限付きLLM抽出、PR #128でGrounding不変保存、PR #129でsampleOnly=falseの確認済み事実をAssessmentへ接続。PR #130でGraph読み取り専用コネクター、原本不変保存、Snapshot差分を追加。PR #131でサンプルSource設定、Feature Flag既定無効のQueue同期要求・状態API、Queue再試行とPoison状態記録を追加。PR #132でGovernance設定UI、同期状態・文書Snapshot一覧UIを追加。今回、Governance限定の文書単位明示抽出、出典位置付き候補修正・確認／除外、確認者・時刻付き不変Grounding版保存を追加。同期・Fact抽出とも既定無効。Graphアプリ権限／Site grant、実接続、Azure依存照合、実モデル品質評価は未完了。
+2026-11-04追加計画: IMP-09/09bの業務情報連携、IMP-11/12の判断・説明、IMP-13/14の根拠・承認、IMP-19の品質評価を拡張する[SharePoint設計書による影響評価計画](sharepoint-document-impact-plan.md)を作成。初期は専用サンプル用フォルダ1件の複数文書、将来は複数フォルダを参照する。PR #125でDOCX／XLSX抽出、PR #126で候補引用検証、PR #127で上限付きLLM抽出、PR #128でGrounding不変保存、PR #129でsampleOnly=falseの確認済み事実をAssessmentへ接続。PR #130でGraph読み取り専用コネクター、原本不変保存、Snapshot差分を追加。PR #131でサンプルSource設定、Feature Flag既定無効のQueue同期要求・状態API、Queue再試行とPoison状態記録を追加。PR #132でGovernance設定UI、同期状態・文書Snapshot一覧UIを追加。PR #133でGovernance限定の文書単位明示抽出、出典位置付き候補修正・確認／除外、確認者・時刻付き不変Grounding版保存を追加。今回、ResourceDependency事実を表示中Assessmentに含まれる実在Azure Resource IDへGovernanceが明示的に結び付ける初期機能を追加。同期・Fact抽出とも既定無効。Graphアプリ権限／Site grant、実接続、文書内容からのリソース候補抽出、複数段依存照合、実モデル品質評価は未完了。
 
 | ID | Epic / 作業・成果物 | 依存 | 完了条件 | 状態 | Size / Role / 並列可 |
 |---|---|---|---|---|---|

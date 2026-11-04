@@ -9,7 +9,7 @@ import {
   confirmedDocumentFactEvidence,
   confirmedDocumentGroundingInputHash,
 } from '@arp/adapters'
-import { packageHash } from '@arp/domain'
+import { packageHash, scopeEvidenceToWorkload } from '@arp/domain'
 import { fixture } from './fixtures.ts'
 
 const revision = {
@@ -145,6 +145,65 @@ test('only human-confirmed facts from live grounding become assessment evidence'
         facts: grounding.facts.map((item) => ({ ...item, sampleOnly: true })),
       }),
     /Sample document grounding/,
+  )
+})
+
+test('resource dependency links are explicit and stay scoped to the selected Azure resource', () => {
+  const resourceId =
+    '/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/sample/providers/Microsoft.Storage/storageAccounts/sample'
+  const grounding = documentGroundingSchema.parse({
+    schemaVersion: '1',
+    workloadId: 'sample-workload',
+    sampleOnly: false,
+    sourceConfigurationVersion: '1',
+    documentRevisions: [{ ...revision, sampleOnly: false }],
+    facts: [
+      {
+        ...fact,
+        sampleOnly: false,
+        reviewStatus: 'Confirmed',
+        reviewedBy: 'governance-user',
+        reviewedAt: '2026-11-03T00:00:00.000Z',
+        resourceIds: [resourceId],
+      },
+    ],
+    observedAt: '2026-11-02T00:00:00.000Z',
+  })
+  const evidence = confirmedDocumentFactEvidence(grounding)
+  assert.deepEqual(evidence[0]?.subjectIds, ['sample-workload', resourceId])
+  assert.equal(
+    scopeEvidenceToWorkload({
+      evidence,
+      eventId: 'event-1',
+      workloadId: 'sample-workload',
+      resources: [{ id: resourceId } as never],
+    }).length,
+    1,
+  )
+  assert.equal(
+    scopeEvidenceToWorkload({
+      evidence,
+      eventId: 'event-1',
+      workloadId: 'sample-workload',
+      resources: [
+        {
+          id: `${resourceId}-different`,
+        } as never,
+      ],
+    }).length,
+    0,
+  )
+  assert.equal(
+    documentGroundingSchema.safeParse({
+      ...grounding,
+      facts: [
+        {
+          ...grounding.facts[0]!,
+          kind: 'BusinessProcess',
+        },
+      ],
+    }).success,
+    false,
   )
 })
 

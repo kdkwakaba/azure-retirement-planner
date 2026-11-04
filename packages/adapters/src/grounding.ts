@@ -88,8 +88,8 @@ export function confirmedDocumentFactEvidence(
         sourceType: 'Internal' as const,
         sourceVersion: fact.documentContentHash,
         observedAt: revision.observedAt,
-        subjectIds: [grounding.workloadId],
-        fact: `確認済み文書事実: ${fact.statement}。出典: ${revision.name}${location.length ? `（${location.join(' / ')}）` : ''}`,
+        subjectIds: [grounding.workloadId, ...(fact.resourceIds ?? [])],
+        fact: `確認済み文書事実: ${fact.statement}。${fact.resourceIds?.length ? `Governanceが明示的に紐付けたAzureリソース: ${fact.resourceIds.join(', ')}。` : ''}出典: ${revision.name}${location.length ? `（${location.join(' / ')}）` : ''}`,
         officialUrl: null,
       },
     ]
