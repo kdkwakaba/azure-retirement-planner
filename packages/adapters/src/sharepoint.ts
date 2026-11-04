@@ -173,6 +173,23 @@ function allowedDownloadHost(hostname: string): boolean {
   ].some((suffix) => host.endsWith(suffix))
 }
 
+function parentSiteMatches(
+  sourceSiteId: string,
+  parentSiteId: string,
+): boolean {
+  const normalizedParentSiteId = parentSiteId.toLowerCase()
+  const normalizedSourceSiteId = sourceSiteId.toLowerCase()
+  if (normalizedParentSiteId === normalizedSourceSiteId) return true
+
+  // DriveItem parent references may return only the site-collection GUID.
+  const siteIdParts = normalizedSourceSiteId.split(',')
+  return (
+    siteIdParts.length === 3 &&
+    z.uuid().safeParse(siteIdParts[1]).success &&
+    normalizedParentSiteId === siteIdParts[1]
+  )
+}
+
 export async function readSharePointFolder(
   rawSource: DocumentSource,
   expectedTenantId: string,
@@ -235,7 +252,8 @@ export async function readSharePointFolder(
     if (allowDriveRoot && !item.parentReference) return
     if (
       item.parentReference?.driveId !== source.driveId ||
-      item.parentReference.siteId !== source.siteId
+      !item.parentReference.siteId ||
+      !parentSiteMatches(source.siteId, item.parentReference.siteId)
     )
       throw new Error('SharePoint item is outside the selected site or drive')
   }

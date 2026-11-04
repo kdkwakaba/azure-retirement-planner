@@ -9,7 +9,8 @@ import type { DocumentSource } from '@arp/contracts'
 const source: DocumentSource = {
   sourceId: 'sample-source',
   tenantId: '11111111-1111-4111-8111-111111111111',
-  siteId: 'contoso.sharepoint.com,site-collection,site-web',
+  siteId:
+    'contoso.sharepoint.com,11111111-1111-4111-8111-111111111111,22222222-2222-4222-8222-222222222222',
   driveId: 'selected-drive',
   folderItemId: 'selected-folder',
   displayName: 'Sample folder',
@@ -20,7 +21,13 @@ const source: DocumentSource = {
   configurationVersion: 'config-v1',
 }
 
-function item(id: string, name: string, kind: 'folder' | 'file', size = 0) {
+function item(
+  id: string,
+  name: string,
+  kind: 'folder' | 'file',
+  size = 0,
+  parentSiteId = source.siteId.split(',')[1],
+) {
   return {
     id,
     name,
@@ -30,7 +37,7 @@ function item(id: string, name: string, kind: 'folder' | 'file', size = 0) {
     ...(kind === 'folder' ? { folder: {} } : { file: {} }),
     parentReference: {
       driveId: source.driveId,
-      siteId: source.siteId,
+      siteId: parentSiteId,
     },
   }
 }
@@ -48,7 +55,13 @@ test('SharePoint folder read paginates, stays within the selected tree, and omit
       return Response.json({ value: [{ id: source.driveId }] })
     if (url.pathname.endsWith('/items/selected-folder'))
       return Response.json({
-        ...item(source.folderItemId, 'Selected folder', 'folder'),
+        ...item(
+          source.folderItemId,
+          'Selected folder',
+          'folder',
+          0,
+          source.siteId,
+        ),
       })
     if (url.pathname.endsWith('/items/selected-folder/children')) {
       if (url.searchParams.has('$skiptoken'))
@@ -151,6 +164,36 @@ test('SharePoint folder read rejects pagination links outside Microsoft Graph', 
     /invalid pagination link/,
   )
   assert.equal(calls, 3)
+})
+
+test('SharePoint folder read rejects items from a different site collection', async () => {
+  const fetcher: typeof fetch = async (input) => {
+    const url = new URL(String(input))
+    if (url.pathname.endsWith('/drives'))
+      return Response.json({ value: [{ id: source.driveId }] })
+    if (url.pathname.endsWith('/items/selected-folder'))
+      return Response.json(
+        item(source.folderItemId, 'Selected folder', 'folder'),
+      )
+    return Response.json({
+      value: [
+        item(
+          'foreign-file',
+          'foreign.docx',
+          'file',
+          10,
+          '33333333-3333-4333-8333-333333333333',
+        ),
+      ],
+    })
+  }
+
+  await assert.rejects(
+    readSharePointFolder(source, source.tenantId, fetcher, async () => ({
+      token: 'synthetic',
+    })),
+    /outside the selected site or drive/,
+  )
 })
 
 test('SharePoint source must match application tenant before token access', async () => {
