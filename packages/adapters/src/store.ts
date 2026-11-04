@@ -1,12 +1,14 @@
 import { BlobServiceClient } from '@azure/storage-blob'
 import { TableClient, type TransactionAction } from '@azure/data-tables'
 import { QueueServiceClient } from '@azure/storage-queue'
+import { createHash } from 'node:crypto'
 import type {
   Assessment,
   Approval,
   BusinessContext,
   DecisionReevaluationRun,
   DocumentGrounding,
+  SharePointSnapshot,
 } from '@arp/contracts'
 import {
   assessmentSchema,
@@ -14,6 +16,7 @@ import {
   decisionReevaluationRunSchema,
   businessContextSchema,
   documentGroundingSchema,
+  sharePointSnapshotSchema,
 } from '@arp/contracts'
 import { hash, verifyApproval } from '@arp/domain'
 import { credential } from './azure.ts'
@@ -178,6 +181,118 @@ export class AzureStore {
       'Replace',
     )
     return groundingHash
+  }
+  async putSharePointDocument(
+    sourceId: string,
+    contentHash: string,
+    content: Buffer,
+  ): Promise<void> {
+    if (
+      !sourceId.trim() ||
+      !/^[a-f0-9]{64}$/.test(contentHash) ||
+      content.length > 10 * 1024 * 1024 ||
+      createHash('sha256').update(content).digest('hex') !== contentHash
+    )
+      throw new Error('Invalid SharePoint document object')
+    const sourceKey = hash(sourceId)
+    const blob = this.blobs
+      .getContainerClient('records')
+      .getBlockBlobClient(`sharepoint-documents/${sourceKey}/${contentHash}`)
+    try {
+      await blob.uploadData(content, {
+        conditions: { ifNoneMatch: '*' },
+        blobHTTPHeaders: {
+          blobContentType: 'application/vnd.openxmlformats-officedocument',
+        },
+      })
+    } catch (error) {
+      if (
+        (error as { statusCode?: number }).statusCode !== 409 &&
+        (error as { statusCode?: number }).statusCode !== 412
+      )
+        throw error
+    }
+  }
+  async sharePointSnapshot(
+    sourceId: string,
+  ): Promise<SharePointSnapshot | null> {
+    const rowKey = hash(sourceId)
+    let entity: Record<string, unknown>
+    try {
+      entity = await this.table.getEntity('sharepoint-snapshot', rowKey)
+    } catch (error) {
+      if ((error as { statusCode?: number }).statusCode === 404) return null
+      throw error
+    }
+    if (
+      entity.entityKind !== 'sharepoint-snapshot-head' ||
+      typeof entity.snapshotHash !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(entity.snapshotHash)
+    )
+      throw new Error('SharePoint snapshot index is invalid')
+    const snapshot = sharePointSnapshotSchema.parse(
+      await this.get('sharepoint-snapshots', entity.snapshotHash),
+    )
+    if (
+      snapshot.sourceId !== sourceId ||
+      snapshot.configurationVersion !== entity.configurationVersion ||
+      snapshot.sampleOnly !== entity.sampleOnly ||
+      hash(snapshot) !== entity.snapshotHash
+    )
+      throw new Error('SharePoint snapshot index does not match its record')
+    return snapshot
+  }
+  async saveSharePointSnapshot(value: SharePointSnapshot): Promise<string> {
+    const snapshot = sharePointSnapshotSchema.parse(value)
+    const snapshotHash = hash(snapshot)
+    await this.put('sharepoint-snapshots', snapshotHash, snapshot)
+    const rowKey = hash(snapshot.sourceId)
+    const entity = {
+      partitionKey: 'sharepoint-snapshot',
+      rowKey,
+      entityKind: 'sharepoint-snapshot-head',
+      sourceId: snapshot.sourceId,
+      sampleOnly: snapshot.sampleOnly,
+      configurationVersion: snapshot.configurationVersion,
+      observedAt: snapshot.observedAt,
+      enumerationComplete: snapshot.enumerationComplete,
+      snapshotHash,
+    }
+    for (let attempt = 0; attempt < 4; attempt++) {
+      let previous: Record<string, unknown>
+      try {
+        previous = await this.table.getEntity('sharepoint-snapshot', rowKey)
+      } catch (error) {
+        if ((error as { statusCode?: number }).statusCode !== 404) throw error
+        try {
+          await this.table.createEntity(entity)
+          return snapshotHash
+        } catch (createError) {
+          if ((createError as { statusCode?: number }).statusCode !== 409)
+            throw createError
+          continue
+        }
+      }
+      if (previous.snapshotHash === snapshotHash) return snapshotHash
+      const previousObservedAt =
+        typeof previous.observedAt === 'string'
+          ? Date.parse(previous.observedAt)
+          : NaN
+      if (
+        !Number.isFinite(previousObservedAt) ||
+        previousObservedAt >= Date.parse(snapshot.observedAt)
+      )
+        throw new Error('SharePoint snapshot is older than the current version')
+      try {
+        await this.table.updateEntity(entity, 'Replace', {
+          etag: previous.etag as string,
+        })
+        return snapshotHash
+      } catch (error) {
+        if ((error as { statusCode?: number }).statusCode !== 412) throw error
+      }
+    }
+    throw new Error('SharePoint snapshot update conflict')
   }
   async createDecisionReevaluation(
     run: DecisionReevaluationRun,

@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { readSharePointFolder } from '@arp/adapters'
+import {
+  persistSharePointFolderSnapshot,
+  readSharePointFolder,
+} from '@arp/adapters'
 import type { DocumentSource } from '@arp/contracts'
 
 const source: DocumentSource = {
@@ -196,4 +199,102 @@ test('SharePoint download rejects an unapproved preauthenticated host', async ()
     /download host is not approved/,
   )
   assert.equal(evilRequest, false)
+})
+
+test('SharePoint persistence stores immutable bytes and diffs only complete snapshots', async () => {
+  const objects = new Map<string, unknown>()
+  const binary = new Map<string, Buffer>()
+  let current: Record<string, unknown> | null = null
+  const store = {
+    putSharePointDocument: async (
+      sourceId: string,
+      contentHash: string,
+      content: Buffer,
+    ) => binary.set(`${sourceId}/${contentHash}`, content),
+    sharePointSnapshot: async () => current,
+    saveSharePointSnapshot: async (snapshot: Record<string, unknown>) => {
+      objects.set(String(snapshot.observedAt), snapshot)
+      current = snapshot
+      return 'a'.repeat(64)
+    },
+  } as never
+  const observedAt = '2026-11-04T00:00:00.000Z'
+  const first = {
+    enumerationComplete: true as const,
+    sourceId: source.sourceId,
+    sampleOnly: source.sampleOnly,
+    configurationVersion: source.configurationVersion,
+    observedAt,
+    documents: [
+      {
+        sourceId: source.sourceId,
+        itemId: 'file-1',
+        name: 'one.docx',
+        extension: '.docx' as const,
+        eTag: 'etag-1',
+        lastModifiedAt: observedAt,
+        observedAt,
+        sampleOnly: source.sampleOnly,
+        content: Buffer.from('first revision'),
+      },
+      {
+        sourceId: source.sourceId,
+        itemId: 'file-2',
+        name: 'two.xlsx',
+        extension: '.xlsx' as const,
+        eTag: 'etag-2',
+        lastModifiedAt: observedAt,
+        observedAt,
+        sampleOnly: source.sampleOnly,
+        content: Buffer.from('unchanged revision'),
+      },
+    ],
+    skipped: [],
+  }
+  const initial = await persistSharePointFolderSnapshot(store, source, first)
+  assert.deepEqual(initial.addedItemIds.sort(), ['file-1', 'file-2'])
+  assert.deepEqual(initial.removedItemIds, [])
+  assert.equal(binary.size, 2)
+  assert.equal(objects.size, 1)
+
+  const next = await persistSharePointFolderSnapshot(store, source, {
+    ...first,
+    observedAt: '2026-11-05T00:00:00.000Z',
+    documents: [
+      {
+        ...first.documents[0]!,
+        eTag: 'etag-1-new',
+        observedAt: '2026-11-05T00:00:00.000Z',
+        lastModifiedAt: '2026-11-05T00:00:00.000Z',
+        content: Buffer.from('changed revision'),
+      },
+    ],
+  })
+  assert.deepEqual(next.changedItemIds, ['file-1'])
+  assert.deepEqual(next.removedItemIds, ['file-2'])
+  assert.deepEqual(next.unchangedItemIds, [])
+  assert.equal(binary.size, 3)
+  assert.equal(objects.size, 2)
+})
+
+test('SharePoint persistence rejects a result from another configuration', async () => {
+  let writes = 0
+  const store = {
+    putSharePointDocument: async () => {
+      writes++
+    },
+  } as never
+  await assert.rejects(
+    persistSharePointFolderSnapshot(store, source, {
+      enumerationComplete: true,
+      sourceId: source.sourceId,
+      sampleOnly: false,
+      configurationVersion: source.configurationVersion,
+      observedAt: '2026-11-04T00:00:00.000Z',
+      documents: [],
+      skipped: [],
+    }),
+    /does not match source configuration/,
+  )
+  assert.equal(writes, 0)
 })

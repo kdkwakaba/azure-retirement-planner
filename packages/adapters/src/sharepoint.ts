@@ -1,6 +1,14 @@
 import { z } from 'zod'
-import { documentSourceSchema, type DocumentSource } from '@arp/contracts'
+import { createHash } from 'node:crypto'
+import {
+  documentRevisionSchema,
+  documentSourceSchema,
+  sharePointSnapshotSchema,
+  type DocumentSource,
+  type SharePointSnapshot,
+} from '@arp/contracts'
 import { credential } from './azure.ts'
+import type { AzureStore } from './store.ts'
 
 const GRAPH_ORIGIN = 'https://graph.microsoft.com'
 const MAX_FOLDER_DEPTH = 8
@@ -9,7 +17,7 @@ const MAX_DOCUMENTS = 100
 const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024
 const MAX_TOTAL_BYTES = 50 * 1024 * 1024
 
-type SharePointFile = {
+export type SharePointFile = {
   sourceId: string
   itemId: string
   name: string
@@ -19,6 +27,16 @@ type SharePointFile = {
   observedAt: string
   sampleOnly: boolean
   content: Buffer
+}
+
+export type SharePointFolderReadResult = {
+  enumerationComplete: true
+  sourceId: string
+  sampleOnly: boolean
+  configurationVersion: string
+  observedAt: string
+  documents: SharePointFile[]
+  skipped: SkippedSharePointItem[]
 }
 
 type SkippedSharePointItem = {
@@ -161,14 +179,7 @@ export async function readSharePointFolder(
   fetcher: Fetcher = fetch,
   tokenProvider: TokenProvider = () =>
     credential.getToken('https://graph.microsoft.com/.default'),
-): Promise<{
-  sourceId: string
-  sampleOnly: boolean
-  configurationVersion: string
-  observedAt: string
-  documents: SharePointFile[]
-  skipped: SkippedSharePointItem[]
-}> {
+): Promise<SharePointFolderReadResult> {
   const source = documentSourceSchema.parse(rawSource)
   if (
     !z.uuid().safeParse(expectedTenantId).success ||
@@ -369,11 +380,105 @@ export async function readSharePointFolder(
   await visit(root.id, 0)
 
   return {
+    enumerationComplete: true,
     sourceId: source.sourceId,
     sampleOnly: source.sampleOnly,
     configurationVersion: source.configurationVersion,
     observedAt,
     documents,
     skipped,
+  }
+}
+
+export async function persistSharePointFolderSnapshot(
+  store: AzureStore,
+  source: DocumentSource,
+  result: SharePointFolderReadResult,
+): Promise<{
+  snapshotHash: string
+  addedItemIds: string[]
+  changedItemIds: string[]
+  removedItemIds: string[]
+  unchangedItemIds: string[]
+}> {
+  const parsedSource = documentSourceSchema.parse(source)
+  if (
+    result.enumerationComplete !== true ||
+    result.sourceId !== parsedSource.sourceId ||
+    result.sampleOnly !== parsedSource.sampleOnly ||
+    result.configurationVersion !== parsedSource.configurationVersion
+  )
+    throw new Error('SharePoint result does not match source configuration')
+
+  const documents = await Promise.all(
+    result.documents.map(async (document) => {
+      if (
+        document.sourceId !== parsedSource.sourceId ||
+        document.sampleOnly !== parsedSource.sampleOnly ||
+        document.observedAt !== result.observedAt ||
+        !parsedSource.allowedExtensions.includes(document.extension)
+      )
+        throw new Error('SharePoint document does not match its source')
+      const contentHash = createHash('sha256')
+        .update(document.content)
+        .digest('hex')
+      await store.putSharePointDocument(
+        parsedSource.sourceId,
+        contentHash,
+        document.content,
+      )
+      return documentRevisionSchema.parse({
+        sourceId: document.sourceId,
+        itemId: document.itemId,
+        name: document.name,
+        extension: document.extension,
+        eTag: document.eTag,
+        lastModifiedAt: document.lastModifiedAt,
+        contentHash,
+        observedAt: document.observedAt,
+        sampleOnly: document.sampleOnly,
+      })
+    }),
+  )
+  const snapshot = sharePointSnapshotSchema.parse({
+    schemaVersion: '1',
+    sourceId: parsedSource.sourceId,
+    sampleOnly: parsedSource.sampleOnly,
+    configurationVersion: parsedSource.configurationVersion,
+    observedAt: result.observedAt,
+    enumerationComplete: true,
+    documents,
+    skipped: result.skipped,
+  }) as SharePointSnapshot
+  const previous = await store.sharePointSnapshot(parsedSource.sourceId)
+  const snapshotHash = await store.saveSharePointSnapshot(snapshot)
+  const priorById = new Map(
+    previous?.configurationVersion === snapshot.configurationVersion &&
+      previous.sampleOnly === snapshot.sampleOnly
+      ? previous.documents.map((document) => [document.itemId, document])
+      : [],
+  )
+  const nextById = new Map(
+    snapshot.documents.map((item) => [item.itemId, item]),
+  )
+  const addedItemIds: string[] = []
+  const changedItemIds: string[] = []
+  const unchangedItemIds: string[] = []
+  for (const [itemId, document] of nextById) {
+    const prior = priorById.get(itemId)
+    if (!prior) addedItemIds.push(itemId)
+    else if (prior.contentHash !== document.contentHash)
+      changedItemIds.push(itemId)
+    else unchangedItemIds.push(itemId)
+  }
+  const removedItemIds = [...priorById.keys()].filter(
+    (itemId) => !nextById.has(itemId),
+  )
+  return {
+    snapshotHash,
+    addedItemIds,
+    changedItemIds,
+    removedItemIds,
+    unchangedItemIds,
   }
 }
