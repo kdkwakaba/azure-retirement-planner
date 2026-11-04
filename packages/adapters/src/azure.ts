@@ -205,7 +205,7 @@ export async function discover(subscriptionIds: string[], tenantId: string) {
     try {
       const inventory = await argRows(
         [subscription],
-        "resources | where type in~ ('microsoft.network/loadbalancers','microsoft.storage/storageaccounts','microsoft.insights/webtests','microsoft.cognitiveservices/accounts','microsoft.cognitiveservices/accounts/projects','microsoft.machinelearningservices/workspaces') | project id, type, location, kind, skuName=tostring(sku.name), workloadId=tostring(tags.WorkloadId), environment=tostring(tags.Environment), ownerTeam=tostring(tags.OwnerTeam), webTestKind=tostring(properties.Kind), hubResourceId=tostring(properties.hubResourceId), storageAccount=tostring(properties.storageAccount), blobStore=tostring(properties.capabilitySettings.blobStore), documentStore=tostring(properties.capabilitySettings.documentStore), vectorStore=tostring(properties.capabilitySettings.vectorStore)",
+        "resources | where type in~ ('microsoft.network/loadbalancers','microsoft.storage/storageaccounts','microsoft.insights/webtests','microsoft.cognitiveservices/accounts','microsoft.cognitiveservices/accounts/projects','microsoft.machinelearningservices/workspaces') | project id, name, type, location, kind, skuName=tostring(sku.name), workloadId=tostring(tags.WorkloadId), environment=tostring(tags.Environment), ownerTeam=tostring(tags.OwnerTeam), webTestKind=tostring(properties.Kind), hubResourceId=tostring(properties.hubResourceId), storageAccount=tostring(properties.storageAccount), blobStore=tostring(properties.capabilitySettings.blobStore), documentStore=tostring(properties.capabilitySettings.documentStore), vectorStore=tostring(properties.capabilitySettings.vectorStore)",
       )
       for (const row of inventory) {
         const id = String(row.id),
@@ -234,6 +234,7 @@ export async function discover(subscriptionIds: string[], tenantId: string) {
           verificationRequired: false,
           evidenceIds: [eid],
           properties: {
+            name: row.name ? String(row.name) : null,
             kind: row.kind ?? null,
             webTestKind: row.webTestKind ?? null,
             hubResourceId: row.hubResourceId ?? null,

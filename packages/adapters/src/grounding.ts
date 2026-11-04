@@ -43,7 +43,39 @@ export function confirmedDocumentGroundingInputHash(
       .sort((a, b) =>
         `${a.sourceId}:${a.itemId}`.localeCompare(`${b.sourceId}:${b.itemId}`),
       ),
-    facts: facts.toSorted((a, b) => a.factId.localeCompare(b.factId)),
+    facts: facts
+      .toSorted((a, b) => a.factId.localeCompare(b.factId))
+      .map(
+        ({
+          factId,
+          workloadId,
+          kind,
+          statement,
+          sourceId,
+          documentItemId,
+          documentContentHash,
+          resourceIds,
+          locator,
+          reviewStatus,
+          reviewedBy,
+          reviewedAt,
+          sampleOnly,
+        }) => ({
+          factId,
+          workloadId,
+          kind,
+          statement,
+          sourceId,
+          documentItemId,
+          documentContentHash,
+          ...(resourceIds ? { resourceIds } : {}),
+          locator,
+          reviewStatus,
+          ...(reviewedBy ? { reviewedBy } : {}),
+          ...(reviewedAt ? { reviewedAt } : {}),
+          sampleOnly,
+        }),
+      ),
   })
 }
 

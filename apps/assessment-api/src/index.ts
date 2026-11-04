@@ -33,6 +33,7 @@ import {
   translateOfficialHtmlToJapanese,
   extractDocumentText,
   extractDocumentFacts,
+  bindDocumentFactProposalsFromResponse,
   DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION,
 } from '@arp/adapters'
 import {
@@ -435,6 +436,7 @@ app.http('api', {
               sourceId: z.string().min(1).max(100),
               workloadId: z.string().min(1).max(200),
               itemId: z.string().min(1).max(500),
+              assessmentId: z.string().min(1).max(200).nullable(),
             })
             .strict()
             .parse(JSON.parse(await request.text()))
@@ -445,6 +447,13 @@ app.http('api', {
             !registered.source.workloadIds.includes(body.workloadId)
           )
             return reply(404, { error: 'Eligible sample source not found' })
+          const assessment = body.assessmentId
+            ? await store.assessment(body.assessmentId)
+            : null
+          if (assessment && assessment.workloadId !== body.workloadId)
+            return reply(409, {
+              error: 'Selected assessment belongs to a different Workload',
+            })
           const snapshot = await store.sharePointSnapshot(body.sourceId)
           const revision = snapshot?.documents.find(
             (document) => document.itemId === body.itemId,
@@ -471,25 +480,6 @@ app.http('api', {
           const endpoint = required('EXPLANATION_ENDPOINT')
           const deployment = required('EXPLANATION_DEPLOYMENT')
           const modelVersion = required('EXPLANATION_MODEL_VERSION')
-          if (
-            existing?.extractionRecords?.some(
-              (record) =>
-                record.sourceId === body.sourceId &&
-                record.itemId === revision.itemId &&
-                record.contentHash === revision.contentHash &&
-                record.promptVersion ===
-                  DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION &&
-                record.deployment === deployment &&
-                record.modelVersion === modelVersion,
-            )
-          )
-            return reply(200, {
-              grounding: existing,
-              groundingHash: hash(existing),
-              addedCandidateCount: 0,
-              promptVersion: DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION,
-              alreadyExtracted: true,
-            })
           const document = await store.sharePointDocument(
             body.sourceId,
             revision.contentHash,
@@ -504,35 +494,62 @@ app.http('api', {
             sampleOnly: revision.sampleOnly,
             observedAt: revision.observedAt,
           })
-          const extraction =
-            extractedText.blocks.length === 0
-              ? {
-                  facts: [],
-                  promptVersion: DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION,
-                }
-              : await (async () => {
-                  await store.reserveModelCall(config().modelCalls)
-                  return extractDocumentFacts(
-                    endpoint,
-                    deployment,
-                    extractedText,
-                    body.workloadId,
-                    async (raw) =>
-                      store.put(
-                        'model-raw',
-                        hash({
-                          sourceId: body.sourceId,
-                          itemId: body.itemId,
-                          contentHash: revision.contentHash,
-                          promptVersion:
-                            DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION,
-                          deployment,
-                          modelVersion,
-                        }),
-                        raw,
-                      ),
-                  )
-                })()
+          const priorExtraction = existing?.extractionRecords?.find(
+            (record) =>
+              record.sourceId === body.sourceId &&
+              record.itemId === revision.itemId &&
+              record.contentHash === revision.contentHash &&
+              record.promptVersion ===
+                DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION &&
+              record.deployment === deployment &&
+              record.modelVersion === modelVersion,
+          )
+          const rawId = hash({
+            sourceId: body.sourceId,
+            itemId: body.itemId,
+            contentHash: revision.contentHash,
+            promptVersion: DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION,
+            deployment,
+            modelVersion,
+          })
+          let raw: unknown
+          let reusedExtraction = false
+          if (priorExtraction) {
+            try {
+              raw = await store.get('model-raw', rawId)
+              reusedExtraction = true
+            } catch (error) {
+              if ((error as { statusCode?: number }).statusCode !== 404)
+                throw error
+            }
+          }
+          let extraction
+          if (extractedText.blocks.length === 0) {
+            extraction = {
+              facts: [],
+              promptVersion: DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION,
+            }
+          } else if (raw !== undefined) {
+            extraction = {
+              facts: bindDocumentFactProposalsFromResponse({
+                document: extractedText,
+                workloadId: body.workloadId,
+                raw,
+                availableResources: assessment?.resources ?? [],
+              }),
+              promptVersion: DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION,
+            }
+          } else {
+            await store.reserveModelCall(config().modelCalls)
+            extraction = await extractDocumentFacts(
+              endpoint,
+              deployment,
+              extractedText,
+              body.workloadId,
+              async (response) => store.put('model-raw', rawId, response),
+              assessment?.resources ?? [],
+            )
+          }
           const current = existing ?? {
             schemaVersion: '1' as const,
             workloadId: body.workloadId,
@@ -557,11 +574,40 @@ app.http('api', {
             current.facts.map((fact) => [fact.factId, fact]),
           )
           let addedCandidateCount = 0
+          let updatedLinkCandidateCount = 0
           for (const fact of extraction.facts)
             if (!facts.has(fact.factId)) {
               facts.set(fact.factId, fact)
               addedCandidateCount++
+            } else {
+              const previous = facts.get(fact.factId)!
+              if (
+                previous.reviewStatus === 'Candidate' &&
+                JSON.stringify(previous.resourceLinkCandidates ?? []) !==
+                  JSON.stringify(fact.resourceLinkCandidates ?? [])
+              ) {
+                facts.set(fact.factId, {
+                  ...previous,
+                  ...(fact.resourceLinkCandidates?.length
+                    ? { resourceLinkCandidates: fact.resourceLinkCandidates }
+                    : { resourceLinkCandidates: undefined }),
+                })
+                updatedLinkCandidateCount++
+              }
             }
+          if (
+            priorExtraction &&
+            addedCandidateCount === 0 &&
+            updatedLinkCandidateCount === 0
+          )
+            return reply(200, {
+              grounding: existing,
+              groundingHash: hash(existing),
+              addedCandidateCount: 0,
+              updatedLinkCandidateCount: 0,
+              promptVersion: extraction.promptVersion,
+              alreadyExtracted: reusedExtraction,
+            })
           const grounding = documentGroundingSchema.parse({
             ...current,
             documentRevisions: [...revisions.values()],
@@ -607,8 +653,9 @@ app.http('api', {
             grounding,
             groundingHash,
             addedCandidateCount,
+            updatedLinkCandidateCount,
             promptVersion: extraction.promptVersion,
-            alreadyExtracted: false,
+            alreadyExtracted: reusedExtraction,
           })
         }
         if (path === 'sharepoint-facts/review') {
