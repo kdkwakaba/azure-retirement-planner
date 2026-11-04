@@ -371,6 +371,61 @@ app.http('api', {
           const sourceHash = await store.saveSharePointSource(source)
           return reply(200, { source, sourceHash })
         }
+        if (path === 'sharepoint-facts/reset') {
+          requireUserRole(principal, apiRolePolicy.businessContext)
+          const body = z
+            .object({
+              sourceId: z.string().min(1).max(100),
+              workloadId: z.string().min(1).max(200),
+              groundingHash: z.string().regex(/^[a-f0-9]{64}$/),
+            })
+            .strict()
+            .parse(JSON.parse(await request.text()))
+          const registered = await store.sharePointSource(body.sourceId)
+          if (
+            !registered ||
+            registered.source.sampleOnly !== true ||
+            !registered.source.workloadIds.includes(body.workloadId)
+          )
+            return reply(404, { error: 'Eligible sample source not found' })
+          const existing = await store.documentGrounding(body.workloadId, true)
+          if (!existing || hash(existing) !== body.groundingHash)
+            return reply(409, {
+              error: 'Document facts changed; reload before reset',
+            })
+          if (
+            existing.sourceConfigurationVersion ===
+            registered.source.configurationVersion
+          )
+            return reply(409, {
+              error: 'Grounding already uses the current source version',
+            })
+          const resetAt = new Date().toISOString()
+          const reset = documentGroundingSchema.parse({
+            schemaVersion: '1',
+            workloadId: body.workloadId,
+            sampleOnly: true,
+            sourceConfigurationVersion: registered.source.configurationVersion,
+            documentRevisions: [],
+            facts: [],
+            extractionRecords: [],
+            supersedesGroundingHash: body.groundingHash,
+            observedAt: resetAt,
+          })
+          try {
+            const groundingHash = await store.saveDocumentGrounding(
+              reset,
+              body.groundingHash,
+            )
+            return reply(200, { grounding: reset, groundingHash })
+          } catch (error) {
+            if (/changed during review/.test(String(error)))
+              return reply(409, {
+                error: 'Document facts changed; reload before reset',
+              })
+            throw error
+          }
+        }
         if (path === 'sharepoint-facts/extract') {
           requireUserRole(principal, apiRolePolicy.businessContext)
           if (process.env.SHAREPOINT_FACT_EXTRACTION_ENABLED !== 'true')

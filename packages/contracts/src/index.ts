@@ -360,6 +360,10 @@ export const documentGroundingSchema = z
     sourceConfigurationVersion: z.string().min(1).max(100),
     documentRevisions: z.array(documentRevisionSchema),
     facts: z.array(documentFactSchema),
+    supersedesGroundingHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
     extractionRecords: z
       .array(
         z

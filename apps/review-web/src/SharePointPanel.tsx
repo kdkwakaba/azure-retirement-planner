@@ -212,6 +212,10 @@ export function SharePointPanel({
     (source) => source.sourceId === selectedSourceId,
   )
   const snapshot = selectedSourceId ? snapshots[selectedSourceId] : null
+  const groundingMatchesSource =
+    !grounding ||
+    !selectedSource ||
+    grounding.sourceConfigurationVersion === selectedSource.configurationVersion
 
   function editSource(source: DocumentSource) {
     setDraft({
@@ -330,7 +334,7 @@ export function SharePointPanel({
     factId: string,
     reviewStatus: 'Confirmed' | 'Rejected',
   ) {
-    if (!selectedWorkloadId || !groundingHash) return
+    if (!selectedWorkloadId || !groundingHash || !groundingMatchesSource) return
     setBusy(true)
     setError('')
     setNotice('')
@@ -363,6 +367,39 @@ export function SharePointPanel({
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : '事実確認を保存できません',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function resetGroundingForSourceVersion() {
+    if (!selectedSource || !groundingHash || groundingMatchesSource) return
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      const result = z
+        .object({
+          grounding: documentGroundingSchema,
+          groundingHash: z.string().regex(/^[a-f0-9]{64}$/),
+        })
+        .parse(
+          await request('sharepoint-facts/reset', 'POST', {
+            sourceId: selectedSource.sourceId,
+            workloadId: selectedWorkloadId,
+            groundingHash,
+          }),
+        )
+      setGrounding(result.grounding)
+      setGroundingHash(result.groundingHash)
+      setEditedStatements({})
+      setNotice(
+        '新しいSource設定版の空のGroundingを開始しました。旧Groundingは不変記録として参照されています。',
+      )
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : 'Groundingを更新できません',
       )
     } finally {
       setBusy(false)
@@ -490,7 +527,11 @@ export function SharePointPanel({
                       {canConfigure && (
                         <button
                           className="secondary-button"
-                          disabled={!factExtractionEnabled || busy}
+                          disabled={
+                            !factExtractionEnabled ||
+                            busy ||
+                            !groundingMatchesSource
+                          }
                           onClick={() => void extractFacts(document.itemId)}
                           type="button"
                         >
@@ -548,8 +589,28 @@ export function SharePointPanel({
               空でない文書の抽出は1文書あたりモデル呼出し1回を使い、アプリ共通の日次上限に計上されます。同じ文書版・モデル版・Prompt版の再実行は保存済み結果を返します。
             </p>
           )}
+          {!groundingMatchesSource && grounding && (
+            <div className="sharepoint-version-warning" role="status">
+              <p>
+                このWorkloadの事実はSource設定版{' '}
+                {grounding.sourceConfigurationVersion}に基づきます。現在の設定版{' '}
+                {selectedSource.configurationVersion}
+                とは異なるため、旧Factは確認・評価に使用せず、抽出も停止しています。
+              </p>
+              <p>
+                新版を始めると旧Factを新設定へ引き継がず、空のGroundingから開始します。旧Grounding自体は不変記録として保持されます。
+              </p>
+              <button
+                disabled={busy}
+                onClick={() => void resetGroundingForSourceVersion()}
+                type="button"
+              >
+                旧Factを引き継がず、新しいSource版を開始
+              </button>
+            </div>
+          )}
           <h3>文書から抽出した事実候補</h3>
-          {grounding?.facts.length ? (
+          {groundingMatchesSource && grounding?.facts.length ? (
             <ul>
               {grounding.facts.map((fact) => {
                 const sourceDocument = grounding.documentRevisions.find(
