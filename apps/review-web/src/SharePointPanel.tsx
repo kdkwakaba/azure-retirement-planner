@@ -6,6 +6,7 @@ import {
   sharePointSyncRunSchema,
   type DocumentSource,
   type DocumentGrounding,
+  type Assessment,
   type SharePointSnapshot,
   type SharePointSyncRun,
 } from '@arp/contracts'
@@ -54,11 +55,13 @@ export function SharePointPanel({
   canSync,
   syncEnabled,
   factExtractionEnabled,
+  assessment,
 }: {
   canConfigure: boolean
   canSync: boolean
   syncEnabled: boolean
   factExtractionEnabled: boolean
+  assessment: Pick<Assessment, 'id' | 'workloadId' | 'resources'> | null
 }) {
   const [sources, setSources] = useState<DocumentSource[]>([])
   const [snapshots, setSnapshots] = useState<
@@ -75,6 +78,9 @@ export function SharePointPanel({
   const [groundingHash, setGroundingHash] = useState<string | null>(null)
   const [editedStatements, setEditedStatements] = useState<
     Record<string, string>
+  >({})
+  const [selectedResourceIds, setSelectedResourceIds] = useState<
+    Record<string, string[]>
   >({})
 
   async function loadFacts(workloadId: string) {
@@ -98,6 +104,14 @@ export function SharePointPanel({
       .parse(result)
     setGrounding(parsed.grounding)
     setGroundingHash(parsed.groundingHash)
+    setSelectedResourceIds(
+      Object.fromEntries(
+        (parsed.grounding?.facts ?? []).map((fact) => [
+          fact.factId,
+          fact.resourceIds ?? [],
+        ]),
+      ),
+    )
     setEditedStatements(
       Object.fromEntries(
         (parsed.grounding?.facts ?? []).map((fact) => [
@@ -316,6 +330,14 @@ export function SharePointPanel({
           result.grounding.facts.map((fact) => [fact.factId, fact.statement]),
         ),
       )
+      setSelectedResourceIds(
+        Object.fromEntries(
+          result.grounding.facts.map((fact) => [
+            fact.factId,
+            fact.resourceIds ?? [],
+          ]),
+        ),
+      )
       setNotice(
         result.alreadyExtracted
           ? `この文書・版は抽出済みです（抽出版 ${result.promptVersion}）。`
@@ -347,18 +369,31 @@ export function SharePointPanel({
         .parse(
           await request('sharepoint-facts/review', 'POST', {
             workloadId: selectedWorkloadId,
+            assessmentId:
+              assessment?.workloadId === selectedWorkloadId
+                ? assessment.id
+                : null,
             groundingHash,
             decisions: [
               {
                 factId,
                 reviewStatus,
                 statement: editedStatements[factId]?.trim(),
+                resourceIds: selectedResourceIds[factId] ?? [],
               },
             ],
           }),
         )
       setGrounding(result.grounding)
       setGroundingHash(result.groundingHash)
+      setSelectedResourceIds(
+        Object.fromEntries(
+          result.grounding.facts.map((fact) => [
+            fact.factId,
+            fact.resourceIds ?? [],
+          ]),
+        ),
+      )
       setNotice(
         reviewStatus === 'Confirmed'
           ? '事実を確認済みにしました。'
@@ -394,6 +429,7 @@ export function SharePointPanel({
       setGrounding(result.grounding)
       setGroundingHash(result.groundingHash)
       setEditedStatements({})
+      setSelectedResourceIds({})
       setNotice(
         '新しいSource設定版の空のGroundingを開始しました。旧Groundingは不変記録として参照されています。',
       )
@@ -610,6 +646,15 @@ export function SharePointPanel({
             </div>
           )}
           <h3>文書から抽出した事実候補</h3>
+          {assessment?.workloadId === selectedWorkloadId ? (
+            <p className="muted">
+              現在選択中の評価にあるリソースだけをResourceDependency事実へ紐付けできます。
+            </p>
+          ) : (
+            <p className="muted">
+              ResourceDependencyをAzureリソースへ紐付ける場合は、通知一覧で同じWorkloadの評価を選択してください。
+            </p>
+          )}
           {groundingMatchesSource && grounding?.facts.length ? (
             <ul>
               {grounding.facts.map((fact) => {
@@ -632,6 +677,45 @@ export function SharePointPanel({
                     </small>
                     {fact.reviewStatus === 'Candidate' ? (
                       <>
+                        {fact.kind === 'ResourceDependency' && (
+                          <fieldset className="sharepoint-resource-links">
+                            <legend>対象Azureリソースとの対応（任意）</legend>
+                            {assessment?.workloadId === selectedWorkloadId &&
+                            assessment.resources.length > 0 ? (
+                              assessment.resources.map((resource) => (
+                                <label key={resource.id}>
+                                  <input
+                                    checked={(
+                                      selectedResourceIds[fact.factId] ?? []
+                                    ).includes(resource.id)}
+                                    onChange={(event) =>
+                                      setSelectedResourceIds((previous) => {
+                                        const ids = new Set(
+                                          previous[fact.factId] ?? [],
+                                        )
+                                        if (event.target.checked)
+                                          ids.add(resource.id)
+                                        else ids.delete(resource.id)
+                                        return {
+                                          ...previous,
+                                          [fact.factId]: [...ids],
+                                        }
+                                      })
+                                    }
+                                    type="checkbox"
+                                  />
+                                  <span>
+                                    {resource.type} — {resource.id}
+                                  </span>
+                                </label>
+                              ))
+                            ) : (
+                              <p>
+                                同じWorkloadの評価を選択すると、その評価に含まれるAzureリソースだけを紐付けできます。文書の記述と一致するリソースがなければ空欄のままにしてください。
+                              </p>
+                            )}
+                          </fieldset>
+                        )}
                         <textarea
                           aria-label="事実候補の訂正文"
                           maxLength={4000}
@@ -676,6 +760,9 @@ export function SharePointPanel({
                           ? '確認済み'
                           : '除外済み'}
                         （{fact.reviewedBy}・{fact.reviewedAt}）
+                        {fact.resourceIds?.length
+                          ? ` · 対象リソース ${fact.resourceIds.join(', ')}`
+                          : ''}
                       </p>
                     )}
                   </li>

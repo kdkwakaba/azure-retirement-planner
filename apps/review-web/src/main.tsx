@@ -840,6 +840,15 @@ function App() {
             canSync={canSync}
             syncEnabled={sharePointSyncEnabled}
             factExtractionEnabled={sharePointFactExtractionEnabled}
+            assessment={
+              current
+                ? {
+                    id: current.id,
+                    workloadId: current.workloadId,
+                    resources: current.resources,
+                  }
+                : null
+            }
           />
         )}
         <section className="operations-summary" aria-labelledby="summary-title">

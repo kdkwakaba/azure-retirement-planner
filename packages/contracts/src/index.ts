@@ -322,6 +322,10 @@ export const documentFactSchema = z
     sourceId: z.string().min(1).max(100),
     documentItemId: z.string().min(1).max(500),
     documentContentHash: z.string().regex(/^[a-f0-9]{64}$/),
+    resourceIds: z
+      .array(z.string().regex(/^\/subscriptions\//i))
+      .max(100)
+      .optional(),
     locator: z
       .object({
         heading: z.string().max(500).nullable(),
@@ -402,6 +406,12 @@ export const documentGroundingSchema = z
           code: 'custom',
           path: ['facts', index, 'sampleOnly'],
           message: 'Sample classification must match document grounding',
+        })
+      if (fact.kind !== 'ResourceDependency' && fact.resourceIds?.length)
+        context.addIssue({
+          code: 'custom',
+          path: ['facts', index, 'resourceIds'],
+          message: 'Only resource dependency facts can link Azure resources',
         })
       if (
         !revisions.has(

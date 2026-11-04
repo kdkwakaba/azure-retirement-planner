@@ -616,6 +616,7 @@ app.http('api', {
           const body = z
             .object({
               workloadId: z.string().min(1).max(200),
+              assessmentId: z.string().min(1).max(200).nullable(),
               groundingHash: z.string().regex(/^[a-f0-9]{64}$/),
               decisions: z
                 .array(
@@ -624,6 +625,9 @@ app.http('api', {
                       factId: z.string().min(1).max(200),
                       reviewStatus: z.enum(['Confirmed', 'Rejected']),
                       statement: z.string().trim().min(1).max(4000),
+                      resourceIds: z
+                        .array(z.string().regex(/^\/subscriptions\//i))
+                        .max(100),
                     })
                     .strict(),
                 )
@@ -657,6 +661,41 @@ app.http('api', {
             return reply(409, {
               error: 'Only current candidate facts can be reviewed',
             })
+          const assessment = body.assessmentId
+            ? await store.assessment(body.assessmentId)
+            : null
+          if (assessment && assessment.workloadId !== body.workloadId)
+            return reply(409, {
+              error: 'Selected assessment belongs to a different Workload',
+            })
+          if (
+            body.decisions.some((decision) => {
+              const fact = existing.facts.find(
+                (item) => item.factId === decision.factId,
+              )
+              if (!fact) return true
+              if (
+                fact.kind !== 'ResourceDependency' &&
+                decision.resourceIds.length > 0
+              )
+                return true
+              if (
+                new Set(decision.resourceIds.map((id) => id.toLowerCase()))
+                  .size !== decision.resourceIds.length
+              )
+                return true
+              return decision.resourceIds.some(
+                (resourceId) =>
+                  !assessment?.resources.some(
+                    (resource) =>
+                      resource.id.toLowerCase() === resourceId.toLowerCase(),
+                  ),
+              )
+            })
+          )
+            return reply(400, {
+              error: 'Resource links must reference the selected assessment',
+            })
           const now = new Date().toISOString()
           const facts = existing.facts.map((fact) => {
             const decision = decisions.get(fact.factId)
@@ -667,6 +706,7 @@ app.http('api', {
               reviewStatus: decision.reviewStatus,
               reviewedBy: principal.id,
               reviewedAt: now,
+              resourceIds: decision.resourceIds,
             }
           })
           const updated = documentGroundingSchema.parse({
