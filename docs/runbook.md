@@ -105,6 +105,8 @@ GitHubはIssue作成前にOutboxを`Sending`へ条件更新する。作成応答
 
 API・評価Queue・日次同期・Receipt/Export outboxの処理失敗は、App InsightsへJSONの`ProcessingFailure`として`stage`、`correlationId`、`errorType`のみ記録する。例外メッセージ、スタック、要求本文、Resource IDはログへ出さない。APIは同じ相関IDを503応答に返す。背景処理は記録後に例外を再送出し、Functionsの5回再試行とPoison Queueへの移動を維持する。App Insightsで`ProcessingFailure`、401/403、429、Poison、依存待ちを監視する。Queue invocation IDとアプリ相関IDの実環境での結合、Poison再投入、業務KPIのDashboard／通知／専用画面は未検証。実PayloadはBlob/Tableのみ、CI成果物には残さない。
 
+SharePoint事実抽出のAPI失敗は、`stage`で参照元・Assessment・Snapshot・既存Grounding・原文Blob・DOCX/XLSX解析・モデル利用枠・モデル呼出・Grounding保存のどこで止まったかを確認する。画面では同じ段階を日本語で表示する。特定には`traces | where message contains '<correlationId>'`を使い、要求本文・文書本文・モデル入出力を診断ログへ追加しない。ステージ分類が入る前の実行は`http`とだけ記録されるため、相関IDのある旧失敗に処理段階を後付け推定しない。
+
 ## 6. 費用と撤去
 
 APIの日次モデル呼出枠は200件で、同時予約をETagで制御する。要求ごとのToken上限は設けない。PoC累計20,000円は利用者がCost Managementで監視する。アプリによる金額ハード停止は実装しない。Cost ManagementのBudgetは通知用で、利用量停止機能ではなく課金データも遅延する。Foundryモデルの費用とFunctions、Storage、ログを含むRG費用を手動で確認する。

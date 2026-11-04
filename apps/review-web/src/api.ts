@@ -44,18 +44,31 @@ export class ApiRequestError extends Error {
       NetworkError: 'ネットワークエラー',
       Unknown: '原因未分類',
     }
+    const stageLabels: Record<string, string> = {
+      'sharepoint-fact-extraction-request': '文書事実抽出の要求確認',
+      'sharepoint-fact-source-read': 'SharePoint参照元の読込',
+      'sharepoint-fact-assessment-read': '評価情報の読込',
+      'sharepoint-fact-snapshot-read': 'SharePoint同期結果の読込',
+      'sharepoint-fact-grounding-read': '既存の抽出結果の読込',
+      'sharepoint-fact-document-read': '保存文書の読込',
+      'sharepoint-fact-document-parse': '文書本文の抽出',
+      'sharepoint-fact-cached-response-read': '抽出済みモデル応答の読込',
+      'sharepoint-fact-budget-reservation': 'モデル利用枠の確保',
+      'sharepoint-fact-model-extraction': 'モデルによる事実候補の抽出',
+      'sharepoint-fact-grounding-save': '抽出結果の保存',
+    }
     const pieces = [
       status === 401
         ? 'サインインが必要です'
         : status === 403
           ? 'この操作の権限がありません'
           : `処理できませんでした (HTTP ${status})`,
-      stage ? `段階: ${stage}` : '',
+      stage ? `段階: ${stageLabels[stage] ?? stage}` : '',
       category ? `分類: ${categoryLabels[category] ?? category}` : '',
       operation ? `操作: ${operation}` : '',
       providerCode ? `GitHubコード: ${providerCode}` : '',
       upstreamHttpStatus !== null
-        ? `GitHub応答: HTTP ${upstreamHttpStatus}`
+        ? `上流サービス応答: HTTP ${upstreamHttpStatus}`
         : '',
       correlationId ? `照会ID: ${correlationId}` : '',
     ].filter(Boolean)
