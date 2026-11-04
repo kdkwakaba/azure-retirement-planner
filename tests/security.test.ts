@@ -268,6 +268,37 @@ test('platform identity obtains and caches only allowed scopes', async (t) => {
     else process.env.IDENTITY_HEADER = oldHeader
   }
 })
+test('platform identity allows only the Microsoft Graph default scope for SharePoint access', async (t) => {
+  const oldEndpoint = process.env.IDENTITY_ENDPOINT,
+    oldHeader = process.env.IDENTITY_HEADER
+  process.env.IDENTITY_ENDPOINT = 'http://127.0.0.1:12345/MSI/token'
+  process.env.IDENTITY_HEADER = 'synthetic-header'
+  t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL) => {
+    assert.equal(
+      new URL(String(input)).searchParams.get('resource'),
+      'https://graph.microsoft.com',
+    )
+    return Response.json({
+      access_token: 'synthetic-graph-token',
+      expires_on: Math.floor(Date.now() / 1000) + 3600,
+    })
+  })
+  try {
+    assert.equal(
+      (
+        await new PlatformIdentity().getToken(
+          'https://graph.microsoft.com/.default',
+        )
+      ).token,
+      'synthetic-graph-token',
+    )
+  } finally {
+    if (oldEndpoint === undefined) delete process.env.IDENTITY_ENDPOINT
+    else process.env.IDENTITY_ENDPOINT = oldEndpoint
+    if (oldHeader === undefined) delete process.env.IDENTITY_HEADER
+    else process.env.IDENTITY_HEADER = oldHeader
+  }
+})
 function correction(): Correction {
   return {
     scopeDisposition: 'InScope',

@@ -18,6 +18,7 @@ export class PlatformIdentity {
         'https://cognitiveservices.azure.com/.default',
         'https://storage.azure.com/.default',
         'https://vault.azure.net/.default',
+        'https://graph.microsoft.com/.default',
       ].includes(scope)
     )
       throw new Error('Unapproved identity scope')

@@ -2,7 +2,7 @@
 
 2026-11-03。状態はコードの実装と接続検証を分ける。ローカル検査合格はPoC成功・実環境動作・モデル品質の証明ではない。
 
-2026-11-04追加計画: IMP-09/09bの業務情報連携、IMP-11/12の判断・説明、IMP-13/14の根拠・承認、IMP-19の品質評価を拡張する[SharePoint設計書による影響評価計画](sharepoint-document-impact-plan.md)を作成。初期は専用サンプル用フォルダ1件の複数文書、将来は複数フォルダを参照する。PR #125でDOCX／XLSXテキスト抽出、PR #126で候補の引用元検証、PR #127で上限付きLLM候補抽出アダプターを追加。PR #128でGroundingを不変Blobへ保存しWorkloadとsampleOnly別に読込。今回、通常評価がsampleOnly=falseのGroundingだけを取得し、人間確認済み事実のみEvidenceと入力Hashへ反映する処理を追加。確認UI、SharePoint接続、原文バイナリ保存、依存照合、実モデル品質評価は未完了。
+2026-11-04追加計画: IMP-09/09bの業務情報連携、IMP-11/12の判断・説明、IMP-13/14の根拠・承認、IMP-19の品質評価を拡張する[SharePoint設計書による影響評価計画](sharepoint-document-impact-plan.md)を作成。初期は専用サンプル用フォルダ1件の複数文書、将来は複数フォルダを参照する。PR #125でDOCX／XLSX抽出、PR #126で候補引用検証、PR #127で上限付きLLM抽出、PR #128でGrounding不変保存、PR #129でsampleOnly=falseの確認済み事実をAssessmentへ接続。PR #130にGraphから指定フォルダを読み取るコネクターを追加し、今回、原本をContent Hash別に不変Blob保存し、完全列挙済みSnapshotのみ現行版へ反映する処理と版差分を追加。Graphアプリ権限／Site grant、接続実証、Queue起動・再試行、Graph失敗状態の永続化、確認UI、依存照合、実モデル品質評価は未完了。
 
 | ID | Epic / 作業・成果物 | 依存 | 完了条件 | 状態 | Size / Role / 並列可 |
 |---|---|---|---|---|---|

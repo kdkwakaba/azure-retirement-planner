@@ -170,6 +170,58 @@ export const documentRevisionSchema = z
     sampleOnly: z.boolean(),
   })
   .strict()
+export const sharePointSnapshotSchema = z
+  .object({
+    schemaVersion: z.literal('1'),
+    sourceId: z.string().min(1).max(100),
+    sampleOnly: z.boolean(),
+    configurationVersion: z.string().min(1).max(100),
+    observedAt: z.iso.datetime(),
+    enumerationComplete: z.literal(true),
+    documents: z.array(documentRevisionSchema).max(100),
+    skipped: z
+      .array(
+        z
+          .object({
+            itemId: z.string().min(1).max(500),
+            name: z.string().min(1).max(500),
+            reason: z.literal('UnsupportedExtension'),
+          })
+          .strict(),
+      )
+      .max(2000),
+  })
+  .strict()
+  .superRefine((snapshot, context) => {
+    const seen = new Set<string>()
+    snapshot.documents.forEach((document, index) => {
+      if (document.sourceId !== snapshot.sourceId)
+        context.addIssue({
+          code: 'custom',
+          path: ['documents', index, 'sourceId'],
+          message: 'Document revision source does not match snapshot source',
+        })
+      if (document.sampleOnly !== snapshot.sampleOnly)
+        context.addIssue({
+          code: 'custom',
+          path: ['documents', index, 'sampleOnly'],
+          message: 'Document sample classification does not match snapshot',
+        })
+      if (document.observedAt !== snapshot.observedAt)
+        context.addIssue({
+          code: 'custom',
+          path: ['documents', index, 'observedAt'],
+          message: 'Document observation time does not match snapshot',
+        })
+      if (seen.has(document.itemId))
+        context.addIssue({
+          code: 'custom',
+          path: ['documents', index, 'itemId'],
+          message: 'Snapshot contains a duplicate document item',
+        })
+      seen.add(document.itemId)
+    })
+  })
 export const documentTextBlockSchema = z
   .object({
     sourceId: z.string().min(1).max(100),
@@ -642,6 +694,7 @@ export type ResourceImpact = z.infer<typeof resourceSchema>
 export type Evidence = z.infer<typeof evidenceSchema>
 export type BusinessContext = z.infer<typeof businessContextSchema>
 export type DocumentSource = z.infer<typeof documentSourceSchema>
+export type SharePointSnapshot = z.infer<typeof sharePointSnapshotSchema>
 export type DocumentRevision = z.infer<typeof documentRevisionSchema>
 export type DocumentTextBlock = z.infer<typeof documentTextBlockSchema>
 export type DocumentText = z.infer<typeof documentTextSchema>
