@@ -151,7 +151,16 @@ Bicepパラメーターは次のとおり。
 | `sharePointSyncEnabled` | `SHAREPOINT_SYNC_ENABLED` | `true` |
 | `sharePointFactExtractionEnabled` | `SHAREPOINT_FACT_EXTRACTION_ENABLED` | `false` |
 
-接続確認ではフォルダ同期だけを有効にし、モデルを使う事実抽出は無効のままにする。**現行の`infra/environments/poc.bicepparam`と手動デプロイWorkflowではこの2つを指定できない。** そのままではBicep既定値`false`となり同期できない。Bicepの環境パラメーターと手動CD経路で同期フラグを渡せる変更をPRで行い、マージ後にレビュー済みの手動CDでデプロイする。Portal上の一時的な設定変更だけを恒久設定として扱わない。
+接続確認ではフォルダ同期だけを有効にし、モデルを使う事実抽出は無効のままにする。`infra/environments/poc.bicepparam`は次のRepository VariablesをBicepパラメーターへ変換し、手動CDのWhat-IfとApplyの両方で同じ設定を使う。値が未設定の場合は安全側の`false`となる。
+
+GitHub Repository Variablesへ次を設定し、Manual PoC deploymentを`plan`→What-If確認→`apply`の順に実行する。`apply`では計画と同じ成功済みmain CI runを指定し、`infrastructure_only=true`にする。これでBicep app settingsだけを反映し、Functionパッケージは再配置しない。
+
+| Repository Variable | 接続確認値 |
+|---|---|
+| `ARP_SHAREPOINT_SYNC_ENABLED` | `true` |
+| `ARP_SHAREPOINT_FACT_EXTRACTION_ENABLED` | `false` |
+
+両Variableが未設定なら`false`として扱う。したがって接続確認時は同期のみを明示的に有効化する。
 
 GraphのApplication permission／SharePointサイト個別許可はAzure RBACとは別。`Sites.Selected`は専用Bicep Bootstrapで管理し、サイト個別許可だけを通常CDから分離した管理者手順で設定する。
 
