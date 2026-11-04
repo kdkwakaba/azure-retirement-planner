@@ -34,6 +34,7 @@ import {
   extractDocumentText,
   extractDocumentFacts,
   bindDocumentFactProposalsFromResponse,
+  documentFactDependencyResourceIds,
   DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION,
 } from '@arp/adapters'
 import {
@@ -675,6 +676,10 @@ app.http('api', {
                       resourceIds: z
                         .array(z.string().regex(/^\/subscriptions\//i))
                         .max(100),
+                      relatedFactIds: z
+                        .array(z.string().min(1).max(200))
+                        .max(20)
+                        .optional(),
                     })
                     .strict(),
                 )
@@ -696,17 +701,34 @@ app.http('api', {
               error: 'Duplicate fact decisions are not allowed',
             })
           if (
-            body.decisions.some(
-              (decision) =>
-                !existing.facts.some(
-                  (fact) =>
-                    fact.factId === decision.factId &&
-                    fact.reviewStatus === 'Candidate',
-                ),
-            )
+            body.decisions.some((decision) => {
+              const fact = existing.facts.find(
+                (item) => item.factId === decision.factId,
+              )
+              if (!fact) return true
+              if (fact.reviewStatus === 'Candidate') return false
+              if (
+                fact.reviewStatus !== 'Confirmed' ||
+                decision.reviewStatus !== 'Confirmed' ||
+                decision.relatedFactIds === undefined ||
+                decision.statement.trim() !== fact.statement
+              )
+                return true
+              const priorIds = (fact.resourceIds ?? []).map((id) =>
+                id.toLowerCase(),
+              )
+              const requestedIds = decision.resourceIds.map((id) =>
+                id.toLowerCase(),
+              )
+              return (
+                priorIds.length !== requestedIds.length ||
+                priorIds.some((id) => !requestedIds.includes(id))
+              )
+            })
           )
             return reply(409, {
-              error: 'Only current candidate facts can be reviewed',
+              error:
+                'Only candidate facts can be reviewed; confirmed facts can only update explicit dependency links',
             })
           const assessment = body.assessmentId
             ? await store.assessment(body.assessmentId)
@@ -715,6 +737,16 @@ app.http('api', {
             return reply(409, {
               error: 'Selected assessment belongs to a different Workload',
             })
+          const requestedLinkedFactIds = body.decisions.flatMap(
+            (decision) => decision.relatedFactIds ?? [],
+          )
+          const requestedLinkedResourceIds =
+            requestedLinkedFactIds.length > 0
+              ? documentFactDependencyResourceIds(
+                  existing,
+                  requestedLinkedFactIds,
+                )
+              : []
           if (
             body.decisions.some((decision) => {
               const fact = existing.facts.find(
@@ -729,6 +761,19 @@ app.http('api', {
               if (
                 new Set(decision.resourceIds.map((id) => id.toLowerCase()))
                   .size !== decision.resourceIds.length
+              )
+                return true
+              if (
+                decision.relatedFactIds?.length &&
+                (!assessment ||
+                  requestedLinkedResourceIds.some(
+                    (resourceId) =>
+                      !assessment.resources.some(
+                        (resource) =>
+                          resource.id.toLowerCase() ===
+                          resourceId.toLowerCase(),
+                      ),
+                  ))
               )
                 return true
               return decision.resourceIds.some(
@@ -754,13 +799,22 @@ app.http('api', {
               reviewedBy: principal.id,
               reviewedAt: now,
               resourceIds: decision.resourceIds,
+              ...(decision.relatedFactIds
+                ? { relatedFactIds: decision.relatedFactIds }
+                : {}),
             }
           })
-          const updated = documentGroundingSchema.parse({
+          const updatedResult = documentGroundingSchema.safeParse({
             ...existing,
             facts,
             observedAt: now,
           })
+          if (!updatedResult.success)
+            return reply(400, {
+              error:
+                'Dependency links must connect eligible confirmed facts without cycles',
+            })
+          const updated = updatedResult.data
           let groundingHash: string
           try {
             groundingHash = await store.saveDocumentGrounding(
