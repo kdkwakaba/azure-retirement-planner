@@ -120,6 +120,9 @@ app.http('api', {
             process.env.DECISION_REEVALUATION_ENABLED === 'true',
           canReevaluate:
             principal.kind === 'User' && principal.roles.includes('Governance'),
+          canManageSharePoint:
+            principal.kind === 'User' && principal.roles.includes('Governance'),
+          sharePointSyncEnabled: process.env.SHAREPOINT_SYNC_ENABLED === 'true',
           canSync:
             principal.kind === 'User' &&
             principal.roles.some((role) =>
@@ -272,6 +275,18 @@ app.http('api', {
           .parse({ sourceId: request.query.get('sourceId') })
         return reply(200, await store.sharePointSource(query.sourceId))
       }
+      if (request.method === 'GET' && path === 'sharepoint-sources') {
+        requireUserRole(principal, apiRolePolicy.sync)
+        return reply(200, await store.sharePointSources())
+      }
+      if (request.method === 'GET' && path === 'sharepoint-snapshot') {
+        requireUserRole(principal, apiRolePolicy.sync)
+        const query = z
+          .object({ sourceId: z.string().min(1).max(100) })
+          .strict()
+          .parse({ sourceId: request.query.get('sourceId') })
+        return reply(200, await store.sharePointSnapshot(query.sourceId))
+      }
       if (request.method === 'GET' && path === 'sharepoint-sync-status') {
         requireUserRole(principal, apiRolePolicy.sync)
         const query = z
@@ -316,14 +331,25 @@ app.http('api', {
           const content = await request.text()
           if (Buffer.byteLength(content) > 200000)
             return reply(413, { error: 'Request too large' })
-          const source = documentSourceSchema.parse(JSON.parse(content))
-          if (
-            source.tenantId !== config().tenantId ||
-            source.sampleOnly !== true
-          )
-            return reply(400, {
-              error: 'Only same-tenant sample SharePoint sources are allowed',
+          const input = z
+            .object({
+              sourceId: z.string().min(1).max(100),
+              siteId: z.string().min(1).max(500),
+              driveId: z.string().min(1).max(500),
+              folderItemId: z.string().min(1).max(500),
+              displayName: z.string().min(1).max(200),
+              workloadIds: z.array(z.string().min(1).max(200)).min(1),
+              configurationVersion: z.string().min(1).max(100),
             })
+            .strict()
+            .parse(JSON.parse(content))
+          const source = documentSourceSchema.parse({
+            ...input,
+            tenantId: config().tenantId,
+            includeSubfolders: true,
+            allowedExtensions: ['.docx', '.xlsx'],
+            sampleOnly: true,
+          })
           const sourceHash = await store.saveSharePointSource(source)
           return reply(200, { source, sourceHash })
         }

@@ -126,6 +126,9 @@ test('SharePoint source changes require a new configuration version', async (t) 
     upsertEntity: async (entity: Record<string, unknown>) => {
       pointers.set(`${entity.partitionKey}/${entity.rowKey}`, entity)
     },
+    listEntities: async function* () {
+      for (const entity of pointers.values()) yield entity
+    },
   } as never
   t.mock.method(
     store,
@@ -154,6 +157,13 @@ test('SharePoint source changes require a new configuration version', async (t) 
     (await store.sharePointSource(source.sourceId))?.source
       .configurationVersion,
     'config-v2',
+  )
+  await assert.rejects(
+    store.saveSharePointSource({
+      ...source,
+      sourceId: 'second-sample-source',
+    }),
+    /one sample source/,
   )
 })
 

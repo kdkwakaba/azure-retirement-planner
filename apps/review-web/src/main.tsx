@@ -8,6 +8,7 @@ import {
 import { generalImpactNarratives } from '@arp/domain/impact-narratives'
 import './styles.css'
 import { CorrectionForm } from './CorrectionForm.tsx'
+import { SharePointPanel } from './SharePointPanel.tsx'
 import {
   approvalDisplay,
   assessmentStatusDisplay,
@@ -252,6 +253,8 @@ type FeatureStatus = {
   canReevaluate: boolean
   canSync: boolean
   canReview: boolean
+  canManageSharePoint: boolean
+  sharePointSyncEnabled: boolean
 }
 type DecisionReevaluationStatus = {
   runId: string
@@ -334,6 +337,8 @@ function App() {
       useState(false),
     [canReevaluate, setCanReevaluate] = useState(false),
     [canSync, setCanSync] = useState(false),
+    [canManageSharePoint, setCanManageSharePoint] = useState(false),
+    [sharePointSyncEnabled, setSharePointSyncEnabled] = useState(false),
     [canReview, setCanReview] = useState(false),
     [showNoAction, setShowNoAction] = useState(false),
     [reevaluationStatus, setReevaluationStatus] =
@@ -482,6 +487,8 @@ function App() {
       )
       setCanReevaluate(uat.canReevaluate)
       setCanSync(uat.canSync)
+      setCanManageSharePoint(uat.canManageSharePoint)
+      setSharePointSyncEnabled(uat.sharePointSyncEnabled)
       setCanReview(uat.canReview)
       if (selected && !visible.some((item) => item.id === selected))
         setSelected(null)
@@ -823,6 +830,13 @@ function App() {
           {testModeEnabled && <span className="notice">テストモード</span>}
           <span>評価対象は読み取り専用</span>
         </div>
+        {canSync && (
+          <SharePointPanel
+            canConfigure={canManageSharePoint}
+            canSync={canSync}
+            syncEnabled={sharePointSyncEnabled}
+          />
+        )}
         <section className="operations-summary" aria-labelledby="summary-title">
           <h2 id="summary-title">評価状況</h2>
           <p>

@@ -305,6 +305,8 @@ export class AzureStore {
       throw new Error('Only sample SharePoint sources can be registered')
     const sourceHash = hash(source)
     const current = await this.sharePointSource(source.sourceId)
+    if (!current && (await this.sharePointSources()).length > 0)
+      throw new Error('Initial SharePoint setup supports one sample source')
     if (
       current &&
       current.sourceHash !== sourceHash &&
@@ -357,6 +359,25 @@ export class AzureStore {
     )
       throw new Error('SharePoint source index does not match its record')
     return { source, sourceHash: entity.sourceHash }
+  }
+  async sharePointSources(): Promise<DocumentSource[]> {
+    const sources: DocumentSource[] = []
+    for await (const entity of this.table.listEntities<Record<string, unknown>>(
+      {
+        queryOptions: {
+          filter:
+            "PartitionKey eq 'sharepoint-source' and entityKind eq 'sharepoint-source-head'",
+        },
+      },
+    )) {
+      if (typeof entity.sourceId !== 'string')
+        throw new Error('SharePoint source index is invalid')
+      const registered = await this.sharePointSource(entity.sourceId)
+      if (registered) sources.push(registered.source)
+    }
+    return sources.sort((left, right) =>
+      left.displayName.localeCompare(right.displayName),
+    )
   }
   async sharePointSourceByHash(sourceHash: string): Promise<DocumentSource> {
     if (!/^[a-f0-9]{64}$/.test(sourceHash))
