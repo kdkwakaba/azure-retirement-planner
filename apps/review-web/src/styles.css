@@ -201,6 +201,124 @@ small {
 .metrics strong {
   font-size: 24px;
 }
+.sharepoint-panel {
+  margin-bottom: 20px;
+}
+.sharepoint-heading,
+.sharepoint-sync-actions,
+.sharepoint-source-row,
+.sharepoint-config-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.sharepoint-heading h2,
+.sharepoint-heading p {
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+.sharepoint-source-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+  margin: 16px 0;
+}
+.sharepoint-source-row {
+  justify-content: flex-start;
+}
+.sharepoint-source-row > button:first-child {
+  flex: 1;
+  overflow-wrap: anywhere;
+  color: #193f42;
+  background: #f4f7f6;
+  text-align: left;
+}
+.sharepoint-source-row > button:first-child.selected {
+  background: #d4ede5;
+  outline: 2px solid #126b5d;
+}
+.sharepoint-source-row .secondary-button,
+.secondary-button {
+  background: #edf3f1;
+  color: #193f42;
+}
+.status-enabled,
+.status-disabled {
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.status-enabled {
+  color: #17604f;
+  background: #e5f4ee;
+}
+.status-disabled {
+  color: #744a1e;
+  background: #fff3dc;
+}
+.sharepoint-content {
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid #dce6e3;
+  border-radius: 8px;
+  background: #f9fbfa;
+}
+.sharepoint-sync-actions {
+  align-items: flex-start;
+}
+.sharepoint-sync-actions small {
+  margin-bottom: 0;
+}
+.sharepoint-run {
+  margin: 14px 0;
+  padding: 12px;
+  border-left: 3px solid #2877a5;
+  background: #e8f2f8;
+}
+.sharepoint-snapshot {
+  margin-top: 16px;
+}
+.sharepoint-snapshot h3 {
+  margin: 12px 0 4px;
+}
+.sharepoint-snapshot ul {
+  padding-left: 22px;
+}
+.sharepoint-snapshot li {
+  margin: 10px 0;
+  overflow-wrap: anywhere;
+}
+.sharepoint-snapshot li small {
+  margin: 2px 0;
+}
+.sharepoint-config {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #dce6e3;
+}
+.sharepoint-config form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+}
+.sharepoint-config label {
+  display: grid;
+  gap: 5px;
+  font-size: 13px;
+}
+.sharepoint-config input {
+  min-width: 0;
+  margin: 0;
+}
+.sharepoint-config-actions {
+  justify-content: flex-start;
+  grid-column: 1 / -1;
+}
+.muted {
+  color: #657f80;
+}
 .impact-narrative {
   margin-top: 12px;
   padding-top: 10px;
@@ -386,6 +504,9 @@ textarea {
   }
   main {
     padding: 12px;
+  }
+  .sharepoint-config form {
+    grid-template-columns: 1fr;
   }
 }
 
