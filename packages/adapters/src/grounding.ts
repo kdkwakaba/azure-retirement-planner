@@ -14,7 +14,9 @@ export function confirmedDocumentGroundingInputHash(
 ): string {
   const grounding = documentGroundingSchema.parse(value)
   const facts = grounding.facts.filter(
-    (fact) => fact.reviewStatus === 'Confirmed',
+    (fact) =>
+      fact.reviewStatus === 'Confirmed' &&
+      Boolean(fact.reviewedBy && fact.reviewedAt),
   )
   const revisionKeys = new Set(
     facts.map(
@@ -58,7 +60,12 @@ export function confirmedDocumentFactEvidence(
     ]),
   )
   return grounding.facts.flatMap((fact) => {
-    if (fact.reviewStatus !== 'Confirmed') return []
+    if (
+      fact.reviewStatus !== 'Confirmed' ||
+      !fact.reviewedBy ||
+      !fact.reviewedAt
+    )
+      return []
     const revision = revisions.get(
       `${fact.sourceId}:${fact.documentItemId}:${fact.documentContentHash}`,
     )
