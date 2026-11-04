@@ -8,6 +8,7 @@ import {
   type SharePointSnapshot,
 } from '@arp/contracts'
 import { credential } from './azure.ts'
+import { RemoteError } from './http.ts'
 import type { AzureStore } from './store.ts'
 
 const GRAPH_ORIGIN = 'https://graph.microsoft.com'
@@ -106,12 +107,12 @@ async function graphJson(
         signal: AbortSignal.timeout(30_000),
       })
     } catch {
-      if (attempt === 2) throw new Error('SharePoint Graph request failed')
+      if (attempt === 2) throw new TypeError('SharePoint Graph request failed')
       continue
     }
     if (response.ok) break
     if (![429, 503].includes(response.status) || attempt === 2)
-      throw new Error(`SharePoint Graph request failed (${response.status})`)
+      throw new RemoteError(response.status)
     const retryAfter = Number(response.headers.get('retry-after') ?? '1')
     const delay = Number.isFinite(retryAfter)
       ? Math.max(0, Math.min(5000, retryAfter * 1000))
@@ -141,8 +142,7 @@ async function graphJson(
 }
 
 async function readBytes(response: Response, limit: number): Promise<Buffer> {
-  if (!response.ok)
-    throw new Error(`SharePoint document download failed (${response.status})`)
+  if (!response.ok) throw new RemoteError(response.status)
   const declaredLength = Number(response.headers.get('content-length') ?? 0)
   if (declaredLength > limit)
     throw new Error('SharePoint document exceeds the size limit')
@@ -263,12 +263,12 @@ export async function readSharePointFolder(
         signal: AbortSignal.timeout(30_000),
       })
     } catch {
-      throw new Error('SharePoint document download request failed')
+      throw new TypeError('SharePoint document download request failed')
     }
     if (redirect.status !== 302)
-      throw new Error(
-        `SharePoint document redirect failed (${redirect.status})`,
-      )
+      throw redirect.status >= 400 && redirect.status < 600
+        ? new RemoteError(redirect.status)
+        : new Error('SharePoint document redirect was invalid')
     const location = redirect.headers.get('location')
     if (!location)
       throw new Error('SharePoint document download URL is missing')
@@ -292,6 +292,7 @@ export async function readSharePointFolder(
     } catch (error) {
       if (error instanceof Error && /size limit/.test(error.message))
         throw error
+      if (error instanceof RemoteError) throw error
       throw new Error('SharePoint document content could not be downloaded', {
         cause: error,
       })
