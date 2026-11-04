@@ -337,6 +337,7 @@ export const documentFactSchema = z
       )
       .max(100)
       .optional(),
+    relatedFactIds: z.array(z.string().min(1).max(200)).max(20).optional(),
     locator: z
       .object({
         heading: z.string().max(500).nullable(),
@@ -399,6 +400,15 @@ export const documentGroundingSchema = z
   })
   .strict()
   .superRefine((grounding, context) => {
+    const factsById = new Map(
+      grounding.facts.map((fact) => [fact.factId, fact]),
+    )
+    if (factsById.size !== grounding.facts.length)
+      context.addIssue({
+        code: 'custom',
+        path: ['facts'],
+        message: 'Document fact IDs must be unique within a grounding',
+      })
     const revisions = new Map(
       grounding.documentRevisions.map((revision) => [
         `${revision.sourceId}:${revision.itemId}:${revision.contentHash}`,
@@ -433,6 +443,49 @@ export const documentGroundingSchema = z
           path: ['facts', index, 'resourceLinkCandidates'],
           message: 'Only resource dependency facts can suggest Azure resources',
         })
+      if (fact.relatedFactIds?.length) {
+        if (
+          fact.reviewStatus !== 'Confirmed' ||
+          !fact.reviewedBy ||
+          !fact.reviewedAt
+        )
+          context.addIssue({
+            code: 'custom',
+            path: ['facts', index, 'relatedFactIds'],
+            message: 'Only audited confirmed facts can link dependency facts',
+          })
+        if (new Set(fact.relatedFactIds).size !== fact.relatedFactIds.length)
+          context.addIssue({
+            code: 'custom',
+            path: ['facts', index, 'relatedFactIds'],
+            message: 'Duplicate dependency fact links are not allowed',
+          })
+        for (const relatedFactId of fact.relatedFactIds) {
+          const target = factsById.get(relatedFactId)
+          const allowed =
+            (fact.kind === 'BusinessProcess' &&
+              (target?.kind === 'FeatureUsage' ||
+                target?.kind === 'ResourceDependency')) ||
+            (fact.kind === 'FeatureUsage' &&
+              target?.kind === 'ResourceDependency') ||
+            (fact.kind === 'ResourceDependency' &&
+              target?.kind === 'ResourceDependency')
+          if (
+            !target ||
+            relatedFactId === fact.factId ||
+            !allowed ||
+            target.reviewStatus !== 'Confirmed' ||
+            !target.reviewedBy ||
+            !target.reviewedAt
+          )
+            context.addIssue({
+              code: 'custom',
+              path: ['facts', index, 'relatedFactIds'],
+              message:
+                'Dependency links must target an audited confirmed fact of an allowed kind',
+            })
+        }
+      }
       if (
         !revisions.has(
           `${fact.sourceId}:${fact.documentItemId}:${fact.documentContentHash}`,
@@ -452,6 +505,31 @@ export const documentGroundingSchema = z
           message: 'Sample classification must match document grounding',
         })
     })
+    const indegree = new Map(grounding.facts.map((fact) => [fact.factId, 0]))
+    for (const fact of grounding.facts)
+      for (const targetId of fact.relatedFactIds ?? [])
+        if (indegree.has(targetId))
+          indegree.set(targetId, indegree.get(targetId)! + 1)
+    const roots = [...indegree]
+      .filter(([, degree]) => degree === 0)
+      .map(([factId]) => factId)
+    let visitedCount = 0
+    while (roots.length) {
+      const factId = roots.pop()!
+      visitedCount++
+      for (const targetId of factsById.get(factId)?.relatedFactIds ?? []) {
+        if (!indegree.has(targetId)) continue
+        const degree = indegree.get(targetId)! - 1
+        indegree.set(targetId, degree)
+        if (degree === 0) roots.push(targetId)
+      }
+    }
+    if (visitedCount !== grounding.facts.length)
+      context.addIssue({
+        code: 'custom',
+        path: ['facts'],
+        message: 'Dependency fact links must be acyclic',
+      })
   })
 export const milestoneSchema = z
   .object({
