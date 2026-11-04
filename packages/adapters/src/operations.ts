@@ -19,11 +19,20 @@ export function failureFacts(error: unknown): {
   category: DiscoveryFailure['category']
   httpStatus: number | null
 } {
-  if (error instanceof GitHubGraphQLError) {
+  if (error instanceof GitHubGraphQLError)
     return { category: error.category, httpStatus: error.httpStatus }
-  }
-  if (error instanceof RemoteError) {
-    const status = error.status
+  const status =
+    error instanceof RemoteError
+      ? error.status
+      : typeof error === 'object' && error !== null && 'statusCode' in error
+        ? (error as { statusCode?: unknown }).statusCode
+        : null
+  if (
+    typeof status === 'number' &&
+    Number.isInteger(status) &&
+    status >= 100 &&
+    status <= 599
+  ) {
     return {
       category:
         status === 401
@@ -36,7 +45,9 @@ export function failureFacts(error: unknown): {
                 ? 'Timeout'
                 : status >= 500
                   ? 'UpstreamUnavailable'
-                  : 'InvalidResponse',
+                  : status >= 400
+                    ? 'InvalidResponse'
+                    : 'Unknown',
       httpStatus: status,
     }
   }
