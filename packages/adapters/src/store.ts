@@ -166,25 +166,77 @@ export class AzureStore {
       throw new Error('Document grounding index does not match its record')
     return grounding
   }
-  async saveDocumentGrounding(value: DocumentGrounding): Promise<string> {
+  async saveDocumentGrounding(
+    value: DocumentGrounding,
+    expectedCurrentHash?: string | null,
+  ): Promise<string> {
     const grounding = documentGroundingSchema.parse(value)
     const groundingHash = hash(grounding)
     await this.put('document-grounding', groundingHash, grounding)
-    await this.table.upsertEntity(
-      {
-        partitionKey: 'document-grounding',
-        rowKey: hash({
-          workloadId: grounding.workloadId,
-          sampleOnly: grounding.sampleOnly,
-        }),
-        entityKind: 'document-grounding-head',
+    const entity = {
+      partitionKey: 'document-grounding',
+      rowKey: hash({
         workloadId: grounding.workloadId,
         sampleOnly: grounding.sampleOnly,
-        sourceConfigurationVersion: grounding.sourceConfigurationVersion,
-        groundingHash,
-      },
-      'Replace',
-    )
+      }),
+      entityKind: 'document-grounding-head',
+      workloadId: grounding.workloadId,
+      sampleOnly: grounding.sampleOnly,
+      sourceConfigurationVersion: grounding.sourceConfigurationVersion,
+      groundingHash,
+    }
+    if (expectedCurrentHash !== undefined) {
+      let current: Record<string, unknown> & { etag?: string }
+      try {
+        current = await this.table.getEntity(
+          'document-grounding',
+          entity.rowKey,
+        )
+      } catch (error) {
+        if ((error as { statusCode?: number }).statusCode !== 404) throw error
+        if (expectedCurrentHash !== null)
+          throw new Error('Document grounding changed during review', {
+            cause: error,
+          })
+        try {
+          await this.table.createEntity(entity)
+        } catch (writeError) {
+          if (
+            [409, 412].includes(
+              (writeError as { statusCode?: number }).statusCode ?? 0,
+            )
+          )
+            throw new Error('Document grounding changed during review', {
+              cause: writeError,
+            })
+          throw writeError
+        }
+        return groundingHash
+      }
+      if (
+        expectedCurrentHash === null ||
+        current.groundingHash !== expectedCurrentHash ||
+        typeof current.etag !== 'string'
+      )
+        throw new Error('Document grounding changed during review')
+      try {
+        await this.table.updateEntity(entity, 'Replace', {
+          etag: current.etag,
+        })
+      } catch (writeError) {
+        if (
+          [409, 412].includes(
+            (writeError as { statusCode?: number }).statusCode ?? 0,
+          )
+        )
+          throw new Error('Document grounding changed during review', {
+            cause: writeError,
+          })
+        throw writeError
+      }
+    } else {
+      await this.table.upsertEntity(entity, 'Replace')
+    }
     return groundingHash
   }
   async putSharePointDocument(
@@ -217,6 +269,22 @@ export class AzureStore {
       )
         throw error
     }
+  }
+  async sharePointDocument(
+    sourceId: string,
+    contentHash: string,
+  ): Promise<Buffer> {
+    if (!sourceId.trim() || !/^[a-f0-9]{64}$/.test(contentHash))
+      throw new Error('Invalid SharePoint document key')
+    const blob = this.blobs
+      .getContainerClient('records')
+      .getBlobClient(`sharepoint-documents/${hash(sourceId)}/${contentHash}`)
+    const content = await blob.downloadToBuffer(0, 10 * 1024 * 1024, {
+      conditions: {},
+    })
+    if (createHash('sha256').update(content).digest('hex') !== contentHash)
+      throw new Error('SharePoint document content hash does not match')
+    return content
   }
   async sharePointSnapshot(
     sourceId: string,

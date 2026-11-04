@@ -719,7 +719,11 @@ async function assessWorkload(
   const businessContext = await store.businessContext(workloadId)
   const documentGrounding = await store.documentGrounding(workloadId, false)
   const hasConfirmedDocumentFacts = Boolean(
-    documentGrounding?.facts.some((fact) => fact.reviewStatus === 'Confirmed'),
+    documentGrounding?.facts.some(
+      (fact) =>
+        fact.reviewStatus === 'Confirmed' &&
+        Boolean(fact.reviewedBy && fact.reviewedAt),
+    ),
   )
   const documentGroundingHash =
     documentGrounding && hasConfirmedDocumentFacts

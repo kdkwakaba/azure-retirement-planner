@@ -116,6 +116,14 @@ test('only human-confirmed facts from live grounding become assessment evidence'
         factId: 'fact-confirmed',
         sampleOnly: false,
         reviewStatus: 'Confirmed',
+        reviewedBy: 'governance-user',
+        reviewedAt: '2026-11-03T00:00:00.000Z',
+      },
+      {
+        ...fact,
+        factId: 'legacy-confirmed-without-audit',
+        sampleOnly: false,
+        reviewStatus: 'Confirmed',
       },
     ],
     observedAt: '2026-11-02T00:00:00.000Z',
@@ -178,6 +186,8 @@ test('confirmed document grounding hash ignores retrieval time and unconfirmed c
       facts: grounding.facts.map((item) => ({
         ...item,
         reviewStatus: 'Confirmed',
+        reviewedBy: 'governance-user',
+        reviewedAt: '2026-11-03T00:00:00.000Z',
       })),
     }),
     originalHash,
