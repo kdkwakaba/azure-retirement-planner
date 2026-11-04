@@ -8,6 +8,7 @@ import {
 import {
   confirmedDocumentFactEvidence,
   confirmedDocumentGroundingInputHash,
+  documentFactDependencyResourceIds,
 } from '@arp/adapters'
 import { packageHash, scopeEvidenceToWorkload } from '@arp/domain'
 import { fixture } from './fixtures.ts'
@@ -216,6 +217,125 @@ test('resource dependency links are explicit and stay scoped to the selected Azu
       ],
     }).success,
     false,
+  )
+})
+
+test('human-confirmed document dependency paths combine cross-document facts without inference', () => {
+  const resourceId =
+    '/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/sample/providers/Microsoft.Storage/storageAccounts/sample'
+  const revisions = [
+    { ...revision, name: 'business-flow.docx', contentHash: 'a'.repeat(64) },
+    {
+      ...revision,
+      itemId: 'document-2',
+      name: 'feature-design.docx',
+      contentHash: 'b'.repeat(64),
+    },
+    {
+      ...revision,
+      itemId: 'document-3',
+      name: 'azure-architecture.docx',
+      contentHash: 'c'.repeat(64),
+    },
+  ].map((item) => ({ ...item, sampleOnly: false }))
+  const audit = {
+    reviewStatus: 'Confirmed' as const,
+    reviewedBy: 'governance-user',
+    reviewedAt: '2026-11-03T00:00:00.000Z',
+    sampleOnly: false,
+  }
+  const facts = [
+    {
+      ...fact,
+      ...audit,
+      factId: 'process',
+      kind: 'BusinessProcess' as const,
+      statement: '受注処理は注文APIを呼び出す。',
+      documentContentHash: revisions[0]!.contentHash,
+      relatedFactIds: ['feature'],
+    },
+    {
+      ...fact,
+      ...audit,
+      factId: 'feature',
+      kind: 'FeatureUsage' as const,
+      statement: '注文APIはManaged IdentityでAzure Storageを利用する。',
+      sourceId: revisions[1]!.sourceId,
+      documentItemId: revisions[1]!.itemId,
+      documentContentHash: revisions[1]!.contentHash,
+      relatedFactIds: ['resource'],
+    },
+    {
+      ...fact,
+      ...audit,
+      factId: 'resource',
+      statement: '注文APIはサンプルStorage Accountを利用する。',
+      sourceId: revisions[2]!.sourceId,
+      documentItemId: revisions[2]!.itemId,
+      documentContentHash: revisions[2]!.contentHash,
+      resourceIds: [resourceId],
+    },
+  ]
+  const grounding = documentGroundingSchema.parse({
+    schemaVersion: '1',
+    workloadId: 'sample-workload',
+    sampleOnly: false,
+    sourceConfigurationVersion: '1',
+    documentRevisions: revisions,
+    facts,
+    observedAt: '2026-11-03T00:00:00.000Z',
+  })
+  const evidence = confirmedDocumentFactEvidence(grounding)
+  assert.equal(evidence.length, 1)
+  assert.match(
+    evidence[0]!.fact,
+    /受注処理は注文APIを呼び出す → 注文APIはManaged IdentityでAzure Storageを利用する → 注文APIはサンプルStorage Accountを利用する。/,
+  )
+  assert.match(
+    evidence[0]!.fact,
+    /business-flow\.docx（[^）]+） → feature-design\.docx（[^）]+） → azure-architecture\.docx（[^）]+）/,
+  )
+  assert.deepEqual(evidence[0]!.subjectIds, ['sample-workload', resourceId])
+  assert.deepEqual(documentFactDependencyResourceIds(grounding, ['process']), [
+    resourceId,
+  ])
+  assert.equal(
+    scopeEvidenceToWorkload({
+      evidence,
+      eventId: 'sample-retirement',
+      workloadId: 'sample-workload',
+      resources: [{ id: resourceId } as never],
+    }).length,
+    1,
+  )
+  assert.notEqual(
+    confirmedDocumentGroundingInputHash(grounding),
+    confirmedDocumentGroundingInputHash({
+      ...grounding,
+      facts: grounding.facts.map((item) =>
+        item.factId === 'feature' ? { ...item, relatedFactIds: [] } : item,
+      ),
+    }),
+  )
+  assert.equal(
+    documentGroundingSchema.safeParse({
+      ...grounding,
+      facts: [
+        ...grounding.facts.map((item) =>
+          item.factId === 'resource'
+            ? { ...item, relatedFactIds: ['resource-2'] }
+            : item,
+        ),
+        {
+          ...facts[2]!,
+          factId: 'resource-2',
+          statement: '別のリソース依存事実',
+          relatedFactIds: ['resource'],
+        },
+      ],
+    }).success,
+    false,
+    'dependency cycles must be rejected',
   )
 })
 

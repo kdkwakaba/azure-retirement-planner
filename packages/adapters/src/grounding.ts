@@ -55,6 +55,7 @@ export function confirmedDocumentGroundingInputHash(
           documentItemId,
           documentContentHash,
           resourceIds,
+          relatedFactIds,
           locator,
           reviewStatus,
           reviewedBy,
@@ -69,6 +70,7 @@ export function confirmedDocumentGroundingInputHash(
           documentItemId,
           documentContentHash,
           ...(resourceIds ? { resourceIds } : {}),
+          ...(relatedFactIds ? { relatedFactIds } : {}),
           locator,
           reviewStatus,
           ...(reviewedBy ? { reviewedBy } : {}),
@@ -77,6 +79,28 @@ export function confirmedDocumentGroundingInputHash(
         }),
       ),
   })
+}
+
+export function documentFactDependencyResourceIds(
+  value: DocumentGrounding,
+  factIds: string[],
+): string[] {
+  const grounding = documentGroundingSchema.parse(value)
+  const factsById = new Map(grounding.facts.map((fact) => [fact.factId, fact]))
+  const pending = [...factIds]
+  const visited = new Set<string>()
+  const resources = new Map<string, string>()
+  while (pending.length) {
+    const factId = pending.pop()!
+    if (visited.has(factId)) continue
+    visited.add(factId)
+    const fact = factsById.get(factId)
+    if (!fact) continue
+    for (const resourceId of fact.resourceIds ?? [])
+      resources.set(resourceId.toLowerCase(), resourceId)
+    pending.push(...(fact.relatedFactIds ?? []))
+  }
+  return [...resources.values()]
 }
 
 export function confirmedDocumentFactEvidence(
@@ -91,13 +115,100 @@ export function confirmedDocumentFactEvidence(
       revision,
     ]),
   )
-  return grounding.facts.flatMap((fact) => {
+  const confirmed = grounding.facts.filter(
+    (fact) =>
+      fact.reviewStatus === 'Confirmed' &&
+      Boolean(fact.reviewedBy && fact.reviewedAt),
+  )
+  const confirmedById = new Map(confirmed.map((fact) => [fact.factId, fact]))
+  const incoming = new Set(
+    confirmed.flatMap((fact) => fact.relatedFactIds ?? []),
+  )
+  const pathEvidence: Evidence[] = []
+  const pathFactIds = new Set<string>()
+  let traversedNodes = 0
+  const addPaths = (factIds: string[]) => {
+    const facts = factIds.map((factId) => confirmedById.get(factId)!)
+    const leaf = facts.at(-1)!
+    if (leaf.kind !== 'ResourceDependency' || !leaf.resourceIds?.length) return
+    const sourceDetails = facts.map((fact) => {
+      const revision = revisions.get(
+        `${fact.sourceId}:${fact.documentItemId}:${fact.documentContentHash}`,
+      )
+      if (!revision) throw new Error('Confirmed document fact revision missing')
+      const location = [
+        fact.locator.heading,
+        fact.locator.sheet,
+        fact.locator.table,
+        fact.locator.row === null ? null : `行${fact.locator.row}`,
+        fact.locator.cell === null ? null : `セル${fact.locator.cell}`,
+        fact.locator.page === null ? null : `ページ${fact.locator.page}`,
+      ].filter((item): item is string => Boolean(item))
+      return {
+        fact,
+        revision,
+        citation: `${revision.name}${location.length ? `（${location.join(' / ')}）` : ''}`,
+      }
+    })
+    const resourceIds = [
+      ...new Set(facts.flatMap((fact) => fact.resourceIds ?? [])),
+    ]
+    const latestObservedAt = sourceDetails
+      .map(({ revision }) => revision.observedAt)
+      .toSorted()
+      .at(-1)!
+    pathEvidence.push({
+      id: hash({
+        kind: 'confirmed-document-dependency-path',
+        sourceConfigurationVersion: grounding.sourceConfigurationVersion,
+        factIds,
+      }),
+      sourceType: 'Internal',
+      sourceVersion: hash(
+        sourceDetails.map(({ fact, revision }) => ({
+          factId: fact.factId,
+          contentHash: revision.contentHash,
+          relatedFactIds: fact.relatedFactIds ?? [],
+        })),
+      ),
+      observedAt: latestObservedAt,
+      subjectIds: [grounding.workloadId, ...resourceIds],
+      fact: `Governance確認済みの文書依存経路: ${sourceDetails
+        .map(({ fact }) => fact.statement.replace(/[。．.!！?？]+$/u, ''))
+        .join(' → ')}。出典: ${sourceDetails
+        .map(({ citation }) => citation)
+        .join(' → ')}。紐付け済みAzureリソース: ${resourceIds.join(', ')}。`,
+      officialUrl: null,
+    })
+    for (const fact of facts) pathFactIds.add(fact.factId)
+  }
+  const walk = (factId: string, path: string[]) => {
+    traversedNodes++
     if (
-      fact.reviewStatus !== 'Confirmed' ||
-      !fact.reviewedBy ||
-      !fact.reviewedAt
+      traversedNodes > 10000 ||
+      path.length > 32 ||
+      pathEvidence.length >= 500
     )
-      return []
+      throw new Error(
+        'Document dependency paths exceed the safe evaluation limit',
+      )
+    const fact = confirmedById.get(factId)
+    if (!fact) return
+    const targets = (fact.relatedFactIds ?? []).filter((id) =>
+      confirmedById.has(id),
+    )
+    if (targets.length === 0) {
+      addPaths(path)
+      return
+    }
+    for (const targetId of targets) walk(targetId, [...path, targetId])
+  }
+  for (const fact of confirmed)
+    if (fact.relatedFactIds?.length && !incoming.has(fact.factId))
+      walk(fact.factId, [fact.factId])
+
+  const standaloneEvidence = confirmed.flatMap((fact) => {
+    if (pathFactIds.has(fact.factId)) return []
     const revision = revisions.get(
       `${fact.sourceId}:${fact.documentItemId}:${fact.documentContentHash}`,
     )
@@ -126,6 +237,7 @@ export function confirmedDocumentFactEvidence(
       },
     ]
   })
+  return [...pathEvidence, ...standaloneEvidence]
 }
 
 export function groundedInput(
