@@ -29,6 +29,7 @@ jobs:
           az bicep build --file infra/bootstrap/foundry.bicep --stdout > /dev/null
           az bicep build --file infra/bootstrap/auth-diagnostics.bicep --stdout > /dev/null
           az bicep build --file infra/bootstrap/permissions.bicep --stdout > /dev/null
+          az bicep build --file infra/bootstrap/sharepoint/permissions.bicep --stdout > /dev/null
       - name: Package tested artifacts
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
