@@ -305,7 +305,15 @@ export class AzureStore {
     const blob = this.blobs
       .getContainerClient('records')
       .getBlobClient(`sharepoint-documents/${hash(sourceId)}/${contentHash}`)
-    const content = await blob.downloadToBuffer(0, 10 * 1024 * 1024, {
+    const properties = await blob.getProperties({ conditions: {} })
+    const contentLength = properties.contentLength
+    if (
+      typeof contentLength !== 'number' ||
+      contentLength <= 0 ||
+      contentLength > 10 * 1024 * 1024
+    )
+      throw new Error('Stored SharePoint document size is invalid')
+    const content = await blob.downloadToBuffer(0, contentLength, {
       conditions: {},
     })
     if (createHash('sha256').update(content).digest('hex') !== contentHash)

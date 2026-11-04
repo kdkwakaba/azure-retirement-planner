@@ -38,6 +38,18 @@ test('dependency failure logs identify source and safe HTTP details only', (t) =
   assert.ok(!record.includes('Remote service failed'))
 })
 
+test('Azure SDK statusCode is classified without logging provider details', () => {
+  const error = Object.assign(new Error('sensitive provider response'), {
+    name: 'RestError',
+    statusCode: 416,
+  })
+
+  assert.deepEqual(failureFacts(error), {
+    category: 'InvalidResponse',
+    httpStatus: 416,
+  })
+})
+
 test('model invocation telemetry contains status and versions, never payloads', (t) => {
   let record = ''
   t.mock.method(console, 'info', (line: string) => {
