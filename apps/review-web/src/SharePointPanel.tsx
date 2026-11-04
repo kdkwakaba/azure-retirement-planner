@@ -82,11 +82,15 @@ export function SharePointPanel({
   const [selectedResourceIds, setSelectedResourceIds] = useState<
     Record<string, string[]>
   >({})
+  const [selectedRelatedFactIds, setSelectedRelatedFactIds] = useState<
+    Record<string, string[]>
+  >({})
 
   async function loadFacts(workloadId: string) {
     if (!workloadId) {
       setGrounding(null)
       setGroundingHash(null)
+      setSelectedRelatedFactIds({})
       return
     }
     const result = await request(
@@ -117,6 +121,14 @@ export function SharePointPanel({
         (parsed.grounding?.facts ?? []).map((fact) => [
           fact.factId,
           fact.statement,
+        ]),
+      ),
+    )
+    setSelectedRelatedFactIds(
+      Object.fromEntries(
+        (parsed.grounding?.facts ?? []).map((fact) => [
+          fact.factId,
+          fact.relatedFactIds ?? [],
         ]),
       ),
     )
@@ -343,6 +355,14 @@ export function SharePointPanel({
           ]),
         ),
       )
+      setSelectedRelatedFactIds(
+        Object.fromEntries(
+          result.grounding.facts.map((fact) => [
+            fact.factId,
+            fact.relatedFactIds ?? [],
+          ]),
+        ),
+      )
       setNotice(
         result.alreadyExtracted
           ? '保存済みのモデル抽出を再利用し、Resource ID／名前の完全一致候補を再計算しました（モデル呼出しなし）。'
@@ -366,6 +386,13 @@ export function SharePointPanel({
     setError('')
     setNotice('')
     try {
+      const currentFact = grounding?.facts.find(
+        (fact) => fact.factId === factId,
+      )
+      const supportsDependencyLinks =
+        currentFact?.kind === 'BusinessProcess' ||
+        currentFact?.kind === 'FeatureUsage' ||
+        currentFact?.kind === 'ResourceDependency'
       const result = z
         .object({
           grounding: documentGroundingSchema,
@@ -385,6 +412,11 @@ export function SharePointPanel({
                 reviewStatus,
                 statement: editedStatements[factId]?.trim(),
                 resourceIds: selectedResourceIds[factId] ?? [],
+                ...(reviewStatus === 'Confirmed' && supportsDependencyLinks
+                  ? {
+                      relatedFactIds: selectedRelatedFactIds[factId] ?? [],
+                    }
+                  : {}),
               },
             ],
           }),
@@ -399,9 +431,19 @@ export function SharePointPanel({
           ]),
         ),
       )
+      setSelectedRelatedFactIds(
+        Object.fromEntries(
+          result.grounding.facts.map((fact) => [
+            fact.factId,
+            fact.relatedFactIds ?? [],
+          ]),
+        ),
+      )
       setNotice(
         reviewStatus === 'Confirmed'
-          ? '事実を確認済みにしました。'
+          ? currentFact?.reviewStatus === 'Confirmed'
+            ? '確認済み事実の依存経路を更新しました。'
+            : '事実を確認済みにしました。'
           : '候補を除外しました。',
       )
     } catch (reason) {
@@ -435,6 +477,7 @@ export function SharePointPanel({
       setGroundingHash(result.groundingHash)
       setEditedStatements({})
       setSelectedResourceIds({})
+      setSelectedRelatedFactIds({})
       setNotice(
         '新しいSource設定版の空のGroundingを開始しました。旧Groundingは不変記録として参照されています。',
       )
@@ -445,6 +488,96 @@ export function SharePointPanel({
     } finally {
       setBusy(false)
     }
+  }
+
+  function canLinkFromFact(fact: DocumentGrounding['facts'][number]) {
+    return (
+      fact.kind === 'BusinessProcess' ||
+      fact.kind === 'FeatureUsage' ||
+      fact.kind === 'ResourceDependency'
+    )
+  }
+
+  function relationTargets(fact: DocumentGrounding['facts'][number]) {
+    if (!grounding || !canLinkFromFact(fact)) return []
+    const factsById = new Map(
+      grounding.facts.map((item) => [item.factId, item]),
+    )
+    const reachesFact = (sourceId: string, targetId: string): boolean => {
+      const pending = [sourceId]
+      const visited = new Set<string>()
+      while (pending.length) {
+        const currentId = pending.pop()!
+        if (currentId === targetId) return true
+        if (visited.has(currentId)) continue
+        visited.add(currentId)
+        pending.push(...(factsById.get(currentId)?.relatedFactIds ?? []))
+      }
+      return false
+    }
+    return grounding.facts.filter((target) => {
+      if (
+        target.factId === fact.factId ||
+        target.reviewStatus !== 'Confirmed' ||
+        !target.reviewedBy ||
+        !target.reviewedAt
+      )
+        return false
+      if (reachesFact(target.factId, fact.factId)) return false
+      if (fact.kind === 'BusinessProcess')
+        return (
+          target.kind === 'FeatureUsage' || target.kind === 'ResourceDependency'
+        )
+      if (fact.kind === 'FeatureUsage')
+        return target.kind === 'ResourceDependency'
+      return target.kind === 'ResourceDependency'
+    })
+  }
+
+  function renderRelationControls(fact: DocumentGrounding['facts'][number]) {
+    if (!canLinkFromFact(fact)) return null
+    const targets = relationTargets(fact)
+    const selected =
+      selectedRelatedFactIds[fact.factId] ?? fact.relatedFactIds ?? []
+    const assessmentAvailable = assessment?.workloadId === selectedWorkloadId
+    return (
+      <fieldset className="sharepoint-resource-links">
+        <legend>確認済み事実との依存関係（人が明示選択）</legend>
+        {!assessmentAvailable && selected.length > 0 && (
+          <p>
+            保存前に通知一覧から同じWorkloadのAssessmentを選択してください。依存経路に含まれるリソースがその評価内にあることをAPIで確認します。
+          </p>
+        )}
+        {targets.length ? (
+          targets.map((target) => (
+            <label key={target.factId}>
+              <input
+                checked={selected.includes(target.factId)}
+                disabled={
+                  !selected.includes(target.factId) && selected.length >= 20
+                }
+                onChange={(event) =>
+                  setSelectedRelatedFactIds((previous) => {
+                    const ids = new Set(previous[fact.factId] ?? selected)
+                    if (event.target.checked) ids.add(target.factId)
+                    else ids.delete(target.factId)
+                    return { ...previous, [fact.factId]: [...ids] }
+                  })
+                }
+                type="checkbox"
+              />
+              <span>
+                {target.kind}: {target.statement}
+              </span>
+            </label>
+          ))
+        ) : (
+          <p>
+            同じWorkloadに、接続先として選べる確認済みFactがありません。文書の記述を確認してからFactを紐付けてください。
+          </p>
+        )}
+      </fieldset>
+    )
   }
 
   if (!canSync) return null
@@ -651,6 +784,9 @@ export function SharePointPanel({
             </div>
           )}
           <h3>文書から抽出した事実候補</h3>
+          <p className="muted">
+            確認済みFact間の依存関係を人が明示選択すると、業務処理→機能利用→Azureリソースの経路として根拠にまとめます。文章の類似だけで経路を推測しません。
+          </p>
           {assessment?.workloadId === selectedWorkloadId ? (
             <p className="muted">
               現在選択中の評価にあるリソースだけをResourceDependency事実へ紐付けできます。
@@ -737,6 +873,7 @@ export function SharePointPanel({
                             )}
                           </fieldset>
                         )}
+                        {renderRelationControls(fact)}
                         <textarea
                           aria-label="事実候補の訂正文"
                           maxLength={4000}
@@ -753,7 +890,12 @@ export function SharePointPanel({
                         <div className="sharepoint-config-actions">
                           <button
                             disabled={
-                              busy || !editedStatements[fact.factId]?.trim()
+                              busy ||
+                              !editedStatements[fact.factId]?.trim() ||
+                              (canLinkFromFact(fact) &&
+                                (selectedRelatedFactIds[fact.factId] ?? [])
+                                  .length > 0 &&
+                                assessment?.workloadId !== selectedWorkloadId)
                             }
                             onClick={() =>
                               void reviewFact(fact.factId, 'Confirmed')
@@ -775,16 +917,40 @@ export function SharePointPanel({
                         </div>
                       </>
                     ) : (
-                      <p>
-                        {fact.statement} —{' '}
-                        {fact.reviewStatus === 'Confirmed'
-                          ? '確認済み'
-                          : '除外済み'}
-                        （{fact.reviewedBy}・{fact.reviewedAt}）
-                        {fact.resourceIds?.length
-                          ? ` · 対象リソース ${fact.resourceIds.join(', ')}`
-                          : ''}
-                      </p>
+                      <>
+                        <p>
+                          {fact.statement} —{' '}
+                          {fact.reviewStatus === 'Confirmed'
+                            ? '確認済み'
+                            : '除外済み'}
+                          （{fact.reviewedBy}・{fact.reviewedAt}）
+                          {fact.resourceIds?.length
+                            ? ` · 対象リソース ${fact.resourceIds.join(', ')}`
+                            : ''}
+                        </p>
+                        {fact.reviewStatus === 'Confirmed' && (
+                          <>
+                            {renderRelationControls(fact)}
+                            {canLinkFromFact(fact) && (
+                              <button
+                                disabled={
+                                  busy ||
+                                  ((selectedRelatedFactIds[fact.factId] ?? [])
+                                    .length > 0 &&
+                                    assessment?.workloadId !==
+                                      selectedWorkloadId)
+                                }
+                                onClick={() =>
+                                  void reviewFact(fact.factId, 'Confirmed')
+                                }
+                                type="button"
+                              >
+                                依存経路を保存
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </>
                     )}
                   </li>
                 )
