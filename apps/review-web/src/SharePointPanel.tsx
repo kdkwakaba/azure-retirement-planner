@@ -1,9 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import {
   documentSourceSchema,
+  documentGroundingSchema,
   sharePointSnapshotSchema,
   sharePointSyncRunSchema,
   type DocumentSource,
+  type DocumentGrounding,
   type SharePointSnapshot,
   type SharePointSyncRun,
 } from '@arp/contracts'
@@ -51,10 +53,12 @@ export function SharePointPanel({
   canConfigure,
   canSync,
   syncEnabled,
+  factExtractionEnabled,
 }: {
   canConfigure: boolean
   canSync: boolean
   syncEnabled: boolean
+  factExtractionEnabled: boolean
 }) {
   const [sources, setSources] = useState<DocumentSource[]>([])
   const [snapshots, setSnapshots] = useState<
@@ -66,6 +70,43 @@ export function SharePointPanel({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [selectedWorkloadId, setSelectedWorkloadId] = useState('')
+  const [grounding, setGrounding] = useState<DocumentGrounding | null>(null)
+  const [groundingHash, setGroundingHash] = useState<string | null>(null)
+  const [editedStatements, setEditedStatements] = useState<
+    Record<string, string>
+  >({})
+
+  async function loadFacts(workloadId: string) {
+    if (!workloadId) {
+      setGrounding(null)
+      setGroundingHash(null)
+      return
+    }
+    const result = await request(
+      `sharepoint-facts?workloadId=${encodeURIComponent(workloadId)}`,
+      'GET',
+    )
+    const parsed = z
+      .object({
+        grounding: documentGroundingSchema.nullable(),
+        groundingHash: z
+          .string()
+          .regex(/^[a-f0-9]{64}$/)
+          .nullable(),
+      })
+      .parse(result)
+    setGrounding(parsed.grounding)
+    setGroundingHash(parsed.groundingHash)
+    setEditedStatements(
+      Object.fromEntries(
+        (parsed.grounding?.facts ?? []).map((fact) => [
+          fact.factId,
+          fact.statement,
+        ]),
+      ),
+    )
+  }
 
   async function loadSources() {
     const registered = documentSourceSchema
@@ -90,6 +131,18 @@ export function SharePointPanel({
         ? current
         : (registered[0]?.sourceId ?? ''),
     )
+    setSelectedWorkloadId((current) =>
+      registered.some(
+        (source) =>
+          source.sourceId === selectedSourceId &&
+          source.workloadIds.includes(current),
+      )
+        ? current
+        : (registered.find((source) => source.sourceId === selectedSourceId)
+            ?.workloadIds[0] ??
+          registered[0]?.workloadIds[0] ??
+          ''),
+    )
   }
 
   useEffect(() => {
@@ -98,6 +151,15 @@ export function SharePointPanel({
       setError(reason instanceof Error ? reason.message : 'Source取得失敗'),
     )
   }, [canSync])
+
+  useEffect(() => {
+    if (!canConfigure) return
+    void loadFacts(selectedWorkloadId).catch((reason) =>
+      setError(
+        reason instanceof Error ? reason.message : '抽出候補を取得できません',
+      ),
+    )
+  }, [canConfigure, selectedWorkloadId])
 
   useEffect(() => {
     if (
@@ -222,6 +284,91 @@ export function SharePointPanel({
     }
   }
 
+  async function extractFacts(itemId: string) {
+    if (!selectedSource || !selectedWorkloadId) return
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      const result = z
+        .object({
+          grounding: documentGroundingSchema,
+          groundingHash: z.string().regex(/^[a-f0-9]{64}$/),
+          addedCandidateCount: z.number().int().nonnegative(),
+          promptVersion: z.string(),
+          alreadyExtracted: z.boolean(),
+        })
+        .parse(
+          await request('sharepoint-facts/extract', 'POST', {
+            sourceId: selectedSource.sourceId,
+            workloadId: selectedWorkloadId,
+            itemId,
+          }),
+        )
+      setGrounding(result.grounding)
+      setGroundingHash(result.groundingHash)
+      setEditedStatements(
+        Object.fromEntries(
+          result.grounding.facts.map((fact) => [fact.factId, fact.statement]),
+        ),
+      )
+      setNotice(
+        result.alreadyExtracted
+          ? `この文書・版は抽出済みです（抽出版 ${result.promptVersion}）。`
+          : `文書から候補${result.addedCandidateCount}件を追加しました（抽出版 ${result.promptVersion}）。内容を確認してください。`,
+      )
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : '候補抽出に失敗しました',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function reviewFact(
+    factId: string,
+    reviewStatus: 'Confirmed' | 'Rejected',
+  ) {
+    if (!selectedWorkloadId || !groundingHash) return
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      const result = z
+        .object({
+          grounding: documentGroundingSchema,
+          groundingHash: z.string().regex(/^[a-f0-9]{64}$/),
+        })
+        .parse(
+          await request('sharepoint-facts/review', 'POST', {
+            workloadId: selectedWorkloadId,
+            groundingHash,
+            decisions: [
+              {
+                factId,
+                reviewStatus,
+                statement: editedStatements[factId]?.trim(),
+              },
+            ],
+          }),
+        )
+      setGrounding(result.grounding)
+      setGroundingHash(result.groundingHash)
+      setNotice(
+        reviewStatus === 'Confirmed'
+          ? '事実を確認済みにしました。'
+          : '候補を除外しました。',
+      )
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : '事実確認を保存できません',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
   if (!canSync) return null
 
   return (
@@ -340,6 +487,16 @@ export function SharePointPanel({
                         {document.lastModifiedAt ?? '日時なし'} · 内容Hash{' '}
                         {document.contentHash.slice(0, 12)}…
                       </small>
+                      {canConfigure && (
+                        <button
+                          className="secondary-button"
+                          disabled={!factExtractionEnabled || busy}
+                          onClick={() => void extractFacts(document.itemId)}
+                          type="button"
+                        >
+                          文書から事実候補を抽出
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -362,6 +519,112 @@ export function SharePointPanel({
             </div>
           ) : (
             <p className="muted">まだ完全取得済みのSnapshotはありません。</p>
+          )}
+        </div>
+      )}
+
+      {canConfigure && selectedSource && (
+        <div className="sharepoint-fact-review">
+          <label>
+            Workload
+            <select
+              onChange={(event) => setSelectedWorkloadId(event.target.value)}
+              value={selectedWorkloadId}
+            >
+              {selectedSource.workloadIds.map((workloadId) => (
+                <option key={workloadId} value={workloadId}>
+                  {workloadId}
+                </option>
+              ))}
+            </select>
+          </label>
+          {!factExtractionEnabled && (
+            <p className="muted">
+              事実候補のモデル抽出は無効です。管理者が明示的に有効化した後に利用できます。
+            </p>
+          )}
+          {factExtractionEnabled && (
+            <p className="muted">
+              空でない文書の抽出は1文書あたりモデル呼出し1回を使い、アプリ共通の日次上限に計上されます。同じ文書版・モデル版・Prompt版の再実行は保存済み結果を返します。
+            </p>
+          )}
+          <h3>文書から抽出した事実候補</h3>
+          {grounding?.facts.length ? (
+            <ul>
+              {grounding.facts.map((fact) => {
+                const sourceDocument = grounding.documentRevisions.find(
+                  (revision) =>
+                    revision.sourceId === fact.sourceId &&
+                    revision.itemId === fact.documentItemId &&
+                    revision.contentHash === fact.documentContentHash,
+                )
+                return (
+                  <li key={fact.factId} className="sharepoint-fact">
+                    <strong>{fact.kind}</strong>
+                    <small>
+                      {sourceDocument?.name ?? fact.documentItemId} ·{' '}
+                      {fact.locator.heading ??
+                        fact.locator.sheet ??
+                        '出典位置なし'}
+                      {fact.locator.cell ? ` · ${fact.locator.cell}` : ''} ·
+                      サンプル
+                    </small>
+                    {fact.reviewStatus === 'Candidate' ? (
+                      <>
+                        <textarea
+                          aria-label="事実候補の訂正文"
+                          maxLength={4000}
+                          onChange={(event) =>
+                            setEditedStatements({
+                              ...editedStatements,
+                              [fact.factId]: event.target.value,
+                            })
+                          }
+                          value={
+                            editedStatements[fact.factId] ?? fact.statement
+                          }
+                        />
+                        <div className="sharepoint-config-actions">
+                          <button
+                            disabled={
+                              busy || !editedStatements[fact.factId]?.trim()
+                            }
+                            onClick={() =>
+                              void reviewFact(fact.factId, 'Confirmed')
+                            }
+                            type="button"
+                          >
+                            確認済みにする
+                          </button>
+                          <button
+                            className="secondary-button"
+                            disabled={busy}
+                            onClick={() =>
+                              void reviewFact(fact.factId, 'Rejected')
+                            }
+                            type="button"
+                          >
+                            候補から除外
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <p>
+                        {fact.statement} —{' '}
+                        {fact.reviewStatus === 'Confirmed'
+                          ? '確認済み'
+                          : '除外済み'}
+                        （{fact.reviewedBy}・{fact.reviewedAt}）
+                      </p>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          ) : (
+            <p>
+              このWorkloadに抽出候補はありません。対象文書を選び、明示的に抽出してください。
+            </p>
           )}
         </div>
       )}

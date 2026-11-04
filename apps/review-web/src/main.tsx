@@ -255,6 +255,7 @@ type FeatureStatus = {
   canReview: boolean
   canManageSharePoint: boolean
   sharePointSyncEnabled: boolean
+  sharePointFactExtractionEnabled: boolean
 }
 type DecisionReevaluationStatus = {
   runId: string
@@ -339,6 +340,8 @@ function App() {
     [canSync, setCanSync] = useState(false),
     [canManageSharePoint, setCanManageSharePoint] = useState(false),
     [sharePointSyncEnabled, setSharePointSyncEnabled] = useState(false),
+    [sharePointFactExtractionEnabled, setSharePointFactExtractionEnabled] =
+      useState(false),
     [canReview, setCanReview] = useState(false),
     [showNoAction, setShowNoAction] = useState(false),
     [reevaluationStatus, setReevaluationStatus] =
@@ -489,6 +492,7 @@ function App() {
       setCanSync(uat.canSync)
       setCanManageSharePoint(uat.canManageSharePoint)
       setSharePointSyncEnabled(uat.sharePointSyncEnabled)
+      setSharePointFactExtractionEnabled(uat.sharePointFactExtractionEnabled)
       setCanReview(uat.canReview)
       if (selected && !visible.some((item) => item.id === selected))
         setSelected(null)
@@ -835,6 +839,7 @@ function App() {
             canConfigure={canManageSharePoint}
             canSync={canSync}
             syncEnabled={sharePointSyncEnabled}
+            factExtractionEnabled={sharePointFactExtractionEnabled}
           />
         )}
         <section className="operations-summary" aria-labelledby="summary-title">

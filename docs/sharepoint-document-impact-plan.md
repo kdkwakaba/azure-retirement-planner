@@ -1,6 +1,6 @@
 # SharePoint設計書を利用した業務影響評価の実装計画
 
-2026-11-04 / 状態: 段階2・3と段階4の一部を実装。DOCX／XLSX解析、候補抽出・検証・不変保存、確認済み事実の評価接続、DocumentSource設定に基づくGraph読み取り専用取得、文書バイナリの内容Hash保存と全件列挙済みSnapshotの履歴・差分、サンプル限定のGovernance設定・手動Queue起動・状態取得・再試行／Poison記録を追加。専用サンプルフォルダ1件を設定・同期し、状態と文書一覧を確認できる画面を追加。同期機能はBicep設定で既定無効。sampleOnlyはSource設定から伝播し、自動推定しない。Graphアプリ権限・選択Site付与、実接続、抽出事実の確認・訂正UI、Azure依存経路の照合は未実装。
+2026-11-04 / 状態: 段階2・3と段階4の一部、段階5を実装。DOCX／XLSX解析、候補抽出・検証・不変保存、確認済み事実の評価接続、DocumentSource設定に基づくGraph読み取り専用取得、文書バイナリの内容Hash保存と全件列挙済みSnapshotの履歴・差分、サンプル限定のGovernance設定・手動Queue起動・状態取得・再試行／Poison記録を追加。Governanceが選んだ文書から明示的に候補を抽出し、出典位置を見ながら修正・確認・除外するUIを追加。同期と事実抽出はそれぞれBicep設定で既定無効。sampleOnlyはSource設定から伝播し、自動推定しない。Graphアプリ権限・選択Site付与、実接続、実モデル品質、Azure依存経路との照合は未実装。
 
 ## 目的と合意した範囲
 
@@ -61,7 +61,8 @@ SharePointに格納した複数の設計書・ドキュメントから、業務�
 - Operator／Governanceが`POST /api/sharepoint-sync`で`sourceId`を指定する。`SHAREPOINT_SYNC_ENABLED`が`true`の場合だけQueueへ登録する。
 - `GET /api/sharepoint-sync-status?runId=...`でPending／Queued／Processing／Retrying／Succeeded／Failedを確認する。失敗は分類・HTTP状態だけを保持し、Graph本文や例外文字列は保存しない。
 - Queue再試行が尽きるとPoison Queue処理がFailedを記録する。未完了・失敗RunはSnapshotの削除差分に使わない。
-- Governance向けSource登録・更新画面、Operator／Governance向け同期起動・状態表示・取得済み文書一覧を実装済み。Site URLからIDを解決する機能と、抽出事実の確認・訂正UIは未実装。
+- Governance向けSource登録・更新画面、Operator／Governance向け同期起動・状態表示・取得済み文書一覧を実装済み。Governanceは文書を選び、既存の日次モデル呼出枠を使って明示的に事実候補を抽出し、出典位置を確認して文面修正・確認済み／除外を保存できる。確認者と時刻をGrounding版に記録する。抽出は文書内容Hash・Prompt版・Deployment・Model版ごとに冪等化する。Site URLからIDを解決する機能は未実装。
+- `GET /api/sharepoint-facts`と`POST /api/sharepoint-facts/extract`／`review`はGovernance限定。抽出は`SHAREPOINT_FACT_EXTRACTION_ENABLED`がtrueの場合だけ実行可能。sampleOnly=trueの事実は通常の実通知評価へ流れない。
 - Graph権限とSite grantは未設定。既定では同期フラグを無効にし、画面実装だけで実接続可能とは扱わない。
 
 抽出契約には、処理名、利用者、稼働時間、停止時の結果、依存方向、利用API／機能、環境、代替手段、許容停止時間、変更案、出典版・引用・位置、確認状態を持たせる。数値・機能利用・停止時間が記載されていなければ創作しない。文書に利用記載があっても実行時の利用を確認したことにはせず、Azure観測と文書記載を区別する。
@@ -105,10 +106,10 @@ LLMは文書から事実候補を抽出し、Decision-1は型付き判断、ル�
 | 段階 | 作業 | 完了条件 |
 |---|---|---|
 | 1 | 参照元配列、文書版、抽出事実、依存関係、サンプル分離の契約と評価資材 | 1フォルダ設定、複数参照元の契約試験、旧データ互換を確認 |
-| 2 | DOCX／XLSX解析、出典保存、構造化抽出と検証 | DOCX段落／XLSXシート・セル抽出、候補Schema・引用元検証、上限付きLLM抽出アダプター、不変Blob保存とsampleOnly／Workload別Tableポインターを追加。実モデル接続、複数バッチ制御・累積予算管理、原文バイナリ保存、Assessment接続、表・見出しのDOCX細粒度引用、3文書受入確認は未完了 |
+| 2 | DOCX／XLSX解析、出典保存、構造化抽出と検証 | DOCX段落／XLSXシート・セル抽出、候補Schema・引用元検証、上限付きLLM抽出アダプター、不変Blob保存とsampleOnly／Workload別Tableポインターを追加。専用Sample Sourceから選択した1文書の明示抽出を追加し、日次既存モデル呼出枠を予約。実モデル接続・品質、複数バッチ制御・累積予算管理、表・見出しのDOCX細粒度引用、3文書受入確認は未完了 |
 | 3 | 依存照合、Decision-1・説明入力、評価Hash・承認管理 | 確認済み文書事実をWorkload EvidenceとしてDecision／説明へ渡し、確認済み内容の変更でAssessment Hashを更新する初期接続を追加。文書候補のレビューUI、Azureリソースへの依存照合、Workload関係・影響品質試験は未完了 |
 | 4 | SharePoint接続、Bootstrap、フォルダ全ページ取得、変更検出 | 読取専用コネクター、原本・Snapshotの不変保存、追加・変更・不在の算出を実装。GovernanceによるサンプルSource設定、明示Queue起動、状態API、Queue再試行・Poison状態記録を追加。Graph権限・Site grant Bootstrap、実接続、運用画面、Source更新の監査・無効化、結果の文書解析接続は未完了 |
-| 5 | 初期1フォルダの設定・同期・確認・訂正・根拠表示UI | Entra認証下の1フォルダ設定、Queue起動・状態ポーリング、Snapshotの文書名・更新日時・Hash表示を追加。Source設定をGovernance、同期をOperator／Governanceに制限。抽出事実の確認・訂正・根拠位置表示は未完了 |
+| 5 | 初期1フォルダの設定・同期・確認・訂正・根拠表示UI | Entra認証下の1フォルダ設定、Queue起動・状態ポーリング、Snapshotの文書名・更新日時・Hash表示、Governance限定の文書単位抽出・Fact訂正・確認／除外・出典位置表示を追加。Source設定とFact管理をGovernance、同期をOperator／Governanceに制限。Graph実接続後の画面UATは未完了 |
 | 6 | 専用サンプルフォルダからの一貫した実接続・品質評価 | 高影響の誤Low、根拠なし断定、他Workload混入を点検し合否を記録 |
 | 将来 | 複数フォルダの設定UI、参照元別権限・正本規則・部分失敗表示 | 追加サービスの要否を再評価し、混在・重複・矛盾を含むUATを完了 |
 

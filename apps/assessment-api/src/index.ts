@@ -8,6 +8,7 @@ import {
   businessContextSchema,
   correctionSchema,
   documentSourceSchema,
+  documentGroundingSchema,
 } from '@arp/contracts'
 import {
   hash,
@@ -30,6 +31,9 @@ import {
   logProcessingFailure,
   withProcessingFailureLog,
   translateOfficialHtmlToJapanese,
+  extractDocumentText,
+  extractDocumentFacts,
+  DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION,
 } from '@arp/adapters'
 import {
   assessSnapshot,
@@ -123,6 +127,8 @@ app.http('api', {
           canManageSharePoint:
             principal.kind === 'User' && principal.roles.includes('Governance'),
           sharePointSyncEnabled: process.env.SHAREPOINT_SYNC_ENABLED === 'true',
+          sharePointFactExtractionEnabled:
+            process.env.SHAREPOINT_FACT_EXTRACTION_ENABLED === 'true',
           canSync:
             principal.kind === 'User' &&
             principal.roles.some((role) =>
@@ -287,6 +293,18 @@ app.http('api', {
           .parse({ sourceId: request.query.get('sourceId') })
         return reply(200, await store.sharePointSnapshot(query.sourceId))
       }
+      if (request.method === 'GET' && path === 'sharepoint-facts') {
+        requireUserRole(principal, apiRolePolicy.businessContext)
+        const query = z
+          .object({ workloadId: z.string().min(1).max(200) })
+          .strict()
+          .parse({ workloadId: request.query.get('workloadId') })
+        const grounding = await store.documentGrounding(query.workloadId, true)
+        return reply(200, {
+          grounding,
+          groundingHash: grounding ? hash(grounding) : null,
+        })
+      }
       if (request.method === 'GET' && path === 'sharepoint-sync-status') {
         requireUserRole(principal, apiRolePolicy.sync)
         const query = z
@@ -352,6 +370,269 @@ app.http('api', {
           })
           const sourceHash = await store.saveSharePointSource(source)
           return reply(200, { source, sourceHash })
+        }
+        if (path === 'sharepoint-facts/extract') {
+          requireUserRole(principal, apiRolePolicy.businessContext)
+          if (process.env.SHAREPOINT_FACT_EXTRACTION_ENABLED !== 'true')
+            return reply(503, { error: 'SharePoint fact extraction disabled' })
+          const body = z
+            .object({
+              sourceId: z.string().min(1).max(100),
+              workloadId: z.string().min(1).max(200),
+              itemId: z.string().min(1).max(500),
+            })
+            .strict()
+            .parse(JSON.parse(await request.text()))
+          const registered = await store.sharePointSource(body.sourceId)
+          if (
+            !registered ||
+            registered.source.sampleOnly !== true ||
+            !registered.source.workloadIds.includes(body.workloadId)
+          )
+            return reply(404, { error: 'Eligible sample source not found' })
+          const snapshot = await store.sharePointSnapshot(body.sourceId)
+          const revision = snapshot?.documents.find(
+            (document) => document.itemId === body.itemId,
+          )
+          if (
+            !snapshot?.enumerationComplete ||
+            snapshot.configurationVersion !==
+              registered.source.configurationVersion ||
+            !revision ||
+            revision.sampleOnly !== true
+          )
+            return reply(409, {
+              error: 'Document is not in the current snapshot',
+            })
+          const existing = await store.documentGrounding(body.workloadId, true)
+          if (
+            existing &&
+            existing.sourceConfigurationVersion !==
+              registered.source.configurationVersion
+          )
+            return reply(409, {
+              error: 'Review existing facts before changing the source version',
+            })
+          const endpoint = required('EXPLANATION_ENDPOINT')
+          const deployment = required('EXPLANATION_DEPLOYMENT')
+          const modelVersion = required('EXPLANATION_MODEL_VERSION')
+          if (
+            existing?.extractionRecords?.some(
+              (record) =>
+                record.sourceId === body.sourceId &&
+                record.itemId === revision.itemId &&
+                record.contentHash === revision.contentHash &&
+                record.promptVersion ===
+                  DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION &&
+                record.deployment === deployment &&
+                record.modelVersion === modelVersion,
+            )
+          )
+            return reply(200, {
+              grounding: existing,
+              groundingHash: hash(existing),
+              addedCandidateCount: 0,
+              promptVersion: DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION,
+              alreadyExtracted: true,
+            })
+          const document = await store.sharePointDocument(
+            body.sourceId,
+            revision.contentHash,
+          )
+          const extractedText = await extractDocumentText(document, {
+            sourceId: revision.sourceId,
+            itemId: revision.itemId,
+            name: revision.name,
+            extension: revision.extension,
+            eTag: revision.eTag,
+            lastModifiedAt: revision.lastModifiedAt,
+            sampleOnly: revision.sampleOnly,
+            observedAt: revision.observedAt,
+          })
+          const extraction =
+            extractedText.blocks.length === 0
+              ? {
+                  facts: [],
+                  promptVersion: DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION,
+                }
+              : await (async () => {
+                  await store.reserveModelCall(config().modelCalls)
+                  return extractDocumentFacts(
+                    endpoint,
+                    deployment,
+                    extractedText,
+                    body.workloadId,
+                    async (raw) =>
+                      store.put(
+                        'model-raw',
+                        hash({
+                          sourceId: body.sourceId,
+                          itemId: body.itemId,
+                          contentHash: revision.contentHash,
+                          promptVersion:
+                            DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION,
+                          deployment,
+                          modelVersion,
+                        }),
+                        raw,
+                      ),
+                  )
+                })()
+          const current = existing ?? {
+            schemaVersion: '1' as const,
+            workloadId: body.workloadId,
+            sampleOnly: true,
+            sourceConfigurationVersion: registered.source.configurationVersion,
+            documentRevisions: [],
+            facts: [],
+            extractionRecords: [],
+            observedAt: new Date().toISOString(),
+          }
+          const revisions = new Map(
+            current.documentRevisions.map((item) => [
+              `${item.sourceId}:${item.itemId}:${item.contentHash}`,
+              item,
+            ]),
+          )
+          revisions.set(
+            `${revision.sourceId}:${revision.itemId}:${revision.contentHash}`,
+            revision,
+          )
+          const facts = new Map(
+            current.facts.map((fact) => [fact.factId, fact]),
+          )
+          let addedCandidateCount = 0
+          for (const fact of extraction.facts)
+            if (!facts.has(fact.factId)) {
+              facts.set(fact.factId, fact)
+              addedCandidateCount++
+            }
+          const grounding = documentGroundingSchema.parse({
+            ...current,
+            documentRevisions: [...revisions.values()],
+            facts: [...facts.values()],
+            extractionRecords: [
+              ...(current.extractionRecords ?? []).filter(
+                (record) =>
+                  !(
+                    record.sourceId === body.sourceId &&
+                    record.itemId === revision.itemId &&
+                    record.contentHash === revision.contentHash &&
+                    record.promptVersion === extraction.promptVersion &&
+                    record.deployment === deployment &&
+                    record.modelVersion === modelVersion
+                  ),
+              ),
+              {
+                sourceId: body.sourceId,
+                itemId: revision.itemId,
+                contentHash: revision.contentHash,
+                promptVersion: extraction.promptVersion,
+                deployment,
+                modelVersion,
+                completedAt: new Date().toISOString(),
+              },
+            ],
+            observedAt: new Date().toISOString(),
+          })
+          let groundingHash: string
+          try {
+            groundingHash = await store.saveDocumentGrounding(
+              grounding,
+              existing ? hash(existing) : null,
+            )
+          } catch (error) {
+            if (/changed during review/.test(String(error)))
+              return reply(409, {
+                error: 'Document facts changed; reload before extraction',
+              })
+            throw error
+          }
+          return reply(200, {
+            grounding,
+            groundingHash,
+            addedCandidateCount,
+            promptVersion: extraction.promptVersion,
+            alreadyExtracted: false,
+          })
+        }
+        if (path === 'sharepoint-facts/review') {
+          requireUserRole(principal, apiRolePolicy.businessContext)
+          const body = z
+            .object({
+              workloadId: z.string().min(1).max(200),
+              groundingHash: z.string().regex(/^[a-f0-9]{64}$/),
+              decisions: z
+                .array(
+                  z
+                    .object({
+                      factId: z.string().min(1).max(200),
+                      reviewStatus: z.enum(['Confirmed', 'Rejected']),
+                      statement: z.string().trim().min(1).max(4000),
+                    })
+                    .strict(),
+                )
+                .min(1)
+                .max(200),
+            })
+            .strict()
+            .parse(JSON.parse(await request.text()))
+          const existing = await store.documentGrounding(body.workloadId, true)
+          if (!existing || hash(existing) !== body.groundingHash)
+            return reply(409, {
+              error: 'Document facts changed; reload before review',
+            })
+          const decisions = new Map(
+            body.decisions.map((decision) => [decision.factId, decision]),
+          )
+          if (decisions.size !== body.decisions.length)
+            return reply(400, {
+              error: 'Duplicate fact decisions are not allowed',
+            })
+          if (
+            body.decisions.some(
+              (decision) =>
+                !existing.facts.some(
+                  (fact) =>
+                    fact.factId === decision.factId &&
+                    fact.reviewStatus === 'Candidate',
+                ),
+            )
+          )
+            return reply(409, {
+              error: 'Only current candidate facts can be reviewed',
+            })
+          const now = new Date().toISOString()
+          const facts = existing.facts.map((fact) => {
+            const decision = decisions.get(fact.factId)
+            if (!decision) return fact
+            return {
+              ...fact,
+              statement: decision.statement.trim(),
+              reviewStatus: decision.reviewStatus,
+              reviewedBy: principal.id,
+              reviewedAt: now,
+            }
+          })
+          const updated = documentGroundingSchema.parse({
+            ...existing,
+            facts,
+            observedAt: now,
+          })
+          let groundingHash: string
+          try {
+            groundingHash = await store.saveDocumentGrounding(
+              updated,
+              body.groundingHash,
+            )
+          } catch (error) {
+            if (/changed during review/.test(String(error)))
+              return reply(409, {
+                error: 'Document facts changed; reload before review',
+              })
+            throw error
+          }
+          return reply(200, { grounding: updated, groundingHash })
         }
         if (path === 'sharepoint-sync') {
           requireUserRole(principal, apiRolePolicy.sync)

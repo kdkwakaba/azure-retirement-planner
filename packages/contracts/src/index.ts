@@ -333,6 +333,8 @@ export const documentFactSchema = z
       })
       .strict(),
     reviewStatus: z.enum(['Candidate', 'Confirmed', 'Rejected']),
+    reviewedBy: z.string().min(1).max(200).nullable().optional(),
+    reviewedAt: z.iso.datetime().nullable().optional(),
     sampleOnly: z.boolean(),
   })
   .strict()
@@ -358,6 +360,22 @@ export const documentGroundingSchema = z
     sourceConfigurationVersion: z.string().min(1).max(100),
     documentRevisions: z.array(documentRevisionSchema),
     facts: z.array(documentFactSchema),
+    extractionRecords: z
+      .array(
+        z
+          .object({
+            sourceId: z.string().min(1).max(100),
+            itemId: z.string().min(1).max(500),
+            contentHash: z.string().regex(/^[a-f0-9]{64}$/),
+            promptVersion: z.string().min(1).max(100),
+            deployment: z.string().min(1).max(80),
+            modelVersion: z.string().min(1).max(100),
+            completedAt: z.iso.datetime(),
+          })
+          .strict(),
+      )
+      .max(1000)
+      .optional(),
     observedAt: z.iso.datetime(),
   })
   .strict()

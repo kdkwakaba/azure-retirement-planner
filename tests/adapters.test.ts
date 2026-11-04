@@ -1103,6 +1103,51 @@ test('invalid mixed-sample document grounding is rejected before persistence', a
   await assert.rejects(store.saveDocumentGrounding(grounding as never))
   assert.equal(put.mock.callCount(), 0)
 })
+test('document grounding compare-and-swap rejects stale fact reviews', async (t) => {
+  const store = new AzureStore('syntheticaccount')
+  let current: Record<string, unknown> | null = null
+  store.table = {
+    getEntity: async () => {
+      if (!current)
+        throw Object.assign(new Error('not found'), { statusCode: 404 })
+      return current
+    },
+    upsertEntity: async (entity: Record<string, unknown>) => {
+      current = { ...entity, etag: 'etag-v1' }
+    },
+    updateEntity: async (
+      entity: Record<string, unknown>,
+      _mode: string,
+      options: { etag?: string },
+    ) => {
+      assert.equal(options.etag, 'etag-v1')
+      current = { ...entity, etag: 'etag-v2' }
+    },
+  } as unknown as typeof store.table
+  t.mock.method(store, 'put', async () => {})
+  const initial = documentGroundingSchema.parse({
+    schemaVersion: '1',
+    workloadId: 'sample-workload',
+    sampleOnly: true,
+    sourceConfigurationVersion: 'config-v1',
+    documentRevisions: [],
+    facts: [],
+    observedAt: '2026-11-04T00:00:00.000Z',
+  })
+  const originalHash = await store.saveDocumentGrounding(initial)
+  const reviewed = documentGroundingSchema.parse({
+    ...initial,
+    observedAt: '2026-11-04T00:01:00.000Z',
+  })
+  await store.saveDocumentGrounding(reviewed, originalHash)
+  await assert.rejects(
+    store.saveDocumentGrounding(
+      { ...reviewed, observedAt: '2026-11-04T00:02:00.000Z' },
+      originalHash,
+    ),
+    /changed during review/,
+  )
+})
 test('TST-22: Project retry reuses the persisted Issue instead of creating another', async (t) => {
   const client = new GitHubClient(
     'synthetic-owner',
