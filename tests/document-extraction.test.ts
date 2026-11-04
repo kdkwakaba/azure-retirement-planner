@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import test from 'node:test'
 import {
+  AzureStore,
   bindDocumentFactProposals,
   DOCUMENT_FACT_EXTRACTION_MAX_COMPLETION_TOKENS,
   DOCUMENT_FACT_EXTRACTION_MAX_INPUT_CHARACTERS,
@@ -37,6 +39,57 @@ test('document extraction rejects malformed spreadsheets', async () => {
       extension: '.xlsx',
     }),
   )
+})
+
+test('SharePoint blob reads request only the stored document length', async () => {
+  const content = Buffer.from('small synthetic DOCX payload')
+  const contentHash = createHash('sha256').update(content).digest('hex')
+  let requestedCount: number | undefined
+  const store = new AzureStore('sampleaccount')
+  store.blobs = {
+    getContainerClient: (container: string) => {
+      assert.equal(container, 'records')
+      return {
+        getBlobClient: () => ({
+          getProperties: async () => ({ contentLength: content.length }),
+          downloadToBuffer: async (_offset: number, count: number) => {
+            requestedCount = count
+            return content
+          },
+        }),
+      }
+    },
+  } as never
+
+  assert.deepEqual(
+    await store.sharePointDocument('sample-folder', contentHash),
+    content,
+  )
+  assert.equal(requestedCount, content.length)
+})
+
+test('SharePoint blob reads reject invalid sizes before downloading', async () => {
+  const content = Buffer.from('small synthetic DOCX payload')
+  const contentHash = createHash('sha256').update(content).digest('hex')
+  let downloaded = false
+  const store = new AzureStore('sampleaccount')
+  store.blobs = {
+    getContainerClient: () => ({
+      getBlobClient: () => ({
+        getProperties: async () => ({ contentLength: 10 * 1024 * 1024 + 1 }),
+        downloadToBuffer: async () => {
+          downloaded = true
+          return content
+        },
+      }),
+    }),
+  } as never
+
+  await assert.rejects(
+    store.sharePointDocument('sample-folder', contentHash),
+    /size is invalid/,
+  )
+  assert.equal(downloaded, false)
 })
 
 test('fact proposals inherit exact source and sample metadata from cited blocks', () => {

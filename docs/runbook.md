@@ -107,6 +107,8 @@ API・評価Queue・日次同期・Receipt/Export outboxの処理失敗は、App
 
 SharePoint事実抽出のAPI失敗は、`stage`で参照元・Assessment・Snapshot・既存Grounding・原文Blob・DOCX/XLSX解析・モデル利用枠・モデル呼出・Grounding保存のどこで止まったかを確認する。画面では同じ段階を日本語で表示する。特定には`traces | where message contains '<correlationId>'`を使い、要求本文・文書本文・モデル入出力を診断ログへ追加しない。ステージ分類が入る前の実行は`http`とだけ記録されるため、相関IDのある旧失敗に処理段階を後付け推定しない。
 
+2026-11-05のサンプルDOCX抽出は`sharepoint-fact-document-read`で失敗した。API Managed IdentityにはデータStorage Account上の`Storage Blob Data Contributor`が付与済みであり、調査で`downloadToBuffer`が文書ごとの実長ではなく10 MiB固定のRangeを要求していたことを確認した。修正ではBlobの`contentLength`を取得して0超10 MiB以下を検証し、同じ長さだけを取得する。Azure SDKの`statusCode`も503応答へ安全に分類する。修正版の配置後に同一のサンプル文書で再試行し、Blob読出し・DOCX解析・モデル抽出・候補保存を個別に確認する。
+
 ## 6. 費用と撤去
 
 APIの日次モデル呼出枠は200件で、同時予約をETagで制御する。要求ごとのToken上限は設けない。PoC累計20,000円は利用者がCost Managementで監視する。アプリによる金額ハード停止は実装しない。Cost ManagementのBudgetは通知用で、利用量停止機能ではなく課金データも遅延する。Foundryモデルの費用とFunctions、Storage、ログを含むRG費用を手動で確認する。
