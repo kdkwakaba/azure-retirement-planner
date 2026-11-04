@@ -18,4 +18,6 @@ param testModeEnabled = toLower(readEnvironmentVariable('ARP_TEST_MODE_ENABLED',
 param syntheticUatEnabled = toLower(readEnvironmentVariable('ARP_SYNTHETIC_UAT_ENABLED', 'false')) == 'true'
 param decisionReevaluationEnabled = toLower(readEnvironmentVariable('ARP_DECISION_REEVALUATION_ENABLED', 'false')) == 'true'
 param projectProgressSyncEnabled = toLower(readEnvironmentVariable('ARP_PROJECT_PROGRESS_SYNC_ENABLED', 'false')) == 'true'
+param sharePointSyncEnabled = toLower(readEnvironmentVariable('ARP_SHAREPOINT_SYNC_ENABLED', 'false')) == 'true'
+param sharePointFactExtractionEnabled = toLower(readEnvironmentVariable('ARP_SHAREPOINT_FACT_EXTRACTION_ENABLED', 'false')) == 'true'
 param maxModelCallsPerDay = 200
