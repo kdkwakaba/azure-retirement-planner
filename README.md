@@ -13,6 +13,7 @@ Azureの非推奨化・新規作成停止・サポート終了・リタイアメ
 | [判断・承認基準](docs/decision-policy.md) | 影響度2軸、確度分類、P1〜P4、不確実性、人間レビュー、作業項目生成 |
 | [ワークフロー設定基準](docs/workflow-configuration.md) | 企業別の担当割当、部署調整、承認、移行順序の設定方式 |
 | [SharePoint設計書による影響評価計画](docs/sharepoint-document-impact-plan.md) | 専用サンプルフォルダ内の複数文書、将来の複数フォルダ参照、依存関係・根拠・品質評価 |
+| [SharePointサンプルフォルダ接続手順](docs/sharepoint-connection-guide.md) | Graph ExplorerでSite／Drive／Folder IDを取得し、Managed Identity・Source設定・同期を確認する手順 |
 | [Spike・テスト計画](docs/spike-and-testing.md) | 実現性、3事例、30テスト（非推奨6件追加）、品質評価、予算 |
 | [登壇・デモ計画](docs/presentation-demo.md) | 15分発表、実データによる3分ライブデモ |
 | [合意・未決事項](docs/decisions.md) | 採用済み事項、未確定条件、次の判断ゲート |
