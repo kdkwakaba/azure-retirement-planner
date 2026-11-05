@@ -20,6 +20,7 @@ import {
   evidenceDisplay,
   explanationSectionDisplay,
   impactDisplay,
+  impactScoreDisplay,
   isKnownReviewReason,
   isModelDecisionStatusOnlyReviewReason,
   isPlanSchedulingNote,
@@ -1062,6 +1063,17 @@ function App() {
                             '未対応時',
                           )}
                         </strong>
+                        {impactScoreDisplay(
+                          current.decision,
+                          'impactIfUnaddressed',
+                        ) && (
+                          <small>
+                            {impactScoreDisplay(
+                              current.decision,
+                              'impactIfUnaddressed',
+                            )}
+                          </small>
+                        )}
                         <ImpactNarrative
                           claim={impactNarrativeFor('impactIfUnaddressed')}
                           evidence={current.event.evidence}
@@ -1080,6 +1092,17 @@ function App() {
                             '対応時・対応後',
                           )}
                         </strong>
+                        {impactScoreDisplay(
+                          current.decision,
+                          'impactDuringAndAfterChange',
+                        ) && (
+                          <small>
+                            {impactScoreDisplay(
+                              current.decision,
+                              'impactDuringAndAfterChange',
+                            )}
+                          </small>
+                        )}
                         <ImpactNarrative
                           claim={impactNarrativeFor(
                             'impactDuringAndAfterChange',

@@ -639,6 +639,18 @@ export const decisionSchema = z
     complexity: z.enum(['Low', 'Medium', 'High']).nullable(),
     projectRequired: z.boolean().nullable(),
     ownerTeam: z.string().nullable(),
+    scoreValues: z
+      .object({
+        impactIfUnaddressed: z.number().finite().min(0).max(3).optional(),
+        impactDuringAndAfterChange: z
+          .number()
+          .finite()
+          .min(0)
+          .max(3)
+          .optional(),
+      })
+      .strict()
+      .optional(),
     probabilities: z.record(
       z.string(),
       z.record(z.string(), z.number().min(0).max(1)),
