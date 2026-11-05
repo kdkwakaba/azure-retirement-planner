@@ -204,6 +204,24 @@ small {
 .sharepoint-panel {
   margin-bottom: 20px;
 }
+.sharepoint-panel-disclosure {
+  margin-top: 24px;
+  padding: 0 24px;
+  background: white;
+  border: 1px solid #dce6e3;
+  border-radius: 10px;
+}
+.sharepoint-panel-disclosure > summary {
+  padding: 16px 0;
+  font-weight: 600;
+}
+.sharepoint-panel-disclosure[open] > .sharepoint-panel {
+  margin: 0;
+  padding: 20px 0 0;
+  border: 0;
+  border-top: 1px solid #dce6e3;
+  border-radius: 0;
+}
 .sharepoint-heading,
 .sharepoint-sync-actions,
 .sharepoint-source-row,
