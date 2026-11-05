@@ -42,6 +42,7 @@ param syntheticUatEnabled bool = false
 param decisionReevaluationEnabled bool = false
 param sharePointSyncEnabled bool = false
 param sharePointFactExtractionEnabled bool = false
+param sharePointLiveSourcesEnabled bool = false
 param processingFailureAlertsEnabled bool = false
 param processingFailureAlertActionGroupId string = ''
 
@@ -195,6 +196,7 @@ resource functions 'Microsoft.Web/sites@2024-11-01' = [for (name,i) in ['api','e
         { name: 'DECISION_REEVALUATION_ENABLED', value: toLower(string(decisionReevaluationEnabled)) }
         { name: 'SHAREPOINT_SYNC_ENABLED', value: toLower(string(sharePointSyncEnabled)) }
         { name: 'SHAREPOINT_FACT_EXTRACTION_ENABLED', value: toLower(string(sharePointFactExtractionEnabled)) }
+        { name: 'SHAREPOINT_LIVE_SOURCES_ENABLED', value: toLower(string(sharePointLiveSourcesEnabled)) }
         { name: 'SYNC_ENABLED', value: toLower(string(syncEnabled)) }
         { name: 'PROJECT_PROGRESS_SYNC_ENABLED', value: toLower(string(projectProgressSyncEnabled)) }
         { name: 'INGEST_ENABLED', value: toLower(string(ingestEnabled)) }

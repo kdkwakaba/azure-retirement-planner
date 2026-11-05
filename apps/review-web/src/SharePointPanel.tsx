@@ -39,6 +39,7 @@ type SourceDraft = {
   folderItemId: string
   workloadIds: string
   configurationVersion: string
+  sampleOnly: boolean
 }
 const emptyDraft: SourceDraft = {
   sourceId: '',
@@ -48,6 +49,7 @@ const emptyDraft: SourceDraft = {
   folderItemId: '',
   workloadIds: '',
   configurationVersion: 'v1',
+  sampleOnly: true,
 }
 
 export function SharePointPanel({
@@ -55,12 +57,16 @@ export function SharePointPanel({
   canSync,
   syncEnabled,
   factExtractionEnabled,
+  sampleSourcesEnabled,
+  liveSourcesEnabled,
   assessment,
 }: {
   canConfigure: boolean
   canSync: boolean
   syncEnabled: boolean
   factExtractionEnabled: boolean
+  sampleSourcesEnabled: boolean
+  liveSourcesEnabled: boolean
   assessment: Pick<Assessment, 'id' | 'workloadId' | 'resources'> | null
 }) {
   const [sources, setSources] = useState<DocumentSource[]>([])
@@ -86,15 +92,15 @@ export function SharePointPanel({
     Record<string, string[]>
   >({})
 
-  async function loadFacts(workloadId: string) {
-    if (!workloadId) {
+  async function loadFacts(sourceId: string, workloadId: string) {
+    if (!sourceId || !workloadId) {
       setGrounding(null)
       setGroundingHash(null)
       setSelectedRelatedFactIds({})
       return
     }
     const result = await request(
-      `sharepoint-facts?workloadId=${encodeURIComponent(workloadId)}`,
+      `sharepoint-facts?sourceId=${encodeURIComponent(sourceId)}&workloadId=${encodeURIComponent(workloadId)}`,
       'GET',
     )
     const parsed = z
@@ -180,12 +186,31 @@ export function SharePointPanel({
 
   useEffect(() => {
     if (!canConfigure) return
-    void loadFacts(selectedWorkloadId).catch((reason) =>
+    const source = sources.find((item) => item.sourceId === selectedSourceId)
+    const modeEnabled = source
+      ? source.sampleOnly
+        ? sampleSourcesEnabled
+        : liveSourcesEnabled
+      : false
+    if (!source || !modeEnabled) {
+      setGrounding(null)
+      setGroundingHash(null)
+      setSelectedRelatedFactIds({})
+      return
+    }
+    void loadFacts(selectedSourceId, selectedWorkloadId).catch((reason) =>
       setError(
         reason instanceof Error ? reason.message : '抽出候補を取得できません',
       ),
     )
-  }, [canConfigure, selectedWorkloadId])
+  }, [
+    canConfigure,
+    liveSourcesEnabled,
+    sampleSourcesEnabled,
+    selectedSourceId,
+    selectedWorkloadId,
+    sources,
+  ])
 
   useEffect(() => {
     if (
@@ -237,6 +262,11 @@ export function SharePointPanel({
   const selectedSource = sources.find(
     (source) => source.sourceId === selectedSourceId,
   )
+  const selectedSourceModeEnabled = selectedSource
+    ? selectedSource.sampleOnly
+      ? sampleSourcesEnabled
+      : liveSourcesEnabled
+    : false
   const snapshot = selectedSourceId ? snapshots[selectedSourceId] : null
   const groundingMatchesSource =
     !grounding ||
@@ -252,6 +282,7 @@ export function SharePointPanel({
       folderItemId: source.folderItemId,
       workloadIds: source.workloadIds.join(', '),
       configurationVersion: source.configurationVersion,
+      sampleOnly: source.sampleOnly,
     })
   }
 
@@ -270,6 +301,7 @@ export function SharePointPanel({
           folderItemId: z.string().min(1).max(500),
           workloadIds: z.array(z.string().min(1).max(200)).min(1),
           configurationVersion: z.string().min(1).max(100),
+          sampleOnly: z.boolean(),
         })
         .parse({
           sourceId: draft.sourceId.trim(),
@@ -282,11 +314,16 @@ export function SharePointPanel({
             .map((id) => id.trim())
             .filter(Boolean),
           configurationVersion: draft.configurationVersion.trim(),
+          sampleOnly: draft.sampleOnly,
         })
       await request('sharepoint-source', 'POST', source)
       await loadSources()
       setSelectedSourceId(source.sourceId)
-      setNotice('サンプル用Source設定を保存しました。')
+      setNotice(
+        source.sampleOnly
+          ? 'テストモード用サンプルSourceを保存しました。'
+          : '実業務文書Sourceを保存しました。',
+      )
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Source保存失敗')
     } finally {
@@ -295,7 +332,7 @@ export function SharePointPanel({
   }
 
   async function startSync() {
-    if (!selectedSource) return
+    if (!selectedSource || !selectedSourceModeEnabled || !syncEnabled) return
     setBusy(true)
     setError('')
     setNotice('')
@@ -315,7 +352,13 @@ export function SharePointPanel({
   }
 
   async function extractFacts(itemId: string) {
-    if (!selectedSource || !selectedWorkloadId) return
+    if (
+      !selectedSource ||
+      !selectedSourceModeEnabled ||
+      !factExtractionEnabled ||
+      !selectedWorkloadId
+    )
+      return
     setBusy(true)
     setError('')
     setNotice('')
@@ -381,7 +424,14 @@ export function SharePointPanel({
     factId: string,
     reviewStatus: 'Confirmed' | 'Rejected',
   ) {
-    if (!selectedWorkloadId || !groundingHash || !groundingMatchesSource) return
+    if (
+      !selectedSource ||
+      !selectedSourceModeEnabled ||
+      !selectedWorkloadId ||
+      !groundingHash ||
+      !groundingMatchesSource
+    )
+      return
     setBusy(true)
     setError('')
     setNotice('')
@@ -400,6 +450,7 @@ export function SharePointPanel({
         })
         .parse(
           await request('sharepoint-facts/review', 'POST', {
+            sourceId: selectedSourceId,
             workloadId: selectedWorkloadId,
             assessmentId:
               assessment?.workloadId === selectedWorkloadId
@@ -456,7 +507,13 @@ export function SharePointPanel({
   }
 
   async function resetGroundingForSourceVersion() {
-    if (!selectedSource || !groundingHash || groundingMatchesSource) return
+    if (
+      !selectedSource ||
+      !selectedSourceModeEnabled ||
+      !groundingHash ||
+      groundingMatchesSource
+    )
+      return
     setBusy(true)
     setError('')
     setNotice('')
@@ -586,9 +643,13 @@ export function SharePointPanel({
     <section className="sharepoint-panel" aria-labelledby="sharepoint-title">
       <div className="sharepoint-heading">
         <div>
-          <h2 id="sharepoint-title">SharePointサンプル設計書</h2>
+          <h2 id="sharepoint-title">SharePoint設計書</h2>
           <p>
-            専用のサンプルフォルダ1件を読み取り専用で取得します。実業務用Sourceは登録できません。
+            {sampleSourcesEnabled
+              ? 'テストモードです。サンプル用Sourceだけを同期・抽出できます。'
+              : liveSourcesEnabled
+                ? '実業務モードです。実業務文書Sourceだけを同期・抽出できます。確認済み事実だけが以降のWorkload評価に使われます。'
+                : 'SharePoint文書処理は現在のモードでは無効です。'}
           </p>
         </div>
         <span className={syncEnabled ? 'status-enabled' : 'status-disabled'}>
@@ -619,6 +680,8 @@ export function SharePointPanel({
                 type="button"
               >
                 {source.displayName}
+                {' · '}
+                {source.sampleOnly ? 'テスト用サンプル' : '実業務文書'}
               </button>
               {canConfigure && (
                 <button
@@ -633,7 +696,7 @@ export function SharePointPanel({
           ))}
         </div>
       ) : (
-        <p>登録済みのサンプルフォルダはありません。</p>
+        <p>登録済みのSharePointフォルダはありません。</p>
       )}
 
       {selectedSource && (
@@ -642,12 +705,14 @@ export function SharePointPanel({
             <div>
               <strong>{selectedSource.displayName}</strong>
               <small>
+                {selectedSource.sampleOnly ? 'テスト用サンプル' : '実業務文書'}
+                {' · '}
                 Workload: {selectedSource.workloadIds.join(', ')} · 設定版:{' '}
                 {selectedSource.configurationVersion}
               </small>
             </div>
             <button
-              disabled={busy || !syncEnabled}
+              disabled={busy || !syncEnabled || !selectedSourceModeEnabled}
               onClick={() => void startSync()}
               type="button"
             >
@@ -657,6 +722,11 @@ export function SharePointPanel({
           {!syncEnabled && (
             <p className="muted">
               同期機能は無効です。管理者が同期設定を有効にし、Graph権限とSiteアクセスを設定した後に実行できます。
+            </p>
+          )}
+          {syncEnabled && !selectedSourceModeEnabled && (
+            <p className="muted">
+              Source区分とアプリの動作モードが一致しないため処理できません。
             </p>
           )}
           {run?.sourceId === selectedSource.sourceId && (
@@ -686,7 +756,8 @@ export function SharePointPanel({
               <h3>取得済み文書 ({snapshot.documents.length}件)</h3>
               <small>
                 全ページ列挙完了 · {snapshot.observedAt} · 設定版{' '}
-                {snapshot.configurationVersion} · サンプルデータ
+                {snapshot.configurationVersion} ·{' '}
+                {snapshot.sampleOnly ? 'サンプルデータ' : '実業務文書'}
               </small>
               {snapshot.documents.length ? (
                 <ul>
@@ -703,6 +774,7 @@ export function SharePointPanel({
                           className="secondary-button"
                           disabled={
                             !factExtractionEnabled ||
+                            !selectedSourceModeEnabled ||
                             busy ||
                             !groundingMatchesSource
                           }
@@ -760,7 +832,7 @@ export function SharePointPanel({
           )}
           {factExtractionEnabled && (
             <p className="muted">
-              空でない文書の抽出は1文書あたりモデル呼出し1回を使い、アプリ共通の日次上限に計上されます。同じ文書版・モデル版・Prompt版の再実行は保存済み結果を返します。
+              文書は最大3つの入力バッチに分けて抽出し、各モデル呼出しをアプリ共通の日次上限へ計上します。同じ文書版・モデル版・Prompt版・Source区分の再実行は保存済み応答を再利用します。
             </p>
           )}
           {!groundingMatchesSource && grounding && (
@@ -814,7 +886,7 @@ export function SharePointPanel({
                         fact.locator.sheet ??
                         '出典位置なし'}
                       {fact.locator.cell ? ` · ${fact.locator.cell}` : ''} ·
-                      サンプル
+                      {fact.sampleOnly ? 'テスト用サンプル' : '実業務文書'}
                     </small>
                     {fact.reviewStatus === 'Candidate' ? (
                       <>
@@ -891,6 +963,7 @@ export function SharePointPanel({
                           <button
                             disabled={
                               busy ||
+                              !selectedSourceModeEnabled ||
                               !editedStatements[fact.factId]?.trim() ||
                               (canLinkFromFact(fact) &&
                                 (selectedRelatedFactIds[fact.factId] ?? [])
@@ -906,7 +979,7 @@ export function SharePointPanel({
                           </button>
                           <button
                             className="secondary-button"
-                            disabled={busy}
+                            disabled={busy || !selectedSourceModeEnabled}
                             onClick={() =>
                               void reviewFact(fact.factId, 'Rejected')
                             }
@@ -935,6 +1008,7 @@ export function SharePointPanel({
                               <button
                                 disabled={
                                   busy ||
+                                  !selectedSourceModeEnabled ||
                                   ((selectedRelatedFactIds[fact.factId] ?? [])
                                     .length > 0 &&
                                     assessment?.workloadId !==
@@ -966,10 +1040,15 @@ export function SharePointPanel({
 
       {canConfigure && (
         <details className="sharepoint-config">
-          <summary>サンプルフォルダを登録・更新</summary>
+          <summary>SharePointフォルダを登録・更新</summary>
           <p>
             Site ID、Drive ID、Folder Item
             IDを入力します。Source設定を変更するときは設定版も更新してください。同期範囲は指定フォルダ配下のDOCX／XLSXに固定されます。
+            {sampleSourcesEnabled
+              ? ' 現在はテストモードのため、登録区分はサンプル専用です。'
+              : liveSourcesEnabled
+                ? ' 現在は実業務モードのため、登録区分は実業務文書です。'
+                : ' Source登録にはテスト用または実業務用のSharePoint処理設定が必要です。'}
           </p>
           <form onSubmit={(event) => void saveSource(event)}>
             <label>
@@ -992,6 +1071,13 @@ export function SharePointPanel({
                 }
                 required
                 value={draft.displayName}
+              />
+            </label>
+            <label>
+              データ区分
+              <input
+                readOnly
+                value={draft.sampleOnly ? 'テスト用サンプル' : '実業務文書'}
               />
             </label>
             <label>
@@ -1053,13 +1139,28 @@ export function SharePointPanel({
               />
             </label>
             <div className="sharepoint-config-actions">
-              <button disabled={busy} type="submit">
+              <button
+                disabled={
+                  busy ||
+                  (draft.sampleOnly
+                    ? !sampleSourcesEnabled
+                    : !liveSourcesEnabled)
+                }
+                type="submit"
+              >
                 Source設定を保存
               </button>
               <button
                 className="secondary-button"
-                disabled={busy}
-                onClick={() => setDraft(emptyDraft)}
+                disabled={
+                  busy || (!sampleSourcesEnabled && !liveSourcesEnabled)
+                }
+                onClick={() =>
+                  setDraft({
+                    ...emptyDraft,
+                    sampleOnly: sampleSourcesEnabled,
+                  })
+                }
                 type="button"
               >
                 新規入力
