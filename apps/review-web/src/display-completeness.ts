@@ -381,7 +381,8 @@ export function priorityDisplay(priority: string | null): string {
 
 export function impactDisplay(
   value: string | null,
-  axis: '未対応時' | '対応時・対応後',
+  axis: '未対応時のリスク' | '対応時・対応後の影響',
+  probabilities?: Record<string, number>,
 ): string {
   const impactLabels: Record<string, string> = {
     Low: '小',
@@ -389,9 +390,27 @@ export function impactDisplay(
     High: '大',
     Critical: '重大',
   }
-  return value
-    ? `評価値: ${impactLabels[value] ?? value}`
-    : `影響度は未確定（${axis}）`
+  if (value) return `評価値: ${impactLabels[value] ?? value}`
+
+  const rankedProbabilities = Object.entries(probabilities ?? {}).filter(
+    ([level, probability]) =>
+      level in impactLabels && Number.isFinite(probability) && probability >= 0,
+  )
+  if (!rankedProbabilities.length) return `影響度は未確定（${axis}）`
+
+  const highestProbability = Math.max(
+    ...rankedProbabilities.map(([, probability]) => probability),
+  )
+  const highestLevels = rankedProbabilities.filter(
+    ([, probability]) => probability === highestProbability,
+  )
+  const highestScore = highestLevels
+    .map(
+      ([level, probability]) =>
+        `${impactLabels[level]}（${level}、${Math.round(probability * 100)}%）`,
+    )
+    .join(' / ')
+  return `Decision-1の最有力Score: ${highestScore}`
 }
 
 export function impactScoreDisplay(
