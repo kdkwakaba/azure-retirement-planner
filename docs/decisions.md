@@ -1,99 +1,31 @@
-# 合意・未決事項
+# Architecture decisions
 
-設計基準日2026-10-22、更新日2026-11-01。会話での採用事項を記録する。未実施のSpikeやモデル評価を完了扱いしない。旧合意を置換したものは行内で明示する。
+This document records current, implementation-relevant decisions. It replaces historical discussion notes and environment-specific operating records.
 
-## 採用済み
+## Adopted decisions
 
-| ID | 決定 |
+| Area | Decision |
 |---|---|
-| ADR-001 | 目的は計画的な変更判断。インシデント対応なし |
-| ADR-002 | Microsoft標準情報と関連付けを利用する |
-| ADR-003 | Decision-1第一選択。説明LLM・ルール・人間を分離 |
-| ADR-004 | 実現性優先でPoC閉域・国内限定は必須にしない |
-| ADR-005 | 同一テナントMG。将来複数テナントはCollector分離 |
-| ADR-006 | 技術構成は実環境を正本。業務属性は人間管理・矛盾表示 |
-| ADR-007 | データプレーン探索はPoC外 |
-| ADR-008 | 影響は未対応時と対応時・対応後の2軸 |
-| ADR-009 | 費用・運用も含め、最重大観点を基本に集約 |
-| ADR-010 | Criticalは人間指定。未指定重大兆候も確認 |
-| ADR-011 | 全社既定＋Workload別許容値。具体値未決 |
-| ADR-012 | 構成変更、代替、機能差、不可逆性、恒常影響を評価 |
-| ADR-013 | P表は計画余裕0/30/90日、未確定原則P2、未解決期限超過・30日内P1 |
-| ADR-014 | 不確実性が結論へ影響するとき強制レビュー |
-| ADR-015 | Retirement×Workload単位。評価・方針・作業・登録を識別 |
-| ADR-016 | 部分承認・差戻し・保留。No actionも根拠確認 |
-| ADR-017 | 重要変更の影響承認だけ失効。本番変更承認と分離 |
-| ADR-018 | 3事例と30機能ケース（非推奨6件追加）、36シナリオ×3回を採用 |
-| ADR-019 | 新規環境に過去通知発生を要求せず、実接続と再現を分離 |
-| ADR-020 | 既存Subscriptionの専用RG |
-| ADR-021 | 個人非公開Repository／ProjectはPoC・デモ限定 |
-| ADR-022 | 本番はOrganization＋GitHub Apps／Installation Token |
-| ADR-023 | Jev／Decisions APIはやむを得ない場合の再検討。自動Fallbackなし |
-| ADR-024 | 15分発表、3分デモ。保存再生標準は撤回し、同じAzure環境・実データでライブ実行。Storageは補足 |
-| ADR-025 | Spike累計5,000円、PoCはSpike込み累計20,000円。月額ではない |
-| ADR-026 | 50/80/100%通知、80%抑制、上限新規推論停止 |
-| ADR-027 | 営業時間運用、日次再照合、業務期限SLAなし |
-| ADR-028 | 終了後90日保存は撤回。PoC終了時に関連リソース・Project・実データ・資格情報を削除しコード等を保持 |
-| ADR-029 | 評価対象の変更、自動クローズ、根拠なし移行確定をしない。本システムの承認済手動CDは別 |
-| ADR-030 | 本リポジトリは設計・開発用指示・3 Skillsを整備。アプリ実装は未着手 |
-| ADR-031 | Bicep、TypeScript＋React、GitHub Actions CI＋手動CD、モノレポを採用 |
-| ADR-032 | EOL・サポート切れ・既知脆弱性を新規採用／リリースしない。全依存・ツール・Actionsを検査 |
-| ADR-033 | 画面はSpike・PoC・登壇ともAzure＋Entra認証。localhost・匿名公開を標準にしない |
-| ADR-034 | 評価対象変更は禁止。本システム専用環境は承認済み手動CDで変更可能 |
-| ADR-035 | 脆弱性・資格情報漏えい対応は業務SLAと別に管理 |
-| ADR-036 | 動作・要件充足を優先し、必要テスト・ビルド・セキュリティ合格も完了条件 |
-| ADR-037 | 初期AGENTS.md＋arp-feature／arp-security-maintenance／arp-releaseを作成 |
-| ADR-038 | 非推奨・新規作成停止・サポート終了も対象。Health Advisoryを選別しRetirementサブタイプのみに限定しない |
-| ADR-039 | 各日付を別保持。期限未発表はnull、必要な確認は暫定P2＋人間レビュー。移行必須や既存停止と断定しない |
-| ADR-040 | 非推奨から廃止発表への更新で再評価・該当承認失効。検証ケースを24から30へ追加 |
+| Product boundary | Support lifecycle impact assessment and planning; do not perform incident recovery or modify assessed resources. |
+| Data sources | Use Azure Service Health, Resource Graph, selected Advisor/control-plane data, and explicitly configured SharePoint sources. Preserve source, time, scope, and retrieval completeness. |
+| Identity | Use Entra authentication and API role checks for users, Managed Identity for Azure service access, and OIDC for deployment automation. |
+| Decision ownership | Microsoft-Decision-1 returns typed proposals; deterministic rules enforce policy constraints; explanation generation organizes evidence; humans confirm business facts and approve work. |
+| Uncertainty | Unknown and incomplete evidence are explicit states. Missing data is not interpreted as no impact. |
+| Impact | Keep risk if unaddressed separate from impact during and after response. Do not equate technical change size with business impact. |
+| Assessment identity | Assessments are versioned by lifecycle event and workload. Corrections and source updates create new versions and invalidate affected approvals. |
+| Evidence | Preserve immutable source evidence, model invocation metadata, human corrections, and approval hashes. Do not create unsupported dates, IDs, costs, owners, or successor services. |
+| SharePoint | Read only configured folders using selected Graph access. Require human confirmation of extracted facts and explicit dependency links before using them as assessment evidence. |
+| External work | Export only human-approved work items. GitHub Issue creation and Project item updates are separate and retryable stages. Closing an external issue does not automatically complete internal work. |
+| Infrastructure | Manage the Planner's own infrastructure through Bicep and reviewed release workflows. Keep bootstrap permissions separate from routine deployment. |
+| Test data | Keep isolated synthetic records distinct from live notices and resources. Test-only endpoints require explicit configuration and are disabled when test mode is off. |
 
+## Decisions that deployments must supply
 
-| ADR-041 | 影響リソース確度をConfirmed／Probable／Possible／Verification Required／Not Impacted／Unknownに分け、根拠・理由・不足属性を個別保存 |
-| ADR-042 | 確認方法を定義できる具体的不明点はVerification Required、それ以外の判定不能はUnknown |
-| ADR-043 | 「該当リソースなし」は適用プロファイル・調査範囲・取得完了を併記し、業務影響なしやNot Impactedと区別 |
-| ADR-044 | PoCの3プロファイルはBasic Load Balancer、Storage GPv1、Application Insights URL ping。公式適用条件と根拠を確認後に有効化 |
-| ADR-045 | 矛盾する強い根拠、取得不完全、未知属性値は対象外と断定せず人間レビュー。Advisor等の非表示だけではNot Impactedにしない |
-| ADR-046 | Possibleは直接確認できるAzure構成上の依存根拠に限定。推移的関係・名前類似・モデル推測を根拠にしない |
-| ADR-047 | 明確な該当なし・定型Not Impactedは評価レビュー省略可。不確実性・高リスク・Critical・作業承認はレビュー維持 |
-| ADR-048 | 確信度はPoC初期に数値しきい値を固定せず、確率だけでレビューを省略しない。履歴を記録し評価後に校正を検討 |
-| ADR-049 | 作業項目は証拠ある必須対応と推奨確認を区別。不確実な場合に移行をRequiredとせず、根拠のない項目は生成・登録しない |
-| ADR-050 | レポートはイベント版×Workload、リソース行は個別表示。確認作業はResource Type等のアクション文脈一致時のみ集約 |
-| ADR-051 | 重複項目は識別子で照合し、重要変更を差分提示。人の編集を上書きせず、完了済み外部項目を自動再開・削除・クローズしない |
-| ADR-052 | 人間訂正は理由・変更前後・主体・時刻・Evidenceを記録し、モデルやルールへ自動学習・反映しない |
-| ADR-053 | Retirement更新・取消はイベント新版本として再評価し、既存作業の自動削除・完了・クローズをしない |
-| ADR-054 | 発表源は承認済み許可リストのみ。公式・社内・信頼済みSaaSを区別し、任意URL辿りを禁止。取得失敗は未完了扱い |
-| ADR-055 | 企業別チーム割当、部署調整、承認、移行順序は構造化設定で管理し、Markdownは説明用。設定不能は人間確認 |
-| ADR-056 | 設定変更はPull Request、スキーマ・依存循環検証、責任者レビュー後に適用。評価は設定版を記録し旧評価へ遡及適用しない |
-| ADR-057 | P1→`Priority: High`、P2/P3→`Priority: Medium`、P4→`Priority: Low`のGitHub Issueラベル。親Issueの下に影響確認／設計／変更／テストのフェーズIssueを作り、承認済み作業を各フェーズのSub-Issueにする |
-| ADR-058 | 実データ画面で欠落値を空欄や単独の「未設定」にしない。確定値がない場合は取得状態・理由・次の作業・判断役割を表示する。日付、業務影響、実担当、承認結果は根拠なしに補完しない。情報システム部門を初動調整窓口、Workload責任者を業務判断役、ガバナンス責任者を方針・例外確認役として表示するが、これは推奨経路でありAPI上の承認権限・実担当を確定しない。実データ詳細は「説明」「根拠」「確認が必要な理由」を大項目に分け、説明Claimの種類は同一種類ごとにまとめる。Microsoft公式Evidenceは信頼済みURLを表示する。根拠と確認方法が同じResourceの影響確認は、対象Resourceを列挙した一作業へ集約する |
-| ADR-059 | 業務影響度と影響説明文を分ける。Workloadと処理の対応情報がない間はライフサイクル種別に基づくEvidence付きの一般説明を条件付きで提示し、個別処理名・停止時間は創作しない。将来の個別説明は承認済み構成・業務対応データに根拠を結び付けて生成する |
+- Target tenant and subscription scopes, required roles, and identity assignments.
+- Applicable resource profiles, business ownership, criticality, task durations, calendars, and review responsibilities.
+- SharePoint sites, folders, file limits, retention, and which confirmed facts may enter assessments.
+- Model deployments, region, quota, cost controls, retention, and approved data egress.
+- GitHub owner, repository, Project, token scope, export enablement, and retention policy.
+- Network isolation, disaster recovery, operational SLOs, security response ownership, and regulatory requirements.
 
-## 未確定事項と決め方
-
-| ID | 内容 | 確認ゲート |
-|---|---|---|
-| OPEN-01 | 対象MG／Subscription、実リソースと過去Payload | SP-02 |
-| OPEN-02 | Decision-1提供、リージョン、Version、価格 | SP-01 |
-| OPEN-03 | 個人ProjectのToken種別・実権限 | SP-05 |
-| OPEN-04 | 代替Jev／Decisions APIの正式提供元・契約 | 代替再検討時のみ |
-| OPEN-05 | 停止時間・費用等の全社既定値・個別許容値 | 業務Ownerと追加壁打ち |
-| OPEN-06 | 移行期間・予備期間・対応人数・カレンダー | 計画算定前 |
-| OPEN-07 | 確率閾値の校正、正解ラベル、評価分割 | 品質評価前 |
-| OPEN-08 | Shadow→承認連携→本番の詳細開始・終了条件 | 次の計画検討（6番） |
-| OPEN-09 | 終了時削除手順・削除待ち残費用、税・為替の予算扱い | 課金リソース作成前 |
-| OPEN-10 | 本番所在地、閉域、DR、保持、監査保全、品質SLO | 本番化審査 |
-| OPEN-11 | 発表日、主催の質疑時間、公開範囲 | 登壇準備 |
-| OPEN-12 | Azureの画面配信方式・APIとの認証／認可・実データの3分実行可否 | SP-06 |
-| OPEN-13 | Node／Functions／依存／CLI／Actionsのサポート版とCI実行コマンド | 最小基盤の実装時 |
-| OPEN-14 | セキュリティ問題の対応期限・責任者・連絡経路 | 運用開始前 |
-
-## 整合性確認
-
-- 対応期限SLAなしでも、Retirementに基づく作業期限は評価する。
-- 高いモデル確率は確定事実や承認を意味しない。
-- 不確実性は移行必須の根拠ではなく、人間確認の契機。
-- 架空環境の再現結果と実Azureでの対象判定を混同しない。
-- 個人GitHubの利用は本番推奨ではない。
-- PoC予算採用は価格・実現性の保証ではない。
-- 構成変更の大きさと業務影響の大きさを分離する。
-- 開発用指示・Skillsの作成は、Azure作成・アプリ実装の着手ではない。
+These values are environment-specific; do not put production identifiers or credentials in the public repository. Review the current implementation limits in [Implementation status](implementation-backlog.md).

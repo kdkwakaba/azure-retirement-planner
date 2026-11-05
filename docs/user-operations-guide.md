@@ -1,149 +1,83 @@
-# 利用者向け操作ガイド
+# User guide
 
-更新日: 2026-10-29
-対象: Azure Retirement Plannerの認証済みレビュー画面を使う利用者・Reviewer・Governance。
-関連: [現行構成・Decision-1解説](architecture-and-decision-model.md)、[判断・承認基準](decision-policy.md)、[レビュー画面UAT](review-screen-uat.md)、[運用Runbook](runbook.md)
+The review interface is hosted by the assessment API and requires Entra authentication and an assigned application role. The API enforces the same role checks as the interface.
 
-## 1. 利用者ロール
+## Roles
 
-| Entra App role | 画面でできること |
+| Role | Typical access |
 |---|---|
-| Reader | 評価一覧、評価詳細、Evidenceの閲覧 |
-| Operator | Reader相当の閲覧、「Azure情報を取得・評価」による手動同期、保存済み通知のリソース候補再評価 |
-| Reviewer | Reader相当の閲覧、評価内容の訂正、レビュー記録、作業項目の選択承認 |
-| Governance | 閲覧、同期、保存済み通知のリソース候補再評価、訂正、レビュー、およびテストモード時の実通知1件限定Decision-1／説明LLM再評価 |
+| Reader | Read assessments, evidence, status, and configured sources |
+| Reviewer | Correct assessment details and review or approve work |
+| Operator | Start synchronization and view processing status |
+| Governance | Manage SharePoint sources and facts, start synchronization, correct and review assessments |
+| NotificationSender | Application-only access to the configured notice endpoint |
 
-実際の操作可否はAPIがTokenのroleを検証する。画面にボタンが出ても、許可ロールがなければAPIが拒否する。各ユーザーには職務上必要な最小のroleを割り当てる。
+Role assignments are configured by the deploying organization. A role name shown in a policy does not assign an identity or grant API access.
 
-## 2. 画面へのアクセス
+## Open the application and synchronize
 
-1. 管理者からアプリのURLとEntra App roleの割当を受け取る。URLは環境ごとに異なるため、[Runbook](runbook.md)または管理者の案内にあるAPI URLを使う。
-2. ブラウザーで開き、組織アカウントでEntra IDへサインインする。初回同意を求められた場合は、組織の同意ルールに従う。
-3. 画面上部に「Retirement Planner」、通知一覧、評価状況が表示されることを確認する。
-4. 作業終了時は右上の「サインアウト」を選ぶ。共有端末ではブラウザーも閉じる。
+1. Open the application URL supplied by your administrator and sign in with your organization account.
+2. Confirm that the displayed role grants the operation you need.
+3. Use **Azure情報を取得・評価** to retrieve notices and Azure configuration and create assessments. This reads the configured Azure scopes; it does not modify assessed resources.
+4. When processing is asynchronous, wait for the queue to finish and use **評価結果を更新** to reload the list.
+5. A partially failed source is shown with its retrieval status. An empty list is not proof that no applicable resource exists.
 
-認証に失敗したり、一覧／APIが`Authentication required`を返す場合は「Azure情報を取得・評価」を連続して押さず、アプリへ再サインインする。ロール不足、Entra設定、API障害は運用担当へ連絡する。
+## Read an assessment
 
-## 3. Azure情報を取得して評価する
+Select a notice to view its event/version, workload, assessment date, official deadlines, candidate resources, two impact axes, priority, model invocation status, evidence, missing information, and proposed work.
 
-手動同期はOperatorまたはGovernanceが実行する。
+Resource classification answers whether an Azure resource may match the notice. Impact answers what could happen to the business. The two are separate. `Unknown` means the available evidence cannot establish a result; it does not mean unaffected. `Verification Required` should provide a concrete missing fact and confirmation task.
 
-1. 上部の「Azure情報を取得・評価」を一度押す。
-2. 画面の処理中表示が終わるまで待つ。同期受付の後、評価はQueueで非同期処理されるため、通知件数がすぐ変わらない場合がある。
-3. 少し待って「評価結果を更新」を押し、一覧と「評価状況」を確認する。
-4. 同期通知にエラーが出た場合は、取得完了と扱わず、画面のエラーと対象範囲を運用担当へ共有する。認証Token、通知本文、Resource IDをメールや公開Issueへ貼り付けない。
+Decision score distributions are model-provided ordinal outputs, not calibrated probabilities or accuracy. When highest categories tie, the interface can display all tied categories. Read the explanation, rule constraints, evidence, and uncertainty together.
 
-この操作は対象SubscriptionのAzure情報を読み取って評価を作る。評価対象Resourceの構成変更、移行、削除は行わない。自動日次同期やService Health通知の自動配送は環境設定に依存し、現在は実運用の通知配送が確認されていないため、必要なら手動同期を行う。
+Microsoft official evidence shows its source URL when one is available and validated. Some Service Health notices have no separate public page URL; the application does not invent one. Translations are reference translations and do not replace official text.
 
-### 3.1 保存済み通知のリソース候補を再評価する
+## Correct assessment facts
 
-通知が新規同期に現れなくても、OperatorまたはGovernanceは通知を選択し、「リソース候補を再評価」を実行できる。保存済み通知の内容に対し、現在のAzure構成・公式影響対象を再取得してQueueで再評価する。新しい評価版が作成され、以前の承認は引き継がれない。評価対象Azureの変更やGitHub登録は行わない。処理完了後に「評価結果を更新」し、Resource Type・候補理由・調査完全性を確認する。モデルが必要な場合はモデル呼出枠を消費する。
+Reviewer or Governance can open **業務影響・公式期限・計画を確認／訂正する** and create a new assessment version. Record the source and reason for each correction. Keep deprecation start, creation stop, end-of-support, retirement, and migration deadlines separate. If a date, workload owner, impact, or task duration cannot be supported, leave it unresolved and record what information is required.
 
-## 3.2 テストモードで実通知1件をモデル再評価する
+The previous assessment and its evidence remain in history. A material correction invalidates approvals that no longer apply.
 
-この操作はテスト用に無効化されており、`TEST_MODE_ENABLED`と`DECISION_REEVALUATION_ENABLED`の両方を明示的に有効化した環境でのみ表示・受付される。画面から利用できるのはGovernanceロールのユーザーだけで、APIも同じロールを必須にする。合成UATは別の`SYNTHETIC_UAT_ENABLED`設定も必要。いずれもBicep／Repository Variablesの既定値はfalse。
+## Review work and mark no action
 
-1. 実通知の現在版を選択し、「テスト用：実通知1件を再評価」を確認する。合成UAT、対象外通知、最新でない評価、保存済み調査範囲がない旧評価は受付けない。
-2. 10〜500文字の理由を入力し、確認ダイアログで再評価対象を確認する。対象は選択した通知・Workloadの評価レコード1件。
-3. 確認ダイアログで、保存済み通知本文・根拠・型付き構成属性が両モデルへ送信されること、Resource ID・Owner Team・Workload IDは別名化され、未定義のResource propertiesは送信されないことを確認する。各モデルを最大1回呼び、Azure情報の再取得や対象リソースの変更は行わない。
-4. 処理状況が「Decision-1と説明LLMで再評価中」から完了／失敗へ変わるまで待つ。新しいAssessmentには再評価理由、DecisionとExplanationの個別モデル記録、Schema検証済み説明が保存される。
-5. 新評価の「モデル呼び出しの監査記録」で両モデルの状態・版・所要時間を確認し、説明欄と根拠の対応を確認する。どちらかが失敗した場合はRunが失敗として記録され、失敗Assessmentも表示できる。
+In **作業案・部分承認**, check each item's purpose, category, required/recommended status, resource scope, team candidates, schedule status, dependencies, and completion criteria. `Required` does not mean that an uncertain migration is mandatory; confirmation work and migration work are distinct.
 
-テスト用再評価の新Assessmentは確認専用です。画面から訂正・作業承認を行えず、APIも拒否します。外部登録Outboxも作成しません。元の評価・履歴は保持されます。
+To approve work:
 
-合成UATのレコード、Issueリンク、登録状態、ボタンはテストモードかつ合成UAT設定が有効なときだけ画面に表示する。テストモードを無効にしても保存済みレコードは削除・分離されず、通常画面の一覧・集計から隠れる。
+1. Select only the work that can proceed.
+2. Enter the decision reason and evidence.
+3. Choose **選択した作業を承認**.
 
-合成UATの作成ボタンは、固定された合成通知・架空Resource IDをDecision-1で評価します。成功済み評価を再要求してもモデルは再呼び出しされません。Azure通知取得、実インベントリ探索、説明LLMはこの操作では実行せず、実通知の取得確認とは区別してください。Issue登録はDecision-1成功と人間承認の両方を必須とします。
+The approval is bound to the displayed assessment version and hash. It is not authorization to change Azure.
 
-## 4. 通知と評価を読む
+To defer work, enter a reason and choose **保留**. To return a decision for correction, enter the reason and choose **差し戻し**. To hide an assessment because no work is required, enter the scope and evidence and choose **対応不要として一覧から外す**. The original notice and review history remain stored; the action does not delete an Azure resource or close a GitHub issue.
 
-1. 左側の「ライフサイクル通知」から確認したい通知・Workloadの行を選ぶ。
-2. 通知タイトル、Workload、評価基準日、優先度の状態と次の確認役割を確認する。Workload未割当の場合は情報システム部門が初動の振分け窓口になる。
-3. **未対応時の影響**と**対応時・対応後の影響**を別々に読む。評価値は影響度、下の「一般的な影響想定」は通知種別と根拠に基づく条件付きの説明です。業務処理名・停止時間が表示されないのは、業務システムとの対応情報が未登録のためです。個別の影響や停止有無は推測せず、作業方式・構成との対応を確認してください。
-4. 「モデル呼び出しの監査記録」を開き、Decisionと説明の実行状態、Model／Deployment、所要時間、照会IDを見る。旧評価には記録がないことがある。入力・モデル応答本文は画面に表示しない。
-5. 公式期限は種類ごとに確認する。非推奨開始日を廃止日と読み替えない。適用可能な期限が記録されていない場合は、画面が示す公式通知の再確認を行う。
-6. 対象Resourceの分類、分類理由、不足属性、業務Environmentタグの取得状態を確認する。Unknownは「影響なし」を意味しない。調査範囲の詳細でSubscription、Resource Type、プロファイル、取得リソース数、取得失敗を確認する。
-7. 「説明」「根拠」「確認が必要な理由」をそれぞれ開いて確認する。説明はClaimの種類ごとにまとめて表示され、関連Evidence IDから「根拠」の記録と照合できる。Microsoft公式情報には信頼済みURLが表示されるので、原文・公式ページを優先する。日本語の参考訳があっても訳文は判断の根拠ではない。
-8. 画面上の集計件数は評価レコード数であり、Azure Resource数や業務システム数と同一とは限らない。
+## SharePoint sources
 
-### 確度と調査結果の読み方
+The SharePoint administration panel is collapsed near the bottom of the page. Governance users can register a folder source, start document extraction, and review fact proposals. Operators or Governance users can synchronize sources, depending on the deployment role policy.
 
-- `Confirmed`: Service HealthまたはAdvisorがResourceを明示。
-- `Probable`: 有効化された条件プロファイルと実構成が一致。
-- `Possible`: 直接のAzure構成依存を示す根拠がある。
-- `Verification Required`: 不明点と具体的な確認方法が示されている。
-- `Unknown`: 現在の証拠で判定できない。影響なしではない。
-- `Not Impacted`: 根拠と調査範囲がそろい、対象外を確認済み。
+Synchronization stores document snapshots but does not by itself make extracted statements trusted. A Governance user must verify the source location, edit or exclude inaccurate proposals, confirm facts, and explicitly link resource dependencies. Confirmed live-source facts can then inform a later assessment for the same workload.
 
-「該当リソースなし」は有効な調査プロファイル、対象Scope、取得完了が確認された候補0件を表す。業務影響なしや対応不要の意味ではない。取得が一部失敗した場合は、候補0件でも調査不完全として扱う。
+For site, drive, and folder IDs, Graph access, and deployment settings, see the [SharePoint connection guide](sharepoint-connection-guide.md).
 
-## 5. 公式Evidenceを日本語で確認する
+## GitHub export
 
-Microsoft公式Evidenceカードには根拠URLが表示される。翻訳操作が表示される場合、必要なときに翻訳を実行する。翻訳はAzure AI Translatorによる参考訳であり、公式原文、公式URL、判断根拠を置き換えない。翻訳エラーや未設定時は原文を使う。信頼済みURLを表示できないEvidenceは、URLを推測せず原文と出典を確認する。社内情報、任意URL、利用者が持ち込んだ文章をこの操作で翻訳することはできない。
+The maintained deployment enables work-item export. Export still requires a current approved assessment, valid GitHub configuration, and a usable credential. Issue creation and Project item updates are distinct stages; a partial result must be reconciled before retrying. Project progress synchronization is disabled in the maintained deployment.
 
-## 6. 判断を訂正して再評価する
+The exporter creates or updates only the approved work items represented by the current version. It does not change Azure. A GitHub issue being closed does not by itself mark the Planner assessment complete.
 
-訂正はReviewerまたはGovernanceが、公式資料・業務情報を確認してから行う。
+## Troubleshooting
 
-1. 該当評価で「業務影響・公式期限・計画を確認／訂正する」を展開する。
-2. 通知の適用可否を`対象`、`未確定・確認が必要`、`対象外`から選ぶ。対象外にする場合は対象外と判断した根拠を記録する。
-3. 必要に応じて未対応時影響、対応時・対応後影響を入力する。分からない値は判断保留のままにする。
-4. 非推奨開始日、新規作成停止日、サポート終了日、廃止日を、公式に確認できた種類ごとに入力する。確認できない日付は空欄にする。
-5. その作業に適用する期限の種類と、依存関係・変更禁止期間・予備期間を含む残工程日数が確認できる場合のみ入力する。
-6. Critical workload、対応リスク／代替策が承認済みかを確認して設定する。根拠がなければ推測でチェックしない。
-7. 作業ごとのOwner Team、開始日、完了日を確定できる場合のみ更新する。担当候補が複数なら候補を確認し、任意に一つへ絞らない。
-8. 「訂正の理由・確認した根拠」へ、参照したEvidence IDや公式URL、社内判断の出典を記載する。未確定ならその旨と次の確認事項を書く。
-9. 「通知の対象・日付・適用範囲・業務情報を確認しました」にチェックし、「訂正版を作成して再評価」を押す。
-10. 新しい評価版へ切り替わったことを確認する。以前のモデル出力と承認記録は履歴として残る。重要な内容が変われば、旧版の承認を流用できない。
+| Situation | Check |
+|---|---|
+| Application asks you to sign in again | Sign in through the supplied application URL, then return to the assessment page. |
+| Assessment list is empty | Check sign-in and role, whether Azure synchronization has completed, selected date/scope, and source retrieval status. |
+| Results are missing after synchronization | Wait for queue processing and refresh the list. Ask an Operator or Governance user to inspect the run status. |
+| `Unknown` or `Abstained` | Read the classification reason, missing attribute, evidence, model invocation status, and confirmation task. Do not force a value without evidence. |
+| `No resources found` | Check scope, profile coverage, and discovery completeness. The result is not a business-impact or no-action decision. |
+| Explanation is unavailable | Read the model invocation state. The system does not fill a failed explanation with a fixed template; the separate general lifecycle narrative may still be present. |
+| Correction or approval is rejected | Confirm the role, required reason/evidence, current assessment version, selected work IDs, and validation errors. Refresh if the assessment has changed. |
+| GitHub export is partial or fails | Check the recorded export stage and safe failure category. Reconcile an issue created before a Project update failed before retrying. |
+| A SharePoint file is not available | Check the selected site/drive/folder, Graph permission and site grant, allowed extension, file limits, and synchronization status. |
 
-対象外へ訂正すると作業案は取り下げられ、その評価に対する承認・外部登録はできなくなる。原通知の公式分類や旧モデル判断は監査用に保持される。
-
-## 6.1 対応不要として通知を一覧から外す
-
-作業対応が不要と人間が判断した場合は、理由欄に根拠と判断範囲を記載して「対応不要として一覧から外す」を選ぶ。確認後、そのRetirement×Workload評価は通常一覧から非表示になる。通知原本、Evidence、Assessment、レビュー理由は監査用に保持され、物理削除されない。「対応不要の通知も表示」を有効にすると履歴を確認できる。新しい評価版が作られた場合は、再確認のため通常一覧に戻る。これはAzureリソースへの対応やGitHub IssueのCloseを実行するものではない。
-
-## 7. 作業案のレビューと承認
-
-1. 「作業案・部分承認」で各作業のタイトル、Category、Required／Recommended、説明、対象、担当経路、日程状態、前提、完了条件を確認する。日付が未算定なら担当・公式期限等の根拠がそろっていない状態であり、画面に示された確認後に計画担当が設定する。
-2. `Required`は定義済みの必須作業区分に該当する作業、`Recommended`は推奨確認等。移行そのものが不確実な場合は、確認作業を移行必須と読み替えない。
-3. 担当・調整・承認の進め方を確認する。情報システム部門は初動調整窓口、Workload責任者は業務影響・作業内容の確認、ガバナンス責任者は方針・例外確認の標準役割として表示される。これは推奨経路であり、実際の担当者やAPI認可を決めるものではない。作業順序が「個別指定なし」の場合は依存関係を登録していないことを表す。サンプル設定は実際の部署・契約・費用ではない。
-4. 検証エラーが表示されている場合は承認しない。根拠・Resource ID・日付・作業依存関係の問題を解消する。
-5. 作業を一部だけ先行させる場合は、実行可能な作業だけを選択し、判断理由を入力して「選択した作業を承認」を押す。全作業選択は全体承認、選択作業が一部なら部分承認として記録される。
-6. 判断を差し戻す場合は理由を入力して「差し戻し」、追加情報待ちなら理由を入力して「保留」を押す。
-7. 画面で承認されたのは対象評価版と作業案のレビュー結果であり、Azure本番変更の実行許可ではない。
-
-作業案の承認には最低1件選択と理由が必要。差し戻し・保留にも理由が必要。画面は無効な項目や古い評価版を送信できないよう制御するが、疑義があれば送信せず運用責任者へ確認する。
-
-## 8. GitHub連携と現在の運用制限
-
-コード上は承認済みWork ItemをQueue経由でGitHub Issue／Projectへ登録する経路がある。**GitHub実Projectへの登録・更新は統合UAT未完了**で、PoC環境の外部登録は設定によって無効である。現在は実際に登録されると見なさない。
-
-外部登録を行う運用へ移行する場合は、別途Project権限、フィールドID、同期設定、承認手順、実データでない管理された試験項目を確認し、管理者が有効化した後に小規模な試験を行う。人間承認なしの一括登録、評価対象Azureの自動変更、Issueを閉じるだけの完了扱いは行わない。
-
-## 9. よくある状況と対応
-
-| 状況 | 利用者が確認すること | 次の対応 |
-|---|---|---|
-| 一覧が空 | サインイン状態、初回のAzure情報取得を実施済みか | Operator／Governanceへ同期を依頼。表示だけで対象Resourceなしと断定しない |
-| 同期後にすぐ評価が見えない | Queue処理の完了を待ち、「評価結果を更新」を実行 | 続く場合、時刻・画面エラーを運用担当へ連絡 |
-| `Unknown`または`Abstained` | 分類理由、不足属性、モデル監査記録、Review理由 | 具体的な確認作業とEvidenceを確認し、不明を無理に確定しない |
-| `該当リソースなし` | Scope、適用プロファイル、取得完了 | 調査範囲内の候補なしとして扱い、業務影響は別に評価する |
-| 翻訳ボタン／結果がない | Evidenceが翻訳対象のMicrosoft公式情報か | 原文と公式URLを読む。非公式／社内文書への翻訳操作と誤解しない |
-| 訂正／承認が拒否される | Reviewer／Governance role、理由、Evidence、最新評価版か | 古い画面なら再読込。権限や検証エラーは運用担当へ連絡 |
-| モデルがUnavailable | モデルInvocationのstatus・失敗分類 | 固定テンプレートと手動確認を利用。成功扱いにしない |
-| 評価対象Azureへ変更が必要に見える | それがARPの影響評価か、別の変更作業か | この画面から対象Azureを変更しない。承認済み企業変更管理へ移す |
-
-## 10. 3分デモの準備
-
-1. デモ前にAzure上のアプリURLへアクセスし、Entra IDでサインインしておく。
-2. 登壇中の同期で時間がかかる可能性を説明できるよう、ネットワーク、利用権限、予算、最新の同期状況を点検する。3分以内に完了する保証はない。
-3. 実データ・実処理と合成テストの区別を明示する。取得できない期限や移行結果を再現・創作しない。
-4. 画面で扱う実Resource ID・通知本文・業務情報が登壇者以外へ見えてよい範囲か確認する。秘密、Token、不要な個人情報は表示しない。
-5. 説明順は通知一覧 → 影響2軸とリソース確度 → Evidenceと不足情報 → 作業案・人間レビュー。承認・GitHub登録は権限と実環境UATが整わない限りデモ操作しない。
-6. 失敗時は、未取得・Unavailable・Blockedと正直に説明する。保存画面や合成結果をライブ実取得と偽らない。
-
-## 11. 操作後に記録する情報
-
-運用記録には日時、実施者、操作（同期／再評価／訂正／レビュー）、Assessment IDまたは相関ID、結果、取得完全性、未解決事項を記録する。GitHubや共有資料へ実Resource ID、通知本文、認証Token、モデル原文入出力を貼り付けない。訂正・承認には画面内の理由欄へ根拠を記録する。
-
-このガイドは現行画面に基づく操作手順であり、未実施のUATを合格扱いにしない。画面、ロール、外部連携設定が変わった場合は実装・UATと照合して更新する。
+Record operational issues with time, operation, assessment or correlation ID, safe error category, and outcome. Do not include credentials, tokens, full resource IDs, or source documents in public issues.

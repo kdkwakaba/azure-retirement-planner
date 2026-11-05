@@ -1,54 +1,60 @@
 # Azure Retirement Planner
 
-Azureの非推奨化・新規作成停止・サポート終了・リタイアメント情報と自社の構成・業務情報から、根拠付きの影響評価と対応計画を作成するシステム。
+Azure Retirement Planner collects Azure lifecycle notices, discovers potentially affected Azure resources, and prepares evidence-linked assessments and work proposals for human review. It does not modify, migrate, or delete assessed Azure resources.
 
-**TypeScript/Reactのモノレポ、Functions、Bicep、CI・手動CD、判断・検証・レビュー・GitHub連携を実装しています。2026-10-29時点でmainのAPI／ExporterをAzureへ配置し、過去にService Health実通知7件の取得とMicrosoft-Decision-1の実応答1件を確認しました。認証済み画面の最新UAT、Advisorとの正の相関、説明LLM、GitHub実Project登録などは未確認で、PoC全体の完了ではありません。現在の状態と未完了項目は[実装バックログ](docs/implementation-backlog.md)、配置・実データ確認の詳細は[Runbook](docs/runbook.md)を参照してください。**
+The repository contains a TypeScript and React application, Azure Functions APIs, Bicep infrastructure, and GitHub Actions workflows. It integrates with Azure Service Health, Resource Graph, Microsoft-Decision-1, Azure AI Foundry, SharePoint document sources, and the review interface. Capability and deployment settings vary by environment; this repository does not include tenant-specific identifiers or credentials.
 
-## 設計書
+## Capabilities
 
-| 文書 | 内容 |
+- Collect lifecycle notices and Azure configuration through read-only Azure APIs.
+- Evaluate resource applicability separately from business impact, preserve missing information, and present evidence and Microsoft source links.
+- Use Microsoft-Decision-1 for typed decision proposals, deterministic rules for policy constraints, and a separately configured explanation model. Invocation status is recorded per assessment.
+- Read configured SharePoint folders through Microsoft Graph, extract DOCX/XLSX text and fact proposals, and require a Governance user to confirm facts and dependency links before they are used as assessment evidence.
+- Review, correct, approve, defer, or mark an assessment as requiring no action. Approval applies to a specific assessment version and does not authorize changes to assessed Azure resources.
+- Export only approved work items to configured GitHub Issues and Projects. Export and Project progress synchronization are independently configurable.
+
+## Architecture and operation
+
+| Document | Description |
 |---|---|
-| [システム設計書](docs/design.md) | 要件、論理設計、データ、セキュリティ、運用 |
-| [現行構成・Decision-1解説](docs/architecture-and-decision-model.md) | 登壇向けの構成図、処理／データフロー、Decision-1の入力・判断・出力と検証状況 |
-| [判断・承認基準](docs/decision-policy.md) | 影響度2軸、確度分類、P1〜P4、不確実性、人間レビュー、作業項目生成 |
-| [ワークフロー設定基準](docs/workflow-configuration.md) | 企業別の担当割当、部署調整、承認、移行順序の設定方式 |
-| [SharePoint設計書による影響評価計画](docs/sharepoint-document-impact-plan.md) | 専用サンプルフォルダ内の複数文書、将来の複数フォルダ参照、依存関係・根拠・品質評価 |
-| [SharePointサンプルフォルダ接続手順](docs/sharepoint-connection-guide.md) | Graph ExplorerでSite／Drive／Folder IDを取得し、Managed Identity・Source設定・同期を確認する手順 |
-| [Spike・テスト計画](docs/spike-and-testing.md) | 実現性、3事例、30テスト（非推奨6件追加）、品質評価、予算 |
-| [登壇・デモ計画](docs/presentation-demo.md) | 15分発表、実データによる3分ライブデモ |
-| [合意・未決事項](docs/decisions.md) | 採用済み事項、未確定条件、次の判断ゲート |
-| [開発・運用基準](docs/engineering.md) | モノレポ、CI/CD、認証、セキュリティ、終了時削除 |
-| [実装バックログ](docs/implementation-backlog.md) | 依存関係、実装状態、実接続ゲートと残作業 |
-| [利用者向け操作ガイド](docs/user-operations-guide.md) | サインイン、同期、評価・Evidence確認、訂正、承認、デモ準備 |
-| [合成UAT手順](docs/synthetic-uat.md) | 合成データをDecision-1で評価し、人間承認後にGitHub Issue／Project登録を確認 |
-| [Runbook](docs/runbook.md) | 初期構築、Entra・MI、手動CD、復旧、撤去 |
-| [AGENTS.md](AGENTS.md) | エージェントが守る共通ルール |
+| [System design](docs/design.md) | Current components, data flow, requirements, and limitations |
+| [Architecture and decision model](docs/architecture-and-decision-model.md) | Runtime architecture, model roles, evidence, and assessment behavior |
+| [Decision policy](docs/decision-policy.md) | Impact axes, priority, resource classification, and review rules |
+| [Workflow configuration](docs/workflow-configuration.md) | Team routing, coordination, approvals, and task dependencies |
+| [SharePoint integration](docs/sharepoint-document-impact-plan.md) | Document ingestion, fact review, grounding, and current limits |
+| [SharePoint connection guide](docs/sharepoint-connection-guide.md) | Graph IDs, permissions, source setup, and synchronization |
+| [Testing and quality](docs/testing-and-quality.md) | Automated checks, model quality evaluation, and safety criteria |
+| [Review interface behavior](docs/review-interface.md) | Authorization, correction, approval, and export behavior |
+| [User guide](docs/user-operations-guide.md) | Sign-in, synchronization, assessment review, and approvals |
+| [Operations runbook](docs/runbook.md) | Bootstrap, release, access, monitoring, and recovery |
+| [Implementation status](docs/implementation-backlog.md) | Implemented capabilities and remaining product limitations |
+| [CI failure agent](docs/ci-failure-agent.md) | Automated CI failure triage and patch workflow |
 
-## 基本方針
+## Security and limitations
 
-- Service Health、Advisor、Resource Graphの標準機能を利用する。
-- Microsoft-Decision-1の型付き判断、生成LLMの説明、ルール検証、人間承認を分離する。
-- 評価対象の変更を実行しない。本システム専用環境は承認された手動CDで管理する。
-- PoCは個人GitHubの非公開Repository／Project。本番はOrganization＋GitHub Apps。
-- Spike予算は期間累計5,000円、PoCはSpike込み期間累計20,000円。料金見積もりではなく予算枠。
+- Assessed subscriptions are read-only. The system's own resource group is managed separately through a reviewed Bicep deployment workflow.
+- The base deployment uses public Azure endpoints protected by Entra authentication and API authorization. Private networking must be designed and configured for environments that require it.
+- SharePoint access is explicitly scoped; the application identity requires both the Graph `Sites.Selected` permission and a site-level grant. The site-level grant covers the site, even when a single folder is configured in the application.
+- Azure resource presence does not prove runtime use or business criticality. The system does not inspect guest operating systems, application code, or data planes.
+- Decision probabilities are model-reported distributions, not calibrated confidence or accuracy. Human review remains required for uncertain or policy-sensitive decisions.
+- GitHub export uses a credential stored in Key Vault. The current adapter does not use a GitHub App installation token.
+- Operators must configure identity, data retention, network controls, policies, quotas, model deployments, and external integrations for their environment.
 
-## 開発用Skills
+## Development
 
-- [arp-feature](.agents/skills/arp-feature/SKILL.md): 機能追加・修正と検証。
-- [arp-security-maintenance](.agents/skills/arp-security-maintenance/SKILL.md): 脆弱性・EOL調査と更新。
-- [arp-release](.agents/skills/arp-release/SKILL.md): 専用環境へのリリース計画と手動CD。
-
-各Skillにagents/openai.yamlを持つ。Skillの利用は外部変更の包括許可ではない。
-
-## コードの検証
-
-Nodeとnpmの版は`.node-version`と`package.json`を使用する。
+Use the Node.js and npm versions in `.node-version` and `package.json`.
 
 ```sh
 npm ci --ignore-scripts
 npm run verify
 ```
 
-`apps/assessment-api`はAPI・収集・判断・レビューとUI配信、`apps/work-item-exporter`は承認済み作業の登録、`apps/review-web`はReact画面。共有契約・業務ルール・接続を`packages/`へ分ける。通常CIはクラウドを変更しない。Azure配信はEntra認証を必須にし、[Runbook](docs/runbook.md)のBootstrap後にmainのCI成果物を手動CDする。
+The verification command runs formatting, lint, type checking, unit and contract tests, build, documentation checks, runtime checks, artifact checks, and dependency audit. Azure changes, model calls, and GitHub exports are not part of routine CI.
 
-合意事項と実装状況は随時更新。Microsoftの機能・期限・価格は利用時に公式情報で再確認する。
+The manual release workflow deploys only a successful `main` CI artifact. It recomputes Bicep What-If, checks the reviewed plan hash for apply, and can deploy the API and exporter packages from the same artifact. See the operations runbook before using it.
+
+## Configuration
+
+Infrastructure parameters and runtime flags are supplied through Bicep parameters and deployment variables. Features are disabled by default unless explicitly enabled. Do not commit tenant IDs, subscription IDs, SharePoint IDs, resource identifiers, credentials, real payloads, or model inputs/outputs. Use a private, approved operational store for environment-specific configuration and records.
+
+See [Implementation status](docs/implementation-backlog.md) for current deployment-specific behavior and outstanding limitations.

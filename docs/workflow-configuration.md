@@ -1,80 +1,34 @@
-# 企業別ワークフロー設定基準
+# Organization-specific workflow configuration
 
-状態: 採用済み設計方針。PoCで使う具体的なチーム名・工程期間・承認者・条件は対象企業で設定する。
+The application loads `config/workflow-policy.json` at runtime and validates it against a schema. The policy version and canonical hash are included in assessments. Changes require validation and a new assessment; previous approvals are not silently transferred.
 
-## 目的
+## Supported configuration
 
-企業ごとに異なる担当チーム、関連部署、承認、移行作業の順序を、アプリケーションコードを変更せずに設定できるようにする。判断ルール自体の安全ガードと標準契約は共通コードに保持し、組織固有の値・条件・手順は設定データとして分離する。
+- Team and department roles and candidate assignment rules for work categories, resource types, environment, and impact.
+- Coordination roles and approval-stage descriptions.
+- Task categories, required/recommended status, completion criteria, and dependency ordering.
+- Explicit workload business-context records with source, record ID, update time, and confirmation metadata.
 
-## 設定方式
+Rules return candidate teams; they do not assert that a team is the confirmed owner. Multiple candidates are retained. Missing or conflicting assignments, missing prerequisites, and dependency cycles require human attention. A configured approval path is descriptive: it does not create or enforce additional API roles.
 
-- 正本はスキーマ検証可能な構造化ファイル（推奨形式: YAMLまたはJSON）とする。
-- Markdownは背景、部署間合意、例外運用、手順説明に用いる。機械判断の唯一の正本にはしない。
-- PoCでは設定をアプリと同じモノレポで管理し、Pull Requestで変更をレビューする。
-- 秘密、トークン、個人情報を設定へ含めない。担当は個人名でなくチーム／役割識別子を優先する。
+## Current configuration
 
-## 設定する対象
+The checked-in policy contains generic infrastructure, application, and information-systems role labels and category-based assignment rules. It has no workload-specific business profiles, task templates, confirmed owners, approval durations, blackout windows, or criticality records. These labels are routing suggestions, not verified organization structure or identity assignments.
 
-| 設定領域 | 例・必要な振る舞い |
-|---|---|
-| 担当チーム割当 | Resource Type、Workload属性、環境、変更カテゴリ等から候補チームを選ぶ。候補根拠と一致規則を記録 |
-| 関連部署・調整 | セキュリティ、ネットワーク、アプリ、運用、業務Owner等の関与条件と順序を定義 |
-| 作業順序・依存関係 | Impact Verification、設計、PoC、変更、テスト、承認、移行、検証等を有向非巡回グラフで表現 |
-| 承認 | 変更種別・環境・Critical等の条件ごとに必要な役割、承認段階、承認前に進めてよい作業を指定 |
-| 所要期間・計画余裕 | 企業の標準期間、カレンダー、禁止期間、予備日を設定。値がない場合は推測せず確認対象 |
-| Required／Recommended | 公式必須条件・確認済み企業方針に基づく必須作業と、確認・推奨作業を分ける |
-| フォールバック | 担当や承認条件が一意に決まらない時のガバナンス窓口または人間レビューを定義 |
+The API also supports Governance-managed business-context records. Records are versioned and tied to a workload and source reference. This is a controlled manual data-entry API; it is not an automatic CMDB or ServiceNow connector. The current review interface does not provide a general business-context authoring console.
 
-## 適用・変更管理
+## Change process
 
-1. 設定変更をPull Requestとして提出する。
-2. Schema、参照されるチーム・役割、適用条件、作業ID、依存循環、重複・曖昧な割当を自動検査する。
-3. システム運用担当と、対象業務フローの責任者がレビュー・承認する。
-4. 必要に応じてShadow評価で既存事例との差分を確認する。
-5. 承認済み設定版を適用し、その版ID／HashをAssessmentRunと判断・作業候補に記録する。
-6. 問題時は以前の承認済み版へ戻す。旧版の評価へ新設定を遡及適用しない。
+1. Propose changes to the JSON policy in a pull request.
+2. Run schema, role-reference, matching-rule, duplicate, and dependency-cycle validation.
+3. Have the policy owner and affected workload owner review assignments and approval descriptions.
+4. Record the approved policy version and hash, then re-evaluate affected assessments.
+5. Confirm that the new version does not inherit approvals from an older assessment.
 
-設定不正、担当なし、複数の矛盾する割当、承認経路不明、依存循環の場合は処理を止め、人間確認にする。設定にないチーム・承認者・移行順序をモデルに推測させない。
+Do not put credentials, personal data, or unverified business facts in the policy. Use role identifiers rather than individual names. Do not add arbitrary code or model-generated teams to the configuration.
 
-## PoCの境界
+## Task and coordination behavior
 
-PoCでは、設定ファイルをレビューして反映する方式までとする。利用者向け設定編集画面、複数企業のテナント分離、動的な企業別プラグイン、任意コード実行は対象外。企業別具体値はPoC環境のOwnerが合意して登録する。
+The policy can propose customer communication, cross-team coordination, vendor assessment, cost assessment, budget approval, contract review, documentation, and CMDB update work when an explicitly confirmed condition applies. It does not infer vendor use, cost, a contract obligation, or a required migration without evidence. `Required` is reserved for a supported, adopted response; uncertain checks remain `Recommended`.
 
-## 将来拡張
-
-設定Schemaのバージョンとアダプター契約を維持し、将来はGitHub Organization／Git Apps、ServiceNow等の出力、CMDB、複数組織別Policy、設定の承認UIへ拡張できる。外部システム登録は、承認済み作業だけを対象とする既存の承認境界を維持する。
-
-## PoC実装済みランタイム契約
-
-`config/workflow-policy.json`を実行時の正本として読み込み、Schema検証後に作業候補へ適用する。現行PoC設定には、利用者と合意したインフラ部門・アプリ部門・情報システム部門の候補を含む。Workload別の実担当、実際の承認者、所要期間は未登録であり、設定候補を実際の所属・承認済み事実として扱わない。
-
-- RoleはTeam、Department、Approverに分け、参照先の種別を検証する。
-- Assignmentは作業カテゴリとResource Type、Environment、影響分類で照合する。条件一致した役割は候補として表示し、`ownerTeam`を自動確定しない。
-- 複数担当候補はすべて候補として表示し、候補数だけを理由にレビュー必須とはしない。候補なし、前提作業不足、競合する承認段階は人間確認に回す。
-- 作業順序はカテゴリ間の依存関係として適用し、設定循環を拒否する。
-- ポリシーのversionとcanonical hashをAssessmentに保存し、入力Hashへ含める。ポリシー変更は再評価対象となる。
-- 承認段階は推奨経路の表示であり、認証ロール別の承認強制はこの実装の対象外。既存の人間による作業承認を維持する。
-- 候補がない作業は情報システム部門を初動調整窓口として表示し、Workload責任者と担当を決める。標準確認経路はWorkload責任者（業務影響・作業内容）→ガバナンス責任者（方針・例外）と表示するが、これは役割案でありAPIのReviewer／Governance認可を追加・変更しない。
-- Owner Team、計画日、業務影響、公式期限を決められる根拠がない場合、画面は空欄にせず、何が未取得／未決か、その理由、次に確認する作業、判断役割を表示する。値そのものをモデルや画面表示ロジックで創作しない。
-- 設定不正時も既存作業を破棄せず、人間確認を要求する。外部チケット登録やAzure変更は起動しない。
-- テスト用の企業名・部署名はすべて合成値とし、空テンプレートに架空の組織構成を入れない。
-
-
-## 業務調整・費用作業のカテゴリ
-
-作業カテゴリに `Customer Communication`、`Cross-Team Coordination`、`Vendor Assessment`、`Cost Assessment`、`Budget Approval`、`Contract Review` を追加した。設定ファイルはこれらの作業案へ担当チーム候補、調整部署、承認段階を割り当てられる。`businessContextProfiles`でWorkload単位の明示済み業務条件を登録し、`businessTaskTemplates`で条件とカテゴリ、必須性、完了基準を結び付ける。トリガーは業務影響、ベンダー利用、費用確認、追加費用確定、契約確認。複数候補は全件を画面に示し、どれか一つを自動選定しない。テンプレート作業は条件プロファイルのEvidence IDを参照して生成され、未一致のWorkloadへ適用しない。
-
-`config/examples/workflow-policy.demo.json` は登壇デモ専用の架空部署・承認経路例で、実行時の `config/workflow-policy.json` には適用しない。実データを使うデモでも、サンプル部署・ベンダー・契約・費用を実在する業務事実として表現しない。業務影響、ベンダー利用、追加費用の入力が未確認なら、費用や契約承認を確定作業として扱わない。
-
-実Workloadの業務条件は`POST /api/business-context`でGovernance利用者が登録できます。`workloadId`、`sourceSystem`、`sourceRecordId`、`sourceUpdatedAt`と構造化条件を必須とし、確認者と確認日時はAPIが記録します。変更版は不変Blobとして保存され、現在版Hashを`ArpState`に保持します。評価ではWorkload完全一致時だけ内部Evidenceとして使用し、変更は新しいAssessment版を生みます。これはCMDBとの自動同期ではなく、接続先の選定とマッピングが確定するまでの管理入力経路です。Read APIは通常のReader権限、Write APIはGovernanceロールに限定します。
-
-### 作業の判定基準
-
-- 必須作業の基礎区分は影響調査、合意された対応に必要な準備、実作業、および作業後の影響確認。移行・変更自体は影響や代替手段が確認されるまで必須にしない。
-- 業務影響が確認された場合は利用者・顧客との調整と、影響する他チームへの作業内容共有を作業案に含める。
-- ベンダーを利用する場合はベンダー作業・契約条件の確認を候補に含める。利用有無が不明なら利用有無の確認作業をRecommendedで提示する。ベンダー利用だけで追加費用を断定しない。
-- 追加費用が見込まれる場合は費用見積・確認、追加予算が必要と確認された場合は予算承認を候補に含める。新規ライセンス、構成変更による継続課金、ベンダー作業費などを対象にする。
-- 費用・契約・ベンダー情報はデモでは合成サンプルとして明示する。実企業運用では承認済み業務情報ソースへ置き換える。
-- `Required` は根拠があり対応方針として確定した影響調査、準備、実作業、事後確認に限る。その他は `Recommended`。費用・ベンダー利用の条件が不明なら確認作業を提示し、予算承認や移行を断定しない。
-
-PoCのサンプル承認段階は`config/examples/workflow-policy.demo.json`に記載した合成値である。サンプルの標準リードタイムと変更禁止期間は作業Evidenceにサンプル値と明記して表示するが、本番計画日計算へ適用しない。未設定・未確認の計画日は未確定として表示し、デモ用プロファイルでも開始日・期限は自動計算しない。
+The interface may display the information-systems department as an initial coordination route, the workload owner as the business decision role, and governance as the policy/exception role. These are recommended responsibilities and do not establish a real assigned user or change API authorization.

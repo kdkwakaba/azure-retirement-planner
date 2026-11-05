@@ -1,123 +1,50 @@
-# SharePoint設計書を利用した業務影響評価の実装計画
+# SharePoint documents and workload impact
 
-2026-11-05 / PR #145をmainへ配置済み。同期は成功しDOCX／XLSXの2件を列挙したが、Fact抽出はHTTP 503で失敗し、groundingも影響評価も完了していない。新しいエラー段階は`sharepoint-fact-batching`、型は`DocumentFactInputLimitError`でモデル呼出前に停止した。PR #145では60ブロック超の文書を分割する前に拒否しており、総入力上限も36,000文字（3バッチ）だった。この変更で1バッチ最大60ブロックの制約は維持しながら、最大17バッチ（各12,000文字、文書テキスト上限200,000文字に対応）に広げ、通常サイズのDOCX／XLSXを分割して処理する。テスト用サンプルは`TEST_MODE_ENABLED=true`の場合にだけ処理可能、実業務Sourceは`TEST_MODE_ENABLED=false`かつ`SHAREPOINT_LIVE_SOURCES_ENABLED=true`の場合だけ処理可能。サンプルFactはsampleOnly=trueのまま隔離され、通常Assessmentへは流れない。実業務Sourceで確認済みのsampleOnly=false Factだけが通常Workload評価に使われる。今回の評価はこの抽出上限修正の配置後に再開する。実業務文書は未登録で、実業務文書による品質評価は未実施。Graph権限・Site grant、実モデル品質、曖昧な別名候補の自動解決も未完了。
+The application can read configured SharePoint folders, extract structured fact proposals from DOCX/XLSX files, and use human-confirmed facts as workload-scoped evidence. This is an application-managed Microsoft Graph integration; SharePoint is not connected as a Foundry data source.
 
-## 目的と合意した範囲
+## Current flow
 
-SharePointに格納した複数の設計書・ドキュメントから、業務処理、利用機能、リソース依存、代替手段を読み取り、Retirement通知による業務影響を評価する。CMDBやServiceNowの導入を前提にしない。
+1. A Governance user registers a source with tenant, site, drive, folder item, workload, allowed file extensions, source class, and configuration version.
+2. An Operator or Governance user starts synchronization when the SharePoint sync setting is enabled.
+3. The API enumerates the configured folder and descendants, downloads allowed documents, and stores immutable source versions and snapshots.
+4. A Governance user requests extraction for a selected document. Extracted statements include source location and content hashes.
+5. The reviewer edits, confirms, or excludes each proposal. Reviewer identity and time are stored with a new immutable grounding version.
+6. The reviewer explicitly links related facts and links resource-dependency facts to Azure resources present in the selected assessment. The API validates workload, evidence, resource, and dependency graph constraints.
+7. Confirmed live-source facts can be included in later assessments for the same workload. A change in source, confirmed facts, or dependency links creates a new assessment input version. Synthetic-source facts remain isolated.
 
-初期対象は専用のサンプル用フォルダ1件とし、その配下の複数ファイルを参照する。将来は複数フォルダを指定して評価できるよう、参照元の設定・取得版・根拠を最初からフォルダ別に識別する。初期画面は1フォルダに制限しても、内部契約は参照元の配列として設計する。
+## Files and limits
 
-設計書の内容は架空のサンプルとする。SharePointから実際に取得して通常の解析・評価経路を通すが、サンプルに基づく判断を実環境の業務影響確認とは扱わない。既存の実通知・実構成を比較材料に使う場合も、その出所とサンプルの業務条件を分離する。既存の実評価・人間確認へサンプルを自動適用しない。
+- Supported extensions: `.docx` and `.xlsx`.
+- Folder traversal depth: up to 8 levels; listing: up to 2,000 items.
+- Snapshot limit: up to 100 documents, 10 MiB per document, and 50 MiB total.
+- Extracted text: up to 200,000 characters per document; spreadsheets: up to 20,000 cells.
+- Fact extraction is divided into batches of at most 1,500 input characters, at most 60 blocks and 134 batches. Each model call uses the shared daily call limit and is bounded to 1,000 completion tokens and 5 proposals per batch.
+- A 429 response is retried once with the provider's `Retry-After` value. If limits are exceeded or extraction fails, the document is not treated as fully assessed.
 
-関連要件は[システム設計](design.md)のFR-009（根拠・所属・依存関係の検証）、FR-012（情報更新による再評価）。影響度・承認は[判断・承認基準](decision-policy.md)に従う。今回の計画の承認はクラウド権限変更、モデル利用予算の増額、外部Issue登録の実行承認を兼ねない。
+The UI presents SharePoint administration at the bottom of the page inside a collapsed panel. Source setup and fact review are limited to Governance; synchronization is limited to Operator or Governance. The interface can register one source per source class (live or synthetic). Each source refers to one folder and may include descendants.
 
-## 現行コードと追加が必要な箇所
+## Access boundary
 
-| 対象 | 現在 | 追加計画 |
-|---|---|---|
-| `packages/contracts/src/index.ts` | Evidence、Assessment、簡易BusinessContextの契約 | 参照元設定、文書版、抽出事実、依存関係、確認状態、サンプル識別 |
-| `packages/adapters/src/store.ts` | 業務情報の不変Blob版とTableの現行参照。事実候補集合をsampleOnly／Workload別に保存・読込。SharePoint原本・Snapshot・ソース設定・同期Runを保存 | Queue起動・再試行の運用表示、失敗状態の回復確認 |
-| `packages/adapters/src/identity.ts` | Azure管理・推論・Storage・Key Vault・Microsoft GraphのMI Scopeを許可 | Graphアプリ権限の専用Bootstrap・選択Siteへのread付与 |
-| `packages/adapters/src/sharepoint.ts` | 設定されたTenant／Site／Drive／Folder配下を読み取り専用で列挙・取得。ページ・深さ・件数・各ファイル／総容量を制限。原文不変保存とSnapshot差分を追加 | 権限設定、接続実証、結果の文書解析・候補化 |
-| `packages/adapters/src/grounding.ts` | 通知・型付き構成・Evidenceのモデル入力。人間確認済みでsampleOnly=falseの文書事実だけをEvidenceへ変換 | 文書記述からリソース候補を抽出する仕組み、複数段の業務処理→リソース依存経路 |
-| `packages/adapters/src/models.ts` | Decision-1の型付き判断と説明LLM | 文書抽出用の別Prompt／Schema、判断質問・説明入力の改訂 |
-| `apps/assessment-api/src/service.ts` | 業務情報Hash・Evidenceを含む評価、再評価。確認済み文書Grounding Hashを入力HashとAssessmentへ記録 | 文書候補の確認状態を扱うUI・API、Workload・通知条件に沿った依存照合 |
-| `apps/review-web` | 影響2軸、説明、根拠、レビュー、SharePoint Source設定 | Sourceのテスト／実業務区分表示、モードが有効な場合のみ同期・抽出・レビュー操作、実業務Factの確認 |
+The API Managed Identity needs Microsoft Graph application permission `Sites.Selected` and a separate `read` grant on the target site. The permission assignment can be managed through the dedicated Graph Bicep bootstrap template. The site-level grant is a separate administrative step; it is not Azure RBAC and is not part of routine application deployment.
 
-既存BusinessContextの業務影響あり／なし／不明だけでは、業務処理や構成依存を表現できない。文書からの抽出候補は、確認者必須のBusinessContextと分けて保存し、人間の確認後に確認者・時刻を持つ版へ進める。旧Assessment・既存BusinessContextは新しい任意参照を持たなくても読めるよう互換性を確保する。
+A site-level grant covers the whole site even though the application source points to one folder. Do not use a site containing documents the application should not read. Use a dedicated site or separately verify a narrower Graph permission model. The application does not follow arbitrary links found in documents.
 
-## フォルダ指定と将来の複数参照元
+## Assessment trust rules
 
-参照元は`sourceId`、Tenant／Site／Drive／Folder Item ID、表示名、対象形式、サブフォルダを含むか、適用Workload、データ区分、有効状態、設定版で識別する。URLは表示・登録の入口とし、取得処理は解決・検証済みのIDを使う。登録・変更はGovernance権限で制限する。
+- An extracted statement is a proposal, not a confirmed fact.
+- A document's claim of a resource name or usage does not prove that the resource currently exists or is used.
+- Only Governance-confirmed facts and explicitly reviewed dependency paths can become assessment evidence.
+- Each claim retains a source, document revision, content hash, location, reviewer, and confirmation time.
+- Ambiguous names are not automatically resolved. Resource links must refer to resources in the selected assessment.
+- A source mode is explicit. Synthetic-source data cannot be used by ordinary live assessments; live-source data is accepted only when test mode is disabled and the live-source feature is enabled.
+- Turning test mode off hides isolated records from ordinary assessment lists; it does not delete stored records.
 
-初期は専用サンプルフォルダ内を再帰取得する方針とする。Workload別のサブフォルダと対応表を用意し、同じ親フォルダにあることだけで同一Workloadと判断しない。対象形式はDOCX・XLSXの本文／表を候補とし、採用する解析ライブラリの対応・脆弱性を確認して確定する。画像だけの図、スキャンPDF、マクロ実行は初期対象に含めない。
+## Current limitations
 
-将来の複数フォルダでは、参照元ごとの取得を独立させる。重複ファイルはDrive Item IDと版で同一性を判定し、どの参照元から到達したかを保持する。異なるファイルの内容Hashが同一でも出典は統合して失わない。文書の新しさだけで正本を自動決定せず、適用範囲・版・廃版指定・人間確認を使う。正本が決められない重要な矛盾はレビューへ送る。
+- Site, drive, and folder identifiers must be obtained and entered by an administrator; the application does not resolve a URL to those identifiers.
+- Source configuration is folder-based and limited to one source per data class. Multi-folder discovery and cross-source precedence/conflict resolution are not implemented.
+- DOCX/XLSX extraction records paragraph, sheet, and cell provenance within the extractor's supported structures; it does not guarantee perfect layout or table interpretation.
+- Extraction quality, fact correctness, and business-impact accuracy depend on source document quality and human review. Schema validity is not semantic correctness.
+- The integration reads documents; it does not write back to SharePoint or synchronize a CMDB/ServiceNow system.
 
-| 状況 | 計画する動作 |
-|---|---|
-| ファイル追加・更新 | 文書集合の新版を作り、変更文書だけ解析・抽出する |
-| ファイル削除・移動 | 完全取得で不在を確認して現行根拠から外す。許可された保存先の監査版は保持する |
-| 権限不足・一部取得失敗 | 削除と区別し、前回版と取得不完全を明示する。低影響や対象外の根拠にしない |
-| フォルダ重複指定 | 同一ファイルの重複解析・Evidence増殖を防ぐ |
-| 別Workloadの文書 | 当該Workloadのモデル入力へ混入させない |
-| 設定変更・参照元追加 | 設定版を更新し、適用先の評価を再確認する |
-
-## 取得・解析・評価の流れ
-
-1. 指定フォルダを全ページ列挙し、対象文書の一覧と取得成否を保存する。ファイル数・深さ・容量・時間の上限を設定し、超過を不完全として扱う。
-2. Item ID、ETag、更新日時、内容Hash、取得日時を持つ不変の文書版を許可されたStorageに保存する。取得・解析はQueueで分離し、失敗分類、再試行、冪等性を実装する。
-3. 本文・表を解析し、見出し、表・行・セルなど再現可能な出典位置を付ける。解析不能・未対応形式・引用できない画像情報を明示する。
-4. LLMが構造化した抽出案を生成する。引用箇所との対応、Schema、対象Workload、識別子を検証し、抽出済み・人間確認済み・矛盾ありを区別する。
-5. 通知の適用条件、Azure観測情報、文書の依存関係を照合する。業務処理→コンポーネント→利用機能／API→リソースの経路を組み立てる。名前類似だけの紐付けは候補として確認する。
-6. 関連事実と引用を既存のモデル入力へ追加し、Decision-1が未対応時と対応時・対応後を別々に判断する。説明LLMが具体的な影響、根拠、不足情報を説明する。
-7. 文書集合版・抽出版・対応表版をAssessment入力Hashへ反映する。重要変更は新版の評価と該当承認の失効につなげ、人間の訂正と原出力の履歴を保持する。
-
-### 現段階の同期起動契約
-
-- Governanceが`POST /api/sharepoint-source`で同一TenantのSourceを登録・更新する。`sampleOnly`は明示必須で、テストモードではtrue、実業務モードではfalseのみ処理できる。テストと実業務Sourceの処理は同時に有効化できない。初期設定は各データ区分につき1 Sourceとする。
-- 初期設定はサンプル用と実業務用を各1フォルダに限定する。設定画面ではSite／Drive／Folder Item IDを指定し、Site URLからIDを解決する機能は未実装。
-- Operator／Governanceが`POST /api/sharepoint-sync`で`sourceId`を指定する。`SHAREPOINT_SYNC_ENABLED`が`true`の場合だけQueueへ登録する。
-- `GET /api/sharepoint-sync-status?runId=...`でPending／Queued／Processing／Retrying／Succeeded／Failedを確認する。失敗は分類・HTTP状態だけを保持し、Graph本文や例外文字列は保存しない。
-- Queue再試行が尽きるとPoison Queue処理がFailedを記録する。未完了・失敗RunはSnapshotの削除差分に使わない。
-- Governance向けSource登録・更新画面、Operator／Governance向け同期起動・状態表示・取得済み文書一覧を実装済み。Governanceは文書を選び、既存の日次モデル呼出枠を使って明示的に事実候補を抽出し、出典位置を確認して文面修正・確認済み／除外を保存できる。確認者と時刻をGrounding版に記録する。抽出は文書内容Hash・Prompt版・Deployment・Model版ごとに冪等化する。実業務Sourceは`TEST_MODE_ENABLED=false`かつ`SHAREPOINT_LIVE_SOURCES_ENABLED=true`のときに登録・同期・抽出・レビューできる。Site URLからIDを解決する機能は未実装。
-- `GET /api/sharepoint-facts`と`POST /api/sharepoint-facts/extract`／`review`はGovernance限定かつSource IDで区分する。サンプルSourceは`TEST_MODE_ENABLED=true`、実業務Sourceは`TEST_MODE_ENABLED=false`かつ`SHAREPOINT_LIVE_SOURCES_ENABLED=true`の場合だけ処理可能。抽出には別途`SHAREPOINT_FACT_EXTRACTION_ENABLED=true`も必要。確認済みのsampleOnly=true事実は通常Assessmentへ流れず、sampleOnly=falseの確認済み事実だけが対象Workloadの通常評価へ接続される。
-- 事実抽出は最大17バッチ、各12,000文字・60ブロックを上限とし、文書テキスト上限200,000文字に対応する。各バッチのモデル呼出を既存の日次上限へ個別計上する。上限を超える文書は失敗扱いにし、部分的なFact集合をGroundingへ保存しない。失敗段階はToken取得・モデル要求・応答保存・応答解析として個別に記録する。
-- API Managed IdentityへのGraph `Sites.Selected`割当てをMicrosoft Graph Bicep拡張の専用Bootstrapとして宣言管理する。対象Siteへの`read` grantはGraph Bicepで宣言できないため管理者のGraph Explorer手順として分離。いずれもAzure環境には未適用。既定では同期フラグを無効にし、画面実装だけで実接続可能とは扱わない。手順は[SharePoint接続ガイド](sharepoint-connection-guide.md)を参照。
-
-抽出契約には、処理名、利用者、稼働時間、停止時の結果、依存方向、利用API／機能、環境、代替手段、許容停止時間、変更案、出典版・引用・位置、確認状態を持たせる。数値・機能利用・停止時間が記載されていなければ創作しない。文書に利用記載があっても実行時の利用を確認したことにはせず、Azure観測と文書記載を区別する。
-
-## モデル・費用・判断の境界
-
-LLMは文書から事実候補を抽出し、Decision-1は型付き判断、ルールは整合性・制約、人間は確認と最終判断を担当する。抽出Promptは説明Promptと分けて版管理する。既存の説明モデルを抽出にも利用できるかは品質・容量試験で確認し、新しいモデル配置を既決にしない。
-
-全文を毎回モデルへ渡さず、文書変更時に抽出して再利用する。評価時は対象通知・Workloadの依存経路に必要な事実と引用を選ぶ。重要情報が入力枠から落ちた場合は、単純切捨てで判断せず、入力分割または不完全として扱う。新たな検索サービス・ベクトルDBは初期導入の前提にしない。
-
-重要業務停止と代替経路なしはHighの材料になる。検証専用で業務影響が限定される根拠はLowの材料になるが、情報不足をLowへ変換しない。未対応時のHighから、対応後Lowを自動導出しない。移行案・停止・機能差の根拠がなければ対応時・対応後は未確定とする。人間指定を正本とするCritical workloadを文書抽出だけで確定しない。
-
-回数・入力・出力・時間・再試行を計測し、既存のPoC予算内で実接続評価する。具体的な取得上限、文書鮮度、Token配分、品質合格基準、費用見積もりは実装着手時のゲートで確定する。
-
-## 接続・セキュリティ・サンプルの扱い
-
-- Managed Identityを第一候補とし、専用サンプルサイトへの`Sites.Selected`と`read`を候補にする。フォルダだけに権限を限定する必要がある場合はSelected権限の粒度を別途検証する。アプリ内のフォルダ制限とサービス側の権限範囲を区別する。
-- Azure側はBicepで管理する。GraphのApplication権限とSharePoint側の個別付与はAzure RBACとは別物なので、通常CDから分離した再実行可能なBootstrap処理で管理する。Tenant全体の読取を既定にしない。
-- 許可したTenant・参照元だけを取得し、任意URLや文書中リンクを自動巡回しない。Graphのファイル取得はリダイレクトを伴うため、既存HTTP処理の制限を緩めず、認証情報を転送しない専用の検証・取得処理を設計する。
-- 文書は非信頼入力とし、埋込命令・マクロ・外部参照を実行しない。本文・モデル入出力・短期ダウンロードURLをGit、PR、通常ログへ保存しない。
-- 参照可能な文書を無条件に全アプリ利用者へ公開しない。原文・抜粋・引用表示を含め、初期はサンプル閲覧を許された役割へ限定する。複数参照元化では認可範囲と検索・抽出結果の混入も検証する。
-- 設定からAssessmentまでサンプル区分を伝播し、画面に常時表示する。実評価とは現行参照を分離する。外部登録はサンプル用の明示的許可・登録先・版の検証なしでは実行しない。
-
-## サンプルと受入ケース
-
-同一の廃止条件に対して業務条件を変え、影響度が変わる理由を検証する。期待するラベルはモデル入力と分離した評価用データに置き、設計書に「影響度High」などの回答を書かない。
-
-| ケース | 文書に記載する条件 | 期待する判断の方向 |
-|---|---|---|
-| 高影響 | 本番受注処理が対象機能に依存。停止すると受付不可、代替経路なし | 未対応時High |
-| 中影響 | 社内集計が遅延するが、確認済みの手作業で継続可能 | 未対応時Medium |
-| 低影響 | 検証専用。停止しても業務・顧客への影響なし、再作成可能 | 未対応時Low |
-| 情報不足 | 利用API、依存処理、代替手段の記載がない | 未確定と具体的な不足理由 |
-| 文書間の矛盾 | 構成設計書と業務フローで利用機能が異なる | 矛盾と出典を表示してレビュー |
-| 変更時の影響 | 移行停止時間が許容停止時間を超える | 対応時・対応後High候補 |
-
-1 Workloadについて、構成設計書、業務フロー、運用設計書の3文書を組み合わせるケースを含める。部分取得失敗、文書削除、旧版、誤ったWorkload対応、複数フォルダの重複、権限不足、埋込命令も検証する。合成試験とSharePoint実取得・有料モデルの品質試験は別に結果を記録する。
-
-## 実装順序と完了条件
-
-| 段階 | 作業 | 完了条件 |
-|---|---|---|
-| 1 | 参照元配列、文書版、抽出事実、依存関係、サンプル分離の契約と評価資材 | 1フォルダ設定、複数参照元の契約試験、旧データ互換を確認 |
-| 2 | DOCX／XLSX解析、出典保存、構造化抽出と検証 | DOCX段落／XLSXシート・セル抽出、候補Schema・引用元検証、上限付きLLM抽出アダプター、不変Blob保存とsampleOnly／Workload別Tableポインターを追加。専用Sample／Live Sourceから選択した1文書の明示抽出を追加し、最大17バッチ（各12,000文字）へ分割してバッチごとに日次既存モデル呼出枠を予約。Source区分をテスト／実業務モードで分離。実モデル接続・品質、累積予算管理、表・見出しのDOCX細粒度引用、3文書受入確認は未完了 |
-| 3 | 依存照合、Decision-1・説明入力、評価Hash・承認管理 | 確認済み文書事実をWorkload EvidenceとしてDecision／説明へ渡し、確認済み内容・依存関係の変更でAssessment Hashを更新。Governanceが表示中AssessmentのResource ID／名前完全一致候補を確認し、Fact同士を明示的に接続して業務処理→機能利用→ResourceDependencyの経路を作る。APIはWorkload、Assessment内Resource、Fact種別・監査・DAGを検証。複数文書の確認済み引用を経路Evidenceにまとめる。合成契約試験は実施、実接続と実モデル品質評価は未実施。曖昧な記述や別名の自動解決、業務影響の意味品質評価は未完了 |
-| 4 | SharePoint接続、Bootstrap、フォルダ全ページ取得、変更検出 | 読取専用コネクター、原本・Snapshotの不変保存、追加・変更・不在の算出を実装。GovernanceによるSource設定、明示Queue起動、状態API、Queue再試行・Poison状態記録を追加。テスト／実業務Sourceを排他的に許可。実業務用Repository Variableは既定false。Graph権限・Site grant Bootstrap、実業務フォルダ接続、実モデル品質、Source更新の監査・無効化は未完了 |
-| 5 | 初期1フォルダの設定・同期・確認・訂正・根拠表示UI | Entra認証下の1フォルダ設定、Queue起動・状態ポーリング、Snapshotの文書名・更新日時・Hash表示、Governance限定の文書単位抽出・Fact訂正・確認／除外・出典位置表示を追加。Source設定とFact管理をGovernance、同期をOperator／Governanceに制限。Graph実接続後の画面UATは未完了 |
-| 6 | 専用サンプルフォルダからの一貫した実接続・品質評価 | 高影響の誤Low、根拠なし断定、他Workload混入を点検し合否を記録 |
-| 将来 | 複数フォルダの設定UI、参照元別権限・正本規則・部分失敗表示 | 追加サービスの要否を再評価し、混在・重複・矛盾を含むUATを完了 |
-
-実装開始時に専用サンプルSite／Drive／Folder、対象役割、文書形式、Workload対応表、取得上限、品質基準を確定する。現時点ではサンプル文書の作成・アップロード、権限付与、アプリ配置、実推論は未実施。
-
-## 接続設計の公式参照
-
-- [Selected権限と個別アクセス付与](https://learn.microsoft.com/en-us/graph/permissions-selected-overview)
-- [Microsoft Graphのファイル取得・ETag・リダイレクト](https://learn.microsoft.com/en-us/graph/api/driveitem-get-content?view=graph-rest-1.0)
-- [Microsoft Graph itemReferenceのSite／Drive ID](https://learn.microsoft.com/en-us/graph/api/resources/itemreference?view=graph-rest-1.0)
+See the [SharePoint connection guide](sharepoint-connection-guide.md) for ID discovery, access setup, and operation.
