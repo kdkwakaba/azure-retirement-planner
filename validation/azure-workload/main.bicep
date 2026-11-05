@@ -4,7 +4,7 @@ targetScope = 'subscription'
 param resourceGroupName string = 'rg-arp-validation-orders'
 
 @description('検証用リソースを配置するリージョン。')
-param location string = 'japaneast'
+param location string = 'japanwest'
 
 @description('ARP APIのシステム割り当てマネージドID Principal ID。空欄は禁止し、検証用RGだけにReaderを付与する。')
 @minLength(36)
@@ -46,6 +46,13 @@ param ownerTeam string = 'application-operations'
 @maxLength(8)
 param globalNameSuffix string = ''
 
+@description('受注Web用Linux App Service Plan。F1は構成収集向けのFree SKU、B1はB1 VMs quotaが確保済みの場合に指定する。')
+@allowed([
+  'F1'
+  'B1'
+])
+param webPlanSku string = 'F1'
+
 resource validationResourceGroup 'Microsoft.Resources/resourceGroups@2022-09-01' = {
   name: resourceGroupName
   location: location
@@ -71,6 +78,7 @@ module workload './workload.bicep' = {
     workloadId: workloadId
     ownerTeam: ownerTeam
     globalNameSuffix: globalNameSuffix
+    webPlanSku: webPlanSku
   }
 }
 

@@ -6,12 +6,13 @@ Azure Retirement Planner本体の配置先・Bicepとは独立した、検証用
 
 ## 作成するもの
 
-- `orders-web-prod` App ServiceとLinux Basic B1 App Service Plan
+- `orders-web-prod` App ServiceとLinux App Service Plan（既定F1、必要ならB1を選択可能）
 - `orders-sql-validation` Azure SQL論理サーバーと`orders-db-prod` Basic Database
 - SQLへのMicrosoft Entra管理者設定とEntra専用認証
 - `orders-dispatch-prod`、`orders-report-prod` Function AppとFlex Consumption Plan
 - Storage V2、`orders-queue-prod` Queue、Functions配備用Blob Container、レポート用Blob Container
 - Application InsightsとLog Analytics Workspace
+- Azure AI Foundryアカウント（AIServices S0）とWorkload用Project。モデルデプロイ、Agent、データ接続は作成しない
 - Function用User Assigned Managed Identityと、同じ検証Storage／Application Insightsに限った必要ロール
 - ARP API Managed IdentityへのReader。スコープはこの検証用Resource Groupのみ
 
@@ -25,6 +26,8 @@ Azure Retirement Planner本体の配置先・Bicepとは独立した、検証用
 | `ManagedBy` | `bicep` | IaC管理を識別 |
 | `Purpose` | `sharepoint-impact-validation` | 検証用Resource Group内での用途を識別 |
 
+Foundryは構成評価の対象候補として表示できるようアカウントとProjectのみを作成します。Project作成要件に合わせアカウントのシステム割り当てマネージドIDを有効化しますが、ロールは付与しません。モデルをデプロイしないため、推論呼出しやモデル品質は検証しません。アカウント作成だけではMicrosoft-Decision-1の利用やClassic Agent Service APIの利用を意味しません。ネットワークは現行の検証構成に合わせてPublic Network Accessを有効にし、ローカル認証は無効にします。
+
 Azure Queueの個別リソースはResource Managerタグをサポートしないため、タグは親Storage Accountへ付けます。ARPのResource GraphクエリはQueueの親Storage AccountからWorkload ID、環境、担当チームを引き継ぎます。担当チームはWeb／出荷処理=`application-operations`、SQL=`database-operations`、Queue／Storage=`cloud-platform-operations`、監視=`monitoring-operations`、日次レポート=`data-operations`です。
 
 ## デプロイ前にそろえる値
@@ -32,7 +35,7 @@ Azure Queueの個別リソースはResource Managerタグをサポートしな�
 1. `az account list --all --query "[?name=='Test Subscription' && state=='Enabled'].id | [0]" -o tsv` でTest Subscription IDを確認します。
 2. API Function Appのシステム割り当てIdentity `principalId` を取得します。ARPの配置先と対象Subscriptionは別なので、ARPのAPI Function Appから取得したIDを使います。
 3. Test Subscription上でSQL ServerのMicrosoft Entra管理者にするユーザーまたはグループのObject IDと表示名を取得します。
-4. Subscriptionの`Microsoft.Web`、`Microsoft.Sql`、`Microsoft.Storage`、`Microsoft.Insights`、`Microsoft.OperationalInsights`プロバイダー登録と、選択リージョンでのSKU／クォータを確認します。
+4. Subscriptionの`Microsoft.Web`、`Microsoft.Sql`、`Microsoft.Storage`、`Microsoft.Insights`、`Microsoft.OperationalInsights`プロバイダー登録と、選択リージョンでのSKU／クォータを確認します。現在のTest SubscriptionはJapan EastのF1／B1 quotaが0でしたが、Japan WestではWhat-Ifの事前検証が通ったため既定リージョンをJapan Westにしています。受注Webは構成収集向けのLinux F1です。B1のApp Service構成を確認する場合は、Microsoft.WebのJapan West B1 quotaを1以上へ増やした後、`webPlanSku='B1'`を指定します。
 
 実リソース名が他テナントで既に使用されている場合は、`globalNameSuffix`へ短い一意値を指定します。その場合、SharePoint文書内の`orders-web-prod`、`orders-dispatch-prod`、`orders-report-prod`も同じ末尾へ変更してから同期・Fact確認してください。SQL Database名とQueue名はこのテンプレートでは変更しません。
 
@@ -51,7 +54,7 @@ $sqlAdminDisplayName = '<SQL Entra管理者の表示名>'
 $tenantId = az account show --query tenantId -o tsv
 $deploymentParameters = @{
   resourceGroupName = 'rg-arp-validation-orders'
-  location = 'japaneast'
+  location = 'japanwest'
   apiPrincipalId = $apiPrincipalId
   sqlEntraAdminObjectId = $sqlAdminObjectId
   sqlEntraAdminPrincipalType = 'User'
@@ -63,7 +66,7 @@ $deploymentParameters = @{
 
 New-AzSubscriptionDeployment `
   -Name 'orders-validation-whatif' `
-  -Location 'japaneast' `
+  -Location 'japanwest' `
   -TemplateFile './validation/azure-workload/main.bicep' `
   -TemplateParameterObject $deploymentParameters `
   -WhatIf
