@@ -20,6 +20,22 @@ test('failure logs exclude exception messages', (t) => {
   assert.ok(!record.includes('synthetic-secret'))
 })
 
+test('processing failure logs include only allowlisted extraction diagnostics', (t) => {
+  let record = ''
+  t.mock.method(console, 'error', (line: string) => {
+    record = line
+  })
+  logProcessingFailure(
+    'sharepoint-fact-model-response-parse',
+    Object.assign(new Error('model payload must stay private'), {
+      failureCode: 'Truncated',
+    }),
+  )
+  const parsed = JSON.parse(record) as Record<string, unknown>
+  assert.equal(parsed.failureCode, 'Truncated')
+  assert.ok(!record.includes('model payload'))
+})
+
 test('dependency failure logs identify source and safe HTTP details only', (t) => {
   let record = ''
   t.mock.method(console, 'error', (line: string) => {
