@@ -8,6 +8,7 @@ import {
   recordModelInvocation,
   RemoteError,
 } from '@arp/adapters'
+import { PlatformIdentity } from '../packages/adapters/src/identity.ts'
 
 test('failure logs exclude exception messages', (t) => {
   let record = ''
@@ -48,6 +49,39 @@ test('Azure SDK statusCode is classified without logging provider details', () =
     category: 'InvalidResponse',
     httpStatus: 416,
   })
+})
+
+test('managed identity failures expose only the HTTP status for safe diagnosis', async (t) => {
+  const oldEndpoint = process.env.IDENTITY_ENDPOINT
+  const oldHeader = process.env.IDENTITY_HEADER
+  process.env.IDENTITY_ENDPOINT = 'http://127.0.0.1:1234/msi/token'
+  process.env.IDENTITY_HEADER = 'synthetic-header'
+  t.after(() => {
+    if (oldEndpoint === undefined) delete process.env.IDENTITY_ENDPOINT
+    else process.env.IDENTITY_ENDPOINT = oldEndpoint
+    if (oldHeader === undefined) delete process.env.IDENTITY_HEADER
+    else process.env.IDENTITY_HEADER = oldHeader
+  })
+  t.mock.method(
+    globalThis,
+    'fetch',
+    async () => new Response('sensitive identity response', { status: 403 }),
+  )
+
+  await assert.rejects(
+    new PlatformIdentity().getToken(
+      'https://cognitiveservices.azure.com/.default',
+    ),
+    (error: unknown) => {
+      assert.deepEqual(failureFacts(error), {
+        category: 'Forbidden',
+        httpStatus: 403,
+      })
+      assert.equal((error as Error).name, 'IdentityEndpointError')
+      assert.ok(!(error as Error).message.includes('sensitive'))
+      return true
+    },
+  )
 })
 
 test('model invocation telemetry contains status and versions, never payloads', (t) => {

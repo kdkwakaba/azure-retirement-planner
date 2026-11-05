@@ -1,5 +1,15 @@
 import { z } from 'zod'
 
+class IdentityEndpointError extends Error {
+  statusCode: number
+
+  constructor(statusCode: number) {
+    super('Managed identity request failed')
+    this.name = 'IdentityEndpointError'
+    this.statusCode = statusCode
+  }
+}
+
 // App Service / Functionsの公式ローカルMIプロトコルに限定。
 // SDKのDefaultAzureCredentialに含まれる既知脆弱性依存を避け、他の資格情報へ自動Fallbackしない。
 // https://learn.microsoft.com/azure/app-service/overview-managed-identity
@@ -43,7 +53,7 @@ export class PlatformIdentity {
       redirect: 'error',
       signal: AbortSignal.timeout(10000),
     })
-    if (!response.ok) throw new Error('Managed identity request failed')
+    if (!response.ok) throw new IdentityEndpointError(response.status)
     const result = z
       .object({
         access_token: z.string().min(1),
