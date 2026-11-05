@@ -1,6 +1,8 @@
 # 実装タスクと検証状態
 
-2026-11-03。状態はコードの実装と接続検証を分ける。ローカル検査合格はPoC成功・実環境動作・モデル品質の証明ではない。
+2026-11-05。状態はコードの実装と接続検証を分ける。ローカル検査合格はPoC成功・実環境動作・モデル品質の証明ではない。
+
+2026-11-05: PR #146をmainへ配置後、SharePointサンプルDOCX抽出は分割段階を通過したが、モデル呼出しがHTTP 429で失敗しFactは保存されなかった。文書抽出の入力・出力上限縮小と429一回再試行、およびGovernance限定の合成UAT専用評価・表示を追加する。サンプル評価は確認済みFactと合成評価内リソースの明示リンクを照合する。通常Assessment／Projectへは流さず、影響度・優先度も推定しない。PR merge・再配置後のSharePoint実抽出、Fact確認、画面表示は未実施。
 
 2026-11-04追加計画: IMP-09/09bの業務情報連携、IMP-11/12の判断・説明、IMP-13/14の根拠・承認、IMP-19の品質評価を拡張する[SharePoint設計書による影響評価計画](sharepoint-document-impact-plan.md)を作成。初期は専用サンプル用フォルダ1件の複数文書、将来は複数フォルダを参照する。PR #125でDOCX／XLSX抽出、PR #126で候補引用検証、PR #127で上限付きLLM抽出、PR #128でGrounding不変保存、PR #129でsampleOnly=falseの確認済み事実をAssessmentへ接続。PR #130でGraph読み取り専用コネクター、原本不変保存、Snapshot差分を追加。PR #131でサンプルSource設定、Feature Flag既定無効のQueue同期要求・状態API、Queue再試行とPoison状態記録を追加。PR #132でGovernance設定UI、同期状態・文書Snapshot一覧UIを追加。PR #133でGovernance限定の文書単位明示抽出、出典位置付き候補修正・確認／除外、確認者・時刻付き不変Grounding版保存を追加。PR #135でResourceDependency事実に対し表示中Assessment内のResource ID／名前完全一致候補を提示（未選択）し、保存済みモデル抽出を再利用。今回、Governanceが確認済みFact間の依存経路を明示リンクし、複数文書の根拠を1つのAssessment Evidenceへまとめる。経路変更をAssessment入力Hashへ含め、APIで監査、Fact種別、Workload、Assessment内Resource、DAGを検証する。合成検証は行い、SharePoint実接続・実モデル品質評価はこの段階の対象外。曖昧な別名候補の自動解決と意味的影響品質は未完了。
 
@@ -29,6 +31,7 @@
 | IMP-20 | Demo/UAT: 同一実環境で3分ライブ | 10,14–19 | 事前サインイン、実通知、判断→根拠→承認→登録 | リハーサル待ち。合成をライブ取得と偽らない | M / Presenter+QA / No |
 | IMP-21 | Cleanup: 作成台帳と専用資源・Project・秘密の撤去 | 04,15 | 削除対象照合、残存保持・残費用報告 | 専用Azure資源・Entra App・資格情報を作成済。撤去はPoC終了時に別途実行 | M / Cloud+Owner / No |
 | IMP-22 | UI: Microsoft公式Evidenceの日本語参考訳 | 03,13 | 原文保持、公式Source限定、MI、翻訳と判断根拠の分離、版付きCache | Service Health通知Evidenceの出所検証とUI/API対応はPR #46でmainへ反映済み。run #35はinfra-only applyでアプリZIP配置なし。PR #48により配置stepのoutcomeはJob Summaryへ表示。画面・実翻訳の確認は利用者指示により保留。2026-10-29にPR #56のアプリを再配置済み。API匿名ルート401、Exporterルート200を確認。認証済み画面での日本語表示UATとPoC Translator SKU/費用確認が残る | M / Dev+Cloud / Yes |
+| IMP-23 | SharePointサンプル評価: 429耐性、Fact確認、合成通知とのリソース照合表示 | IMP-09/14 | サンプルSource限定、Governance認可、テスト専用保存、通常Assessment／Projectへの混入なし | モデル抽出を1,500文字・500出力tokensへ縮小し、429時Retry-Afterを尊重して1回再試行。合成UAT Assessmentに対し確認済みサンプルFactと明示リンク済みリソースを照合する専用API／画面を追加。影響度・優先度は文書から推定しない。ローカルverify済み。PR merge後の実抽出・Fact確認・画面UATは未実施 | M / Dev+Governance / No |
 | IMP-07a | Discovery: 保存済み通知の最新構成による再評価 | 07 | 既存Notice版を保持し、最新Inventoryで候補再抽出・新版保存 | PR #94でmainへ反映・Azure配置済み。2026-11-02に実通知Foundry Agent Service noticeを最新Inventoryで再評価し、Storage候補からCognitive Services account／projectへ更新、scopeComplete=trueを確認。 | M / Dev / Yes |
 | IMP-14a | Human Review: 対応不要通知の一覧整理 | 14 | 理由付き判定・監査履歴保持・既定一覧から非表示・再表示 | PR #94でmainへ反映・Azure配置済み。NoAction実データがないため、実通知での選択・非表示UATは未実施。 | S / Frontend+Dev / Yes |
 | IMP-14b | Human Review: 実データ表示の欠落項目を明確化 | 14 | 未取得・未決項目に理由・次の作業・判断役割を示し、根拠なしの値を補完しない | PR #96を2026-11-02にmainへ反映・配置。認証済み画面で項目説明、Claim／Evidence／確認理由の分割、Microsoft公式URL、影響確認の集約UIを確認。保存済み旧評価には変更前の重複作業が残る。 | S / Frontend+Governance / Yes |

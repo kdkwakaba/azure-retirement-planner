@@ -4,6 +4,7 @@ import {
   assessmentSchema,
   documentGroundingSchema,
   documentSourceSchema,
+  sampleDocumentImpactEvaluationSchema,
 } from '@arp/contracts'
 import {
   confirmedDocumentFactEvidence,
@@ -43,6 +44,38 @@ const fact = {
   reviewStatus: 'Candidate' as const,
   sampleOnly: true,
 }
+
+test('sample document impact evaluation is isolated and does not assert severity', () => {
+  const report = sampleDocumentImpactEvaluationSchema.parse({
+    schemaVersion: '1',
+    evaluationId: 'a'.repeat(64),
+    sampleOnly: true,
+    assessmentId: 'synthetic-assessment',
+    workloadId: 'sample-workload',
+    eventTitle: 'Synthetic retirement notice',
+    groundingHash: 'b'.repeat(64),
+    evaluatedAt: '2026-11-05T00:00:00.000Z',
+    outcome: 'MatchedResources',
+    matchedResourceIds: ['/subscriptions/00000000/resourceGroups/demo'],
+    facts: [],
+    limitations: ['影響度は自動判定しません。'],
+  })
+  assert.equal(report.sampleOnly, true)
+  assert.equal(
+    sampleDocumentImpactEvaluationSchema.safeParse({
+      ...report,
+      sampleOnly: false,
+    }).success,
+    false,
+  )
+  assert.equal(
+    sampleDocumentImpactEvaluationSchema.safeParse({
+      ...report,
+      impact: 'Critical',
+    }).success,
+    false,
+  )
+})
 
 test('document source supports multiple workload folders and limits file types', () => {
   const parsed = documentSourceSchema.parse({

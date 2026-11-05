@@ -531,6 +531,48 @@ export const documentGroundingSchema = z
         message: 'Dependency fact links must be acyclic',
       })
   })
+export const sampleDocumentImpactEvaluationSchema = z
+  .object({
+    schemaVersion: z.literal('1'),
+    evaluationId: z.string().regex(/^[a-f0-9]{64}$/),
+    sampleOnly: z.literal(true),
+    assessmentId: z.string().min(1).max(200),
+    workloadId: z.string().min(1).max(200),
+    eventTitle: z.string().min(1).max(1000),
+    groundingHash: z.string().regex(/^[a-f0-9]{64}$/),
+    evaluatedAt: z.iso.datetime(),
+    outcome: z.enum([
+      'MatchedResources',
+      'NoResourceLinks',
+      'NoConfirmedFacts',
+      'NeedsFactReview',
+    ]),
+    matchedResourceIds: z
+      .array(z.string().regex(/^\/subscriptions\//i))
+      .max(500),
+    facts: z
+      .array(
+        z
+          .object({
+            factId: z.string().min(1).max(200),
+            kind: documentFactProposalSchema.shape.kind,
+            statement: z.string().min(1).max(4000),
+            reviewStatus: z.enum(['Candidate', 'Confirmed', 'Rejected']),
+            documentName: z.string().min(1).max(500),
+            locator: documentFactSchema.shape.locator,
+            linkedResourceIds: z
+              .array(z.string().regex(/^\/subscriptions\//i))
+              .max(20),
+            matchedResourceIds: z
+              .array(z.string().regex(/^\/subscriptions\//i))
+              .max(20),
+          })
+          .strict(),
+      )
+      .max(500),
+    limitations: z.array(z.string().min(1).max(500)).max(10),
+  })
+  .strict()
 export const milestoneSchema = z
   .object({
     id: z.string().min(1),
@@ -894,6 +936,9 @@ export type DocumentText = z.infer<typeof documentTextSchema>
 export type DocumentFact = z.infer<typeof documentFactSchema>
 export type DocumentFactProposal = z.infer<typeof documentFactProposalSchema>
 export type DocumentGrounding = z.infer<typeof documentGroundingSchema>
+export type SampleDocumentImpactEvaluation = z.infer<
+  typeof sampleDocumentImpactEvaluationSchema
+>
 export type DiscoveryFailure = z.infer<typeof discoveryFailureSchema>
 export type DiscoveryFailureSource = DiscoveryFailure['source']
 export type ModelInvocation = z.infer<typeof modelInvocationSchema>
