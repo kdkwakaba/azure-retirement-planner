@@ -6,7 +6,7 @@ Azure Retirement Planner本体の配置先・Bicepとは独立した、検証用
 
 ## 作成するもの
 
-- `orders-web-prod` App ServiceとLinux Basic B1 App Service Plan
+- `orders-web-prod` App ServiceとLinux App Service Plan（既定F1、必要ならB1を選択可能）
 - `orders-sql-validation` Azure SQL論理サーバーと`orders-db-prod` Basic Database
 - SQLへのMicrosoft Entra管理者設定とEntra専用認証
 - `orders-dispatch-prod`、`orders-report-prod` Function AppとFlex Consumption Plan
@@ -32,7 +32,7 @@ Azure Queueの個別リソースはResource Managerタグをサポートしな�
 1. `az account list --all --query "[?name=='Test Subscription' && state=='Enabled'].id | [0]" -o tsv` でTest Subscription IDを確認します。
 2. API Function Appのシステム割り当てIdentity `principalId` を取得します。ARPの配置先と対象Subscriptionは別なので、ARPのAPI Function Appから取得したIDを使います。
 3. Test Subscription上でSQL ServerのMicrosoft Entra管理者にするユーザーまたはグループのObject IDと表示名を取得します。
-4. Subscriptionの`Microsoft.Web`、`Microsoft.Sql`、`Microsoft.Storage`、`Microsoft.Insights`、`Microsoft.OperationalInsights`プロバイダー登録と、選択リージョンでのSKU／クォータを確認します。
+4. Subscriptionの`Microsoft.Web`、`Microsoft.Sql`、`Microsoft.Storage`、`Microsoft.Insights`、`Microsoft.OperationalInsights`プロバイダー登録と、選択リージョンでのSKU／クォータを確認します。現在のTest SubscriptionはJapan EastのF1／B1 quotaが0でしたが、Japan WestではWhat-Ifの事前検証が通ったため既定リージョンをJapan Westにしています。受注Webは構成収集向けのLinux F1です。B1のApp Service構成を確認する場合は、Microsoft.WebのJapan West B1 quotaを1以上へ増やした後、`webPlanSku='B1'`を指定します。
 
 実リソース名が他テナントで既に使用されている場合は、`globalNameSuffix`へ短い一意値を指定します。その場合、SharePoint文書内の`orders-web-prod`、`orders-dispatch-prod`、`orders-report-prod`も同じ末尾へ変更してから同期・Fact確認してください。SQL Database名とQueue名はこのテンプレートでは変更しません。
 
@@ -51,7 +51,7 @@ $sqlAdminDisplayName = '<SQL Entra管理者の表示名>'
 $tenantId = az account show --query tenantId -o tsv
 $deploymentParameters = @{
   resourceGroupName = 'rg-arp-validation-orders'
-  location = 'japaneast'
+  location = 'japanwest'
   apiPrincipalId = $apiPrincipalId
   sqlEntraAdminObjectId = $sqlAdminObjectId
   sqlEntraAdminPrincipalType = 'User'
@@ -63,7 +63,7 @@ $deploymentParameters = @{
 
 New-AzSubscriptionDeployment `
   -Name 'orders-validation-whatif' `
-  -Location 'japaneast' `
+  -Location 'japanwest' `
   -TemplateFile './validation/azure-workload/main.bicep' `
   -TemplateParameterObject $deploymentParameters `
   -WhatIf

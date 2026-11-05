@@ -9,6 +9,11 @@ param tenantId string
 param workloadId string
 param ownerTeam string
 param globalNameSuffix string
+@allowed([
+  'F1'
+  'B1'
+])
+param webPlanSku string
 
 var workloadTags = {
   WorkloadId: workloadId
@@ -169,9 +174,9 @@ resource webPlan 'Microsoft.Web/serverfarms@2024-04-01' = {
   location: location
   tags: applicationTags
   sku: {
-    name: 'B1'
-    tier: 'Basic'
-    size: 'B1'
+    name: webPlanSku
+    tier: webPlanSku == 'F1' ? 'Free' : 'Basic'
+    size: webPlanSku
     capacity: 1
   }
   properties: {
@@ -196,7 +201,7 @@ resource ordersWeb 'Microsoft.Web/sites@2024-04-01' = {
       minTlsVersion: '1.2'
       ftpsState: 'Disabled'
       http20Enabled: true
-      alwaysOn: true
+      alwaysOn: webPlanSku == 'B1'
     }
   }
 }
