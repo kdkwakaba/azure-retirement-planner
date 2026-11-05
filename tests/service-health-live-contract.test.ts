@@ -125,6 +125,86 @@ test('Service Health failure is isolated from Resource Graph inventory and categ
   assert.ok(!result.failures.join(' ').includes(tenant))
 })
 
+test('Resource Graph inventory includes workload resource types used by SharePoint design documents', async (t) => {
+  t.mock.method(credential, 'getToken', async () => ({
+    token: 'synthetic',
+    expiresOnTimestamp: Date.now() + 60000,
+  }))
+  let inventoryQuery = ''
+  t.mock.method(
+    globalThis,
+    'fetch',
+    async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const query = JSON.parse(String(init?.body)).query as string
+      if (query.startsWith('servicehealthresources'))
+        return Response.json({ data: [], resultTruncated: false })
+      inventoryQuery = query
+      return Response.json({
+        data: [
+          {
+            id: `/subscriptions/${tenant}/resourceGroups/orders/providers/Microsoft.Web/sites/orders-web-prod`,
+            name: 'orders-web-prod',
+            type: 'microsoft.web/sites',
+            location: 'japaneast',
+            workloadId: 'orders',
+            appState: 'Running',
+            serverFarmId: `/subscriptions/${tenant}/resourceGroups/orders/providers/Microsoft.Web/serverfarms/orders-plan`,
+          },
+          {
+            id: `/subscriptions/${tenant}/resourceGroups/orders/providers/Microsoft.Sql/servers/orders-db/databases/orders`,
+            name: 'orders',
+            type: 'microsoft.sql/servers/databases',
+            location: 'japaneast',
+            workloadId: 'orders',
+            sqlVersion: '12.0',
+            sqlStatus: 'Online',
+          },
+          {
+            id: `/subscriptions/${tenant}/resourceGroups/orders/providers/Microsoft.Storage/storageAccounts/orders/queueServices/default/queues/shipping`,
+            name: 'shipping',
+            type: 'microsoft.storage/storageaccounts/queueservices/queues',
+            location: 'japaneast',
+            workloadId: 'orders',
+          },
+          {
+            id: `/subscriptions/${tenant}/resourceGroups/orders/providers/Microsoft.Insights/components/orders-monitor`,
+            name: 'orders-monitor',
+            type: 'microsoft.insights/components',
+            location: 'japaneast',
+            workloadId: 'orders',
+            applicationType: 'web',
+          },
+        ],
+        resultTruncated: false,
+      })
+    },
+  )
+
+  const result = await discover([tenant], tenant)
+
+  for (const resourceType of [
+    'microsoft.web/sites',
+    'microsoft.web/serverfarms',
+    'microsoft.sql/servers',
+    'microsoft.sql/servers/databases',
+    'microsoft.storage/storageaccounts/queueservices/queues',
+    'microsoft.insights/components',
+  ])
+    assert.ok(inventoryQuery.includes(resourceType), resourceType)
+  assert.deepEqual(
+    result.resources.map((resource) => resource.type),
+    [
+      'microsoft.web/sites',
+      'microsoft.sql/servers/databases',
+      'microsoft.storage/storageaccounts/queueservices/queues',
+      'microsoft.insights/components',
+    ],
+  )
+  assert.equal(result.resources[0]?.properties.appState, 'Running')
+  assert.equal(result.resources[1]?.properties.sqlVersion, '12.0')
+  assert.equal(result.resources[3]?.properties.applicationType, 'web')
+})
+
 test('zero events with incomplete discovery is visibly a partial failure', () => {
   const feedback = syncFeedback({
     events: 0,
