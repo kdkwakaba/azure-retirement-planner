@@ -3,8 +3,14 @@ import { createHash } from 'node:crypto'
 import test from 'node:test'
 import {
   AzureStore,
+  DocumentFactExtractionResponseError,
   bindDocumentFactProposals,
   DOCUMENT_FACT_EXTRACTION_MAX_COMPLETION_TOKENS,
+  DOCUMENT_FACT_EXTRACTION_MAX_PROPOSALS,
+  DOCUMENT_FACT_EXTRACTION_MAX_STATEMENT_CHARACTERS,
+  DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION,
+  documentFactResponseCacheRepairId,
+  readDocumentFactResponseCache,
   DOCUMENT_FACT_EXTRACTION_MAX_INPUT_CHARACTERS,
   DOCUMENT_FACT_EXTRACTION_MAX_BATCHES,
   splitDocumentTextForFactExtraction,
@@ -310,8 +316,10 @@ test('document fact extraction uses a bounded untrusted-input prompt and binds c
   const submittedBlocks = JSON.parse(messages[1]!.content) as {
     blocks: Array<Record<string, unknown>>
   }
-  assert.equal(requestBody?.max_completion_tokens, 500)
-  assert.equal(DOCUMENT_FACT_EXTRACTION_MAX_COMPLETION_TOKENS, 500)
+  assert.equal(requestBody?.max_completion_tokens, 1_000)
+  assert.equal(DOCUMENT_FACT_EXTRACTION_MAX_COMPLETION_TOKENS, 1_000)
+  assert.equal(DOCUMENT_FACT_EXTRACTION_MAX_PROPOSALS, 5)
+  assert.equal(DOCUMENT_FACT_EXTRACTION_MAX_STATEMENT_CHARACTERS, 500)
   assert.equal(requestBody?.reasoning_effort, 'none')
   assert.equal(responseSchema.additionalProperties, false)
   assert.equal(submittedBlocks.blocks[0]!.blockId, 'paragraph-1')
@@ -320,8 +328,168 @@ test('document fact extraction uses a bounded untrusted-input prompt and binds c
   assert.equal(result.facts[0]!.sourceId, metadata.sourceId)
   assert.equal(result.facts[0]!.sampleOnly, true)
   assert.equal(result.facts[0]!.reviewStatus, 'Candidate')
-  assert.equal(result.promptVersion, '2026-11-05.1')
+  assert.equal(result.promptVersion, DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION)
   assert.equal(rawRecorded, true)
+})
+
+test('truncated model responses are classified and are not cached', async (t) => {
+  t.mock.method(credential, 'getToken', async () => ({
+    token: 'synthetic',
+    expiresOnTimestamp: Date.now() + 3600000,
+  }))
+  const document = documentTextSchema.parse({
+    schemaVersion: '1',
+    revision: { ...metadata, contentHash: 'f'.repeat(64) },
+    blocks: [
+      {
+        sourceId: metadata.sourceId,
+        itemId: metadata.itemId,
+        contentHash: 'f'.repeat(64),
+        blockId: 'paragraph-1',
+        kind: 'Paragraph',
+        text: '本番処理は旧APIを利用する。',
+        heading: null,
+        sheet: null,
+        row: null,
+        cell: null,
+        sampleOnly: true,
+      },
+    ],
+  })
+  t.mock.method(globalThis, 'fetch', async () =>
+    Response.json({
+      choices: [
+        {
+          finish_reason: 'length',
+          message: { content: '{"proposals":[' },
+        },
+      ],
+    }),
+  )
+  let rawRecorded = false
+  await assert.rejects(
+    extractDocumentFacts(
+      'https://synthetic.services.ai.azure.com',
+      'gpt-6-luna',
+      document,
+      'sample-workload',
+      async () => {
+        rawRecorded = true
+      },
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      'failureCode' in error &&
+      error.failureCode === 'Truncated',
+  )
+  assert.equal(rawRecorded, false)
+})
+
+test('invalid model JSON is classified and is not cached', async (t) => {
+  t.mock.method(credential, 'getToken', async () => ({
+    token: 'synthetic',
+    expiresOnTimestamp: Date.now() + 3600000,
+  }))
+  const document = documentTextSchema.parse({
+    schemaVersion: '1',
+    revision: { ...metadata, contentHash: '1'.repeat(64) },
+    blocks: [
+      {
+        sourceId: metadata.sourceId,
+        itemId: metadata.itemId,
+        contentHash: '1'.repeat(64),
+        blockId: 'paragraph-1',
+        kind: 'Paragraph',
+        text: '本番処理は旧APIを利用する。',
+        heading: null,
+        sheet: null,
+        row: null,
+        cell: null,
+        sampleOnly: true,
+      },
+    ],
+  })
+  t.mock.method(globalThis, 'fetch', async () =>
+    Response.json({
+      choices: [
+        {
+          finish_reason: 'stop',
+          message: { content: '{not-json' },
+        },
+      ],
+    }),
+  )
+  let rawRecorded = false
+  await assert.rejects(
+    extractDocumentFacts(
+      'https://synthetic.services.ai.azure.com',
+      'gpt-6-luna',
+      document,
+      'sample-workload',
+      async () => {
+        rawRecorded = true
+      },
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      'failureCode' in error &&
+      error.failureCode === 'InvalidJson',
+  )
+  assert.equal(rawRecorded, false)
+})
+
+test('corrupted model response cache uses a stable alternate key', () => {
+  const rawId = 'a'.repeat(64)
+  const repaired = documentFactResponseCacheRepairId(rawId)
+  assert.match(repaired, /^[a-f0-9]{64}$/)
+  assert.notEqual(repaired, rawId)
+  assert.equal(documentFactResponseCacheRepairId(rawId), repaired)
+})
+
+test('corrupt and invalid cached responses are skipped without replaying them', async () => {
+  const rawId = 'b'.repeat(64)
+  const repairId = documentFactResponseCacheRepairId(rawId)
+  const reads: string[] = []
+  const recovered = await readDocumentFactResponseCache({
+    rawId,
+    read: async (id) => {
+      reads.push(id)
+      if (id === rawId) throw new SyntaxError('corrupt cache bytes')
+      if (id === repairId) return { valid: true }
+      throw Object.assign(new Error('not found'), { statusCode: 404 })
+    },
+    validate: (raw) => {
+      assert.deepEqual(raw, { valid: true })
+      return []
+    },
+  })
+  assert.deepEqual(reads, [rawId, repairId])
+  assert.deepEqual(recovered, { facts: [], writeId: repairId })
+
+  reads.length = 0
+  const invalid = await readDocumentFactResponseCache({
+    rawId,
+    read: async (id) => {
+      reads.push(id)
+      if (id === rawId) return { invalid: true }
+      throw Object.assign(new Error('not found'), { statusCode: 404 })
+    },
+    validate: () => {
+      throw new DocumentFactExtractionResponseError(
+        'InvalidJson',
+        'synthetic invalid cache fixture',
+      )
+    },
+  })
+  assert.deepEqual(reads, [
+    rawId,
+    repairId,
+    documentFactResponseCacheRepairId(repairId),
+  ])
+  assert.deepEqual(invalid, {
+    facts: null,
+    writeId: repairId,
+  })
 })
 
 test('document fact extraction rejects oversized batches before model access', async () => {

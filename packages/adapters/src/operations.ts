@@ -13,6 +13,7 @@ export interface ProcessingFailureRecord {
   errorType: string
   category: DiscoveryFailure['category']
   httpStatus: number | null
+  failureCode?: string
 }
 
 export function failureFacts(error: unknown): {
@@ -111,6 +112,20 @@ export function logProcessingFailure(
     correlationId,
     errorType,
     ...failureFacts(error),
+    ...(typeof error === 'object' &&
+    error !== null &&
+    'failureCode' in error &&
+    typeof error.failureCode === 'string' &&
+    [
+      'InvalidEnvelope',
+      'Truncated',
+      'EmptyOutput',
+      'InvalidJson',
+      'InvalidSchema',
+      'InvalidCitation',
+    ].includes(error.failureCode)
+      ? { failureCode: error.failureCode }
+      : {}),
   }
   console.error(JSON.stringify(record))
   return correlationId

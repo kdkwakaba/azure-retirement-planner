@@ -9,6 +9,7 @@ export class ApiRequestError extends Error {
   correlationId: string | null
   operation: string | null
   providerCode: string | null
+  extractionFailureCode: string | null
   constructor(
     status: number,
     details: {
@@ -18,6 +19,7 @@ export class ApiRequestError extends Error {
       correlationId?: unknown
       operation?: unknown
       providerCode?: unknown
+      extractionFailureCode?: unknown
     },
   ) {
     const stage = typeof details.stage === 'string' ? details.stage : null
@@ -34,6 +36,18 @@ export class ApiRequestError extends Error {
       typeof details.operation === 'string' ? details.operation : null
     const providerCode =
       typeof details.providerCode === 'string' ? details.providerCode : null
+    const extractionFailureCode =
+      typeof details.extractionFailureCode === 'string'
+        ? details.extractionFailureCode
+        : null
+    const extractionFailureLabels: Record<string, string> = {
+      InvalidEnvelope: 'モデル応答の形式が不正です',
+      Truncated: '出力上限に達して応答が途中で終了しました',
+      EmptyOutput: 'モデル応答に抽出結果がありません',
+      InvalidJson: 'モデル応答のJSONを読み取れません',
+      InvalidSchema: 'モデル応答が抽出結果の形式に合いません',
+      InvalidCitation: 'モデル応答が文書中の根拠位置を示していません',
+    }
     const categoryLabels: Record<string, string> = {
       Unauthorized: '認証エラー',
       Forbidden: '権限エラー',
@@ -53,8 +67,11 @@ export class ApiRequestError extends Error {
       'sharepoint-fact-document-read': '保存文書の読込',
       'sharepoint-fact-document-parse': '文書本文の抽出',
       'sharepoint-fact-cached-response-read': '抽出済みモデル応答の読込',
+      'sharepoint-fact-cached-response-validate': '抽出済みモデル応答の検証',
       'sharepoint-fact-budget-reservation': 'モデル利用枠の確保',
       'sharepoint-fact-model-extraction': 'モデルによる事実候補の抽出',
+      'sharepoint-fact-model-response-parse': 'モデル抽出結果の検証',
+      'sharepoint-fact-model-response-save': '検証済み抽出結果の保存',
       'sharepoint-fact-grounding-save': '抽出結果の保存',
     }
     const pieces = [
@@ -67,6 +84,9 @@ export class ApiRequestError extends Error {
       category ? `分類: ${categoryLabels[category] ?? category}` : '',
       operation ? `操作: ${operation}` : '',
       providerCode ? `GitHubコード: ${providerCode}` : '',
+      extractionFailureCode
+        ? `抽出応答: ${extractionFailureLabels[extractionFailureCode] ?? '形式を確認できません'}`
+        : '',
       upstreamHttpStatus !== null
         ? `上流サービス応答: HTTP ${upstreamHttpStatus}`
         : '',
@@ -81,6 +101,7 @@ export class ApiRequestError extends Error {
     this.correlationId = correlationId
     this.operation = operation
     this.providerCode = providerCode
+    this.extractionFailureCode = extractionFailureCode
   }
 }
 
