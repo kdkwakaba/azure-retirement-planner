@@ -4,11 +4,13 @@ import {
   documentGroundingSchema,
   sharePointSnapshotSchema,
   sharePointSyncRunSchema,
+  sampleDocumentImpactEvaluationSchema,
   type DocumentSource,
   type DocumentGrounding,
   type Assessment,
   type SharePointSnapshot,
   type SharePointSyncRun,
+  type SampleDocumentImpactEvaluation,
 } from '@arp/contracts'
 import { request } from './api.ts'
 import { z } from 'zod'
@@ -91,6 +93,8 @@ export function SharePointPanel({
   const [selectedRelatedFactIds, setSelectedRelatedFactIds] = useState<
     Record<string, string[]>
   >({})
+  const [sampleEvaluation, setSampleEvaluation] =
+    useState<SampleDocumentImpactEvaluation | null>(null)
 
   async function loadFacts(sourceId: string, workloadId: string) {
     if (!sourceId || !workloadId) {
@@ -272,6 +276,78 @@ export function SharePointPanel({
     !grounding ||
     !selectedSource ||
     grounding.sourceConfigurationVersion === selectedSource.configurationVersion
+
+  useEffect(() => {
+    setSampleEvaluation(null)
+    if (
+      !selectedSource?.sampleOnly ||
+      !sampleSourcesEnabled ||
+      !selectedWorkloadId ||
+      !assessment ||
+      assessment.workloadId !== selectedWorkloadId
+    )
+      return
+    let active = true
+    void request(
+      `sharepoint-sample-impact-evaluation?sourceId=${encodeURIComponent(selectedSource.sourceId)}&workloadId=${encodeURIComponent(selectedWorkloadId)}&assessmentId=${encodeURIComponent(assessment.id)}`,
+      'GET',
+    )
+      .then((value) => {
+        if (active)
+          setSampleEvaluation(
+            value ? sampleDocumentImpactEvaluationSchema.parse(value) : null,
+          )
+      })
+      .catch(() => {
+        if (active) setSampleEvaluation(null)
+      })
+    return () => {
+      active = false
+    }
+  }, [
+    assessment?.id,
+    assessment?.workloadId,
+    groundingHash,
+    sampleSourcesEnabled,
+    selectedSource?.sampleOnly,
+    selectedSource?.sourceId,
+    selectedWorkloadId,
+  ])
+
+  async function evaluateSampleDocuments() {
+    if (
+      !selectedSource?.sampleOnly ||
+      !sampleSourcesEnabled ||
+      !selectedWorkloadId ||
+      !groundingHash ||
+      !assessment ||
+      assessment.workloadId !== selectedWorkloadId
+    )
+      return
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      const result = sampleDocumentImpactEvaluationSchema.parse(
+        await request('sharepoint-sample-impact-evaluation', 'POST', {
+          sourceId: selectedSource.sourceId,
+          workloadId: selectedWorkloadId,
+          assessmentId: assessment.id,
+          groundingHash,
+        }),
+      )
+      setSampleEvaluation(result)
+      setNotice('テスト用サンプル文書の影響評価を表示しました。')
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : 'サンプル文書を評価できませんでした',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
 
   function editSource(source: DocumentSource) {
     setDraft({
@@ -832,8 +908,102 @@ export function SharePointPanel({
           )}
           {factExtractionEnabled && (
             <p className="muted">
-              文書は最大17個の入力バッチに分けて抽出し、各モデル呼出しをアプリ共通の日次上限へ計上します。同じ文書版・モデル版・Prompt版・Source区分の再実行は保存済み応答を再利用します。
+              文書は最大134個の小さな入力バッチに分けて抽出し、各モデル呼出しをアプリ共通の日次上限へ計上します。同じ文書版・モデル版・Prompt版・Source区分の再実行は保存済み応答を再利用します。HTTP
+              429時はRetry-Afterを尊重して1回だけ再試行します。
             </p>
+          )}
+          {selectedSource.sampleOnly && sampleSourcesEnabled && (
+            <section
+              className="sharepoint-sample-evaluation"
+              aria-labelledby="sample-evaluation-title"
+            >
+              <h3 id="sample-evaluation-title">
+                サンプル文書の影響評価（テスト専用）
+              </h3>
+              <p className="muted">
+                確認済みFactと合成UAT評価のリソース対応を照合します。通常のAssessment、承認、GitHub
+                Projectには反映しません。文書に明記された影響を表示し、重要度・優先度は自動判定しません。
+              </p>
+              <button
+                disabled={
+                  busy ||
+                  !groundingHash ||
+                  !groundingMatchesSource ||
+                  !assessment ||
+                  assessment.workloadId !== selectedWorkloadId
+                }
+                onClick={() => void evaluateSampleDocuments()}
+                type="button"
+              >
+                サンプル文書を評価して表示
+              </button>
+              {!assessment || assessment.workloadId !== selectedWorkloadId ? (
+                <p className="muted">
+                  同じWorkloadの合成UAT評価を選択すると実行できます。
+                </p>
+              ) : null}
+              {sampleEvaluation && (
+                <div
+                  className="sharepoint-sample-evaluation-result"
+                  role="status"
+                >
+                  <strong>評価対象通知: {sampleEvaluation.eventTitle}</strong>
+                  <p>
+                    結果:{' '}
+                    {
+                      {
+                        MatchedResources: '文書事実が評価内リソースと対応',
+                        NoResourceLinks: '確認済み事実にリソース紐付けなし',
+                        NoConfirmedFacts: '確認済み事実なし',
+                        NeedsFactReview: '未確認Factがあります',
+                      }[sampleEvaluation.outcome]
+                    }
+                    {' · '}対象リソース{' '}
+                    {sampleEvaluation.matchedResourceIds.length}件
+                  </p>
+                  {sampleEvaluation.facts.length ? (
+                    <ul>
+                      {sampleEvaluation.facts.map((fact) => (
+                        <li key={fact.factId}>
+                          <strong>
+                            {fact.kind} · {fact.reviewStatus}
+                          </strong>
+                          <p>{fact.statement}</p>
+                          <small>
+                            出典: {fact.documentName}
+                            {fact.locator.heading
+                              ? ` · ${fact.locator.heading}`
+                              : ''}
+                            {fact.locator.sheet
+                              ? ` · ${fact.locator.sheet}`
+                              : ''}
+                            {fact.locator.row !== null
+                              ? ` · 行${fact.locator.row}`
+                              : ''}
+                            {fact.locator.cell ? ` · ${fact.locator.cell}` : ''}
+                          </small>
+                          {fact.matchedResourceIds.length > 0 && (
+                            <small>
+                              対応する合成評価リソース:{' '}
+                              {fact.matchedResourceIds.join(', ')}
+                            </small>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p>
+                      表示できる事実候補がありません。文書を抽出してください。
+                    </p>
+                  )}
+                  <ul>
+                    {sampleEvaluation.limitations.map((limitation) => (
+                      <li key={limitation}>{limitation}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </section>
           )}
           {!groundingMatchesSource && grounding && (
             <div className="sharepoint-version-warning" role="status">

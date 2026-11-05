@@ -9,6 +9,7 @@ import {
   correctionSchema,
   documentSourceSchema,
   documentGroundingSchema,
+  sampleDocumentImpactEvaluationSchema,
 } from '@arp/contracts'
 import {
   hash,
@@ -330,6 +331,61 @@ app.http('api', {
           groundingHash: grounding ? hash(grounding) : null,
         })
       }
+      if (
+        request.method === 'GET' &&
+        path === 'sharepoint-sample-impact-evaluation'
+      ) {
+        requireUserRole(principal, apiRolePolicy.businessContext)
+        if (
+          process.env.TEST_MODE_ENABLED !== 'true' ||
+          !sharePointSourceModeEnabled(true)
+        )
+          return reply(404, { error: 'Sample evaluation is disabled' })
+        const query = z
+          .object({
+            sourceId: z.string().min(1).max(100),
+            workloadId: z.string().min(1).max(200),
+            assessmentId: z.string().min(1).max(200),
+          })
+          .strict()
+          .parse({
+            sourceId: request.query.get('sourceId'),
+            workloadId: request.query.get('workloadId'),
+            assessmentId: request.query.get('assessmentId'),
+          })
+        const registered = await store.sharePointSource(query.sourceId)
+        if (
+          !registered?.source.sampleOnly ||
+          !registered.source.workloadIds.includes(query.workloadId)
+        )
+          return reply(404, { error: 'Sample SharePoint source not found' })
+        const assessment = await store.assessment(query.assessmentId)
+        if (
+          !isSyntheticUatAssessment(assessment) ||
+          assessment.workloadId !== query.workloadId
+        )
+          return reply(404, { error: 'Synthetic sample assessment not found' })
+        const grounding = await store.documentGrounding(query.workloadId, true)
+        if (!grounding) return reply(200, null)
+        const groundingHash = hash(grounding)
+        const evaluationId = hash({
+          sourceId: query.sourceId,
+          assessmentId: assessment.id,
+          groundingHash,
+        })
+        try {
+          return reply(
+            200,
+            sampleDocumentImpactEvaluationSchema.parse(
+              await store.get('sample-impact-evaluations', evaluationId),
+            ),
+          )
+        } catch (error) {
+          if ((error as { statusCode?: number }).statusCode === 404)
+            return reply(200, null)
+          throw error
+        }
+      }
       if (request.method === 'GET' && path === 'sharepoint-sync-status') {
         requireUserRole(principal, apiRolePolicy.sync)
         const query = z
@@ -368,6 +424,128 @@ app.http('api', {
             reviewedAt: new Date().toISOString(),
           })
           return reply(200, await store.businessContext(payload.workloadId))
+        }
+        if (path === 'sharepoint-sample-impact-evaluation') {
+          requireUserRole(principal, apiRolePolicy.businessContext)
+          if (
+            process.env.TEST_MODE_ENABLED !== 'true' ||
+            !sharePointSourceModeEnabled(true)
+          )
+            return reply(404, { error: 'Sample evaluation is disabled' })
+          const body = z
+            .object({
+              sourceId: z.string().min(1).max(100),
+              workloadId: z.string().min(1).max(200),
+              assessmentId: z.string().min(1).max(200),
+              groundingHash: z.string().regex(/^[a-f0-9]{64}$/),
+            })
+            .strict()
+            .parse(JSON.parse(await request.text()))
+          const registered = await store.sharePointSource(body.sourceId)
+          if (
+            !registered?.source.sampleOnly ||
+            !registered.source.workloadIds.includes(body.workloadId)
+          )
+            return reply(404, { error: 'Sample SharePoint source not found' })
+          const assessment = await store.assessment(body.assessmentId)
+          if (
+            !isSyntheticUatAssessment(assessment) ||
+            assessment.workloadId !== body.workloadId
+          )
+            return reply(404, {
+              error: 'Synthetic sample assessment not found',
+            })
+          const grounding = await store.documentGrounding(body.workloadId, true)
+          if (!grounding || hash(grounding) !== body.groundingHash)
+            return reply(409, {
+              error: 'Sample document facts changed; reload before evaluation',
+            })
+          const revisions = new Map(
+            grounding.documentRevisions.map((revision) => [
+              `${revision.sourceId}:${revision.itemId}:${revision.contentHash}`,
+              revision,
+            ]),
+          )
+          const assessmentResources = new Set(
+            assessment.resources.map((resource) => resource.id.toLowerCase()),
+          )
+          const facts = grounding.facts.map((fact) => {
+            const revision = revisions.get(
+              `${fact.sourceId}:${fact.documentItemId}:${fact.documentContentHash}`,
+            )
+            if (!revision)
+              throw new Error('Sample fact document revision is missing')
+            const isConfirmed =
+              fact.reviewStatus === 'Confirmed' &&
+              Boolean(fact.reviewedBy && fact.reviewedAt)
+            const linkedResourceIds = isConfirmed
+              ? (fact.resourceIds ?? []).slice(0, 20)
+              : []
+            return {
+              factId: fact.factId,
+              kind: fact.kind,
+              statement: fact.statement,
+              reviewStatus: fact.reviewStatus,
+              documentName: revision.name,
+              locator: fact.locator,
+              linkedResourceIds,
+              matchedResourceIds: linkedResourceIds.filter((resourceId) =>
+                assessmentResources.has(resourceId.toLowerCase()),
+              ),
+            }
+          })
+          const allMatchedResourceIds = [
+            ...new Set(facts.flatMap((fact) => fact.matchedResourceIds)),
+          ]
+          const matchedResourceIds = allMatchedResourceIds.slice(0, 500)
+          const displayedFacts = facts.slice(0, 500)
+          const candidateCount = facts.filter(
+            (fact) => fact.reviewStatus === 'Candidate',
+          ).length
+          const confirmedCount = facts.filter(
+            (fact) => fact.reviewStatus === 'Confirmed',
+          ).length
+          const outcome = candidateCount
+            ? 'NeedsFactReview'
+            : confirmedCount === 0
+              ? 'NoConfirmedFacts'
+              : allMatchedResourceIds.length
+                ? 'MatchedResources'
+                : 'NoResourceLinks'
+          const evaluation = sampleDocumentImpactEvaluationSchema.parse({
+            schemaVersion: '1',
+            evaluationId: hash({
+              sourceId: body.sourceId,
+              assessmentId: assessment.id,
+              groundingHash: body.groundingHash,
+            }),
+            sampleOnly: true,
+            assessmentId: assessment.id,
+            workloadId: body.workloadId,
+            eventTitle: assessment.event.title,
+            groundingHash: body.groundingHash,
+            evaluatedAt: new Date().toISOString(),
+            outcome,
+            matchedResourceIds,
+            facts: displayedFacts,
+            limitations: [
+              'この結果はテスト専用のサンプル文書評価で、通常のAssessmentやGitHub Projectには登録されません。',
+              '文書に明記された事実と、Governanceが確認して合成Assessment内のリソースへ紐付けた関係を表示します。',
+              '影響度・優先度は判定しません。サンプル文書の記述だけから実環境の影響を確定できません。',
+              ...(facts.length > displayedFacts.length ||
+              allMatchedResourceIds.length > matchedResourceIds.length
+                ? [
+                    '表示件数の安全上限（Fact 500件／リソース500件）を超えた残りは省略しています。',
+                  ]
+                : []),
+            ],
+          })
+          await store.put(
+            'sample-impact-evaluations',
+            evaluation.evaluationId,
+            evaluation,
+          )
+          return reply(200, evaluation)
         }
         if (path === 'sharepoint-source') {
           requireUserRole(principal, apiRolePolicy.businessContext)

@@ -310,8 +310,8 @@ test('document fact extraction uses a bounded untrusted-input prompt and binds c
   const submittedBlocks = JSON.parse(messages[1]!.content) as {
     blocks: Array<Record<string, unknown>>
   }
-  assert.equal(requestBody?.max_completion_tokens, 1500)
-  assert.equal(DOCUMENT_FACT_EXTRACTION_MAX_COMPLETION_TOKENS, 1500)
+  assert.equal(requestBody?.max_completion_tokens, 500)
+  assert.equal(DOCUMENT_FACT_EXTRACTION_MAX_COMPLETION_TOKENS, 500)
   assert.equal(requestBody?.reasoning_effort, 'none')
   assert.equal(responseSchema.additionalProperties, false)
   assert.equal(submittedBlocks.blocks[0]!.blockId, 'paragraph-1')
@@ -320,7 +320,7 @@ test('document fact extraction uses a bounded untrusted-input prompt and binds c
   assert.equal(result.facts[0]!.sourceId, metadata.sourceId)
   assert.equal(result.facts[0]!.sampleOnly, true)
   assert.equal(result.facts[0]!.reviewStatus, 'Candidate')
-  assert.equal(result.promptVersion, '2026-11-04.1')
+  assert.equal(result.promptVersion, '2026-11-05.1')
   assert.equal(rawRecorded, true)
 })
 
