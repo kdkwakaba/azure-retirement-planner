@@ -56,12 +56,12 @@ SharePointに格納した複数の設計書・ドキュメントから、業務�
 
 ### 現段階の同期起動契約
 
-- Governanceが`POST /api/sharepoint-source`で同一TenantのSourceを登録・更新する。`sampleOnly`は明示必須で、テストモードではtrue、実業務モードではfalseのみ受け付ける。テストと実業務Sourceの処理は同時に有効化できない。
-- 初期設定は専用サンプルフォルダ1件に限定する。設定画面ではSite／Drive／Folder Item IDを指定し、Site URLからIDを解決する機能は未実装。
+- Governanceが`POST /api/sharepoint-source`で同一TenantのSourceを登録・更新する。`sampleOnly`は明示必須で、テストモードではtrue、実業務モードではfalseのみ処理できる。テストと実業務Sourceの処理は同時に有効化できない。初期設定は各データ区分につき1 Sourceとする。
+- 初期設定はサンプル用と実業務用を各1フォルダに限定する。設定画面ではSite／Drive／Folder Item IDを指定し、Site URLからIDを解決する機能は未実装。
 - Operator／Governanceが`POST /api/sharepoint-sync`で`sourceId`を指定する。`SHAREPOINT_SYNC_ENABLED`が`true`の場合だけQueueへ登録する。
 - `GET /api/sharepoint-sync-status?runId=...`でPending／Queued／Processing／Retrying／Succeeded／Failedを確認する。失敗は分類・HTTP状態だけを保持し、Graph本文や例外文字列は保存しない。
 - Queue再試行が尽きるとPoison Queue処理がFailedを記録する。未完了・失敗RunはSnapshotの削除差分に使わない。
-- Governance向けSource登録・更新画面、Operator／Governance向け同期起動・状態表示・取得済み文書一覧を実装済み。Governanceは文書を選び、既存の日次モデル呼出枠を使って明示的に事実候補を抽出し、出典位置を確認して文面修正・確認済み／除外を保存できる。確認者と時刻をGrounding版に記録する。抽出は文書内容Hash・Prompt版・Deployment・Model版ごとに冪等化する。Site URLからIDを解決する機能は未実装。
+- Governance向けSource登録・更新画面、Operator／Governance向け同期起動・状態表示・取得済み文書一覧を実装済み。Governanceは文書を選び、既存の日次モデル呼出枠を使って明示的に事実候補を抽出し、出典位置を確認して文面修正・確認済み／除外を保存できる。確認者と時刻をGrounding版に記録する。抽出は文書内容Hash・Prompt版・Deployment・Model版ごとに冪等化する。実業務Sourceは`TEST_MODE_ENABLED=false`かつ`SHAREPOINT_LIVE_SOURCES_ENABLED=true`のときに登録・同期・抽出・レビューできる。Site URLからIDを解決する機能は未実装。
 - `GET /api/sharepoint-facts`と`POST /api/sharepoint-facts/extract`／`review`はGovernance限定かつSource IDで区分する。サンプルSourceは`TEST_MODE_ENABLED=true`、実業務Sourceは`TEST_MODE_ENABLED=false`かつ`SHAREPOINT_LIVE_SOURCES_ENABLED=true`の場合だけ処理可能。抽出には別途`SHAREPOINT_FACT_EXTRACTION_ENABLED=true`も必要。確認済みのsampleOnly=true事実は通常Assessmentへ流れず、sampleOnly=falseの確認済み事実だけが対象Workloadの通常評価へ接続される。
 - 事実抽出は最大17バッチ、各12,000文字・60ブロックを上限とし、文書テキスト上限200,000文字に対応する。各バッチのモデル呼出を既存の日次上限へ個別計上する。上限を超える文書は失敗扱いにし、部分的なFact集合をGroundingへ保存しない。失敗段階はToken取得・モデル要求・応答保存・応答解析として個別に記録する。
 - API Managed IdentityへのGraph `Sites.Selected`割当てをMicrosoft Graph Bicep拡張の専用Bootstrapとして宣言管理する。対象Siteへの`read` grantはGraph Bicepで宣言できないため管理者のGraph Explorer手順として分離。いずれもAzure環境には未適用。既定では同期フラグを無効にし、画面実装だけで実接続可能とは扱わない。手順は[SharePoint接続ガイド](sharepoint-connection-guide.md)を参照。

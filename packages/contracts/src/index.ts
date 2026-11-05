@@ -265,12 +265,6 @@ export const sharePointSyncRunSchema = z
   })
   .strict()
   .superRefine((run, context) => {
-    if (run.sampleOnly !== true)
-      context.addIssue({
-        code: 'custom',
-        path: ['sampleOnly'],
-        message: 'Initial SharePoint sync is restricted to sample sources',
-      })
     if (run.state === 'Succeeded' && run.snapshotHash === null)
       context.addIssue({
         code: 'custom',

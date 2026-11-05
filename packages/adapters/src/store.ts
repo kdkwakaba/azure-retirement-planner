@@ -403,12 +403,21 @@ export class AzureStore {
   }
   async saveSharePointSource(value: DocumentSource): Promise<string> {
     const source = documentSourceSchema.parse(value)
-    if (!source.sampleOnly)
-      throw new Error('Only sample SharePoint sources can be registered')
     const sourceHash = hash(source)
     const current = await this.sharePointSource(source.sourceId)
-    if (!current && (await this.sharePointSources()).length > 0)
-      throw new Error('Initial SharePoint setup supports one sample source')
+    if (!current) {
+      const sameModeSources = (await this.sharePointSources()).filter(
+        (registered) => registered.sampleOnly === source.sampleOnly,
+      )
+      if (sameModeSources.length > 0)
+        throw new Error(
+          'Initial SharePoint setup supports one source per data mode',
+        )
+    }
+    if (current && current.source.sampleOnly !== source.sampleOnly)
+      throw new Error(
+        'Changing a SharePoint source data mode requires a new source ID',
+      )
     if (
       current &&
       current.sourceHash !== sourceHash &&
@@ -497,7 +506,6 @@ export class AzureStore {
   }): Promise<SharePointSyncRun> {
     const source = documentSourceSchema.parse(input.source)
     if (
-      !source.sampleOnly ||
       !/^[a-f0-9]{64}$/.test(input.sourceConfigurationHash) ||
       input.sourceConfigurationHash !== hash(source)
     )
