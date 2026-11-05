@@ -20,6 +20,7 @@ const MAX_SPREADSHEET_CELLS = 20_000
 export const DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION = '2026-11-04.1'
 export const DOCUMENT_FACT_EXTRACTION_MAX_BLOCKS = 60
 export const DOCUMENT_FACT_EXTRACTION_MAX_INPUT_CHARACTERS = 12_000
+export const DOCUMENT_FACT_EXTRACTION_MAX_BATCHES = 3
 export const DOCUMENT_FACT_EXTRACTION_MAX_COMPLETION_TOKENS = 1_500
 const unsupportedSchemaKeywords = new Set([
   'maxLength',
@@ -110,6 +111,72 @@ export function bindDocumentFactProposalsFromResponse(input: {
     availableResources: input.availableResources,
   })
 }
+
+export class DocumentFactInputLimitError extends Error {
+  constructor() {
+    super('Document exceeds the bounded fact extraction input limit')
+    this.name = 'DocumentFactInputLimitError'
+  }
+}
+
+/** Split large documents into bounded, deterministic batches without logging text. */
+export function splitDocumentTextForFactExtraction(
+  document: DocumentText,
+): DocumentText[] {
+  if (document.blocks.length > DOCUMENT_FACT_EXTRACTION_MAX_BLOCKS)
+    throw new DocumentFactInputLimitError()
+  const batches: DocumentText[] = []
+  let blocks: DocumentText['blocks'] = []
+  let characters = 0
+  const flush = () => {
+    if (!blocks.length) return
+    batches.push({ ...document, blocks })
+    blocks = []
+    characters = 0
+  }
+  for (const block of document.blocks) {
+    let start = 0
+    while (start < block.text.length) {
+      let end = Math.min(
+        start + DOCUMENT_FACT_EXTRACTION_MAX_INPUT_CHARACTERS,
+        block.text.length,
+      )
+      if (end < block.text.length) {
+        const boundary = block.text.lastIndexOf(' ', end)
+        if (
+          boundary >
+          start + DOCUMENT_FACT_EXTRACTION_MAX_INPUT_CHARACTERS * 0.6
+        )
+          end = boundary + 1
+      }
+      const text = block.text.slice(start, end)
+      const duplicateBlock = blocks.some(
+        (candidate) => candidate.blockId === block.blockId,
+      )
+      if (
+        blocks.length &&
+        (characters + text.length >
+          DOCUMENT_FACT_EXTRACTION_MAX_INPUT_CHARACTERS ||
+          duplicateBlock ||
+          blocks.length >= DOCUMENT_FACT_EXTRACTION_MAX_BLOCKS)
+      )
+        flush()
+      blocks.push({ ...block, text })
+      characters += text.length
+      start = end
+    }
+  }
+  flush()
+  if (batches.length > DOCUMENT_FACT_EXTRACTION_MAX_BATCHES)
+    throw new DocumentFactInputLimitError()
+  return batches
+}
+
+export type DocumentFactExtractionStage =
+  | 'model-token'
+  | 'model-request'
+  | 'model-response-save'
+  | 'model-response-parse'
 
 export function bindDocumentFactProposals(input: {
   document: DocumentText
@@ -211,6 +278,7 @@ export async function extractDocumentFacts(
   workloadId: string,
   recordRaw: (raw: unknown) => Promise<void>,
   availableResources: ResourceImpact[] = [],
+  onStage?: (stage: DocumentFactExtractionStage) => void,
 ): Promise<{ facts: DocumentFact[]; raw: unknown; promptVersion: string }> {
   if (!workloadId.trim() || workloadId.length > 200)
     throw new Error('Invalid document fact workload ID')
@@ -232,11 +300,13 @@ export async function extractDocumentFacts(
     0,
   )
   if (textCharacters > DOCUMENT_FACT_EXTRACTION_MAX_INPUT_CHARACTERS)
-    throw new Error('Document fact extraction input exceeds the limit')
+    throw new DocumentFactInputLimitError()
 
+  onStage?.('model-token')
   const token = await credential.getToken(
     'https://cognitiveservices.azure.com/.default',
   )
+  onStage?.('model-request')
   const raw = await jsonRequest(
     safeModelEndpoint(endpoint) + '/openai/v1/chat/completions',
     {
@@ -278,7 +348,9 @@ export async function extractDocumentFacts(
       }),
     },
   )
+  onStage?.('model-response-save')
   await recordRaw(raw)
+  onStage?.('model-response-parse')
   const facts = bindDocumentFactProposalsFromResponse({
     document,
     workloadId,

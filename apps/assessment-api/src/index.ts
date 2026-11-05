@@ -36,6 +36,7 @@ import {
   bindDocumentFactProposalsFromResponse,
   documentFactDependencyResourceIds,
   DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION,
+  splitDocumentTextForFactExtraction,
 } from '@arp/adapters'
 import {
   assessSnapshot,
@@ -47,6 +48,10 @@ import {
   processSharePointSync,
   synchronize,
 } from './service.ts'
+import {
+  sharePointFactExtractionModeEnabled,
+  sharePointSourceModeEnabled,
+} from './sharepoint-mode.ts'
 import {
   createSyntheticUatAssessment,
   hasCompleteSyntheticUatIssueHierarchy,
@@ -131,6 +136,8 @@ app.http('api', {
           sharePointSyncEnabled: process.env.SHAREPOINT_SYNC_ENABLED === 'true',
           sharePointFactExtractionEnabled:
             process.env.SHAREPOINT_FACT_EXTRACTION_ENABLED === 'true',
+          sharePointSampleSourcesEnabled: sharePointSourceModeEnabled(true),
+          sharePointLiveSourcesEnabled: sharePointSourceModeEnabled(false),
           canSync:
             principal.kind === 'User' &&
             principal.roles.some((role) =>
@@ -298,10 +305,26 @@ app.http('api', {
       if (request.method === 'GET' && path === 'sharepoint-facts') {
         requireUserRole(principal, apiRolePolicy.businessContext)
         const query = z
-          .object({ workloadId: z.string().min(1).max(200) })
+          .object({
+            sourceId: z.string().min(1).max(100),
+            workloadId: z.string().min(1).max(200),
+          })
           .strict()
-          .parse({ workloadId: request.query.get('workloadId') })
-        const grounding = await store.documentGrounding(query.workloadId, true)
+          .parse({
+            sourceId: request.query.get('sourceId'),
+            workloadId: request.query.get('workloadId'),
+          })
+        const registered = await store.sharePointSource(query.sourceId)
+        if (
+          !registered ||
+          !registered.source.workloadIds.includes(query.workloadId) ||
+          !sharePointSourceModeEnabled(registered.source.sampleOnly)
+        )
+          return reply(404, { error: 'Eligible SharePoint source not found' })
+        const grounding = await store.documentGrounding(
+          query.workloadId,
+          registered.source.sampleOnly,
+        )
         return reply(200, {
           grounding,
           groundingHash: grounding ? hash(grounding) : null,
@@ -360,6 +383,7 @@ app.http('api', {
               displayName: z.string().min(1).max(200),
               workloadIds: z.array(z.string().min(1).max(200)).min(1),
               configurationVersion: z.string().min(1).max(100),
+              sampleOnly: z.boolean(),
             })
             .strict()
             .parse(JSON.parse(content))
@@ -368,8 +392,10 @@ app.http('api', {
             tenantId: config().tenantId,
             includeSubfolders: true,
             allowedExtensions: ['.docx', '.xlsx'],
-            sampleOnly: true,
+            sampleOnly: input.sampleOnly,
           })
+          if (!sharePointSourceModeEnabled(source.sampleOnly))
+            return reply(403, { error: 'SharePoint source mode is disabled' })
           const sourceHash = await store.saveSharePointSource(source)
           return reply(200, { source, sourceHash })
         }
@@ -386,11 +412,14 @@ app.http('api', {
           const registered = await store.sharePointSource(body.sourceId)
           if (
             !registered ||
-            registered.source.sampleOnly !== true ||
+            !sharePointSourceModeEnabled(registered.source.sampleOnly) ||
             !registered.source.workloadIds.includes(body.workloadId)
           )
-            return reply(404, { error: 'Eligible sample source not found' })
-          const existing = await store.documentGrounding(body.workloadId, true)
+            return reply(404, { error: 'Eligible SharePoint source not found' })
+          const existing = await store.documentGrounding(
+            body.workloadId,
+            registered.source.sampleOnly,
+          )
           if (!existing || hash(existing) !== body.groundingHash)
             return reply(409, {
               error: 'Document facts changed; reload before reset',
@@ -406,7 +435,7 @@ app.http('api', {
           const reset = documentGroundingSchema.parse({
             schemaVersion: '1',
             workloadId: body.workloadId,
-            sampleOnly: true,
+            sampleOnly: registered.source.sampleOnly,
             sourceConfigurationVersion: registered.source.configurationVersion,
             documentRevisions: [],
             facts: [],
@@ -431,8 +460,6 @@ app.http('api', {
         if (path === 'sharepoint-facts/extract') {
           processingStage = 'sharepoint-fact-extraction-request'
           requireUserRole(principal, apiRolePolicy.businessContext)
-          if (process.env.SHAREPOINT_FACT_EXTRACTION_ENABLED !== 'true')
-            return reply(503, { error: 'SharePoint fact extraction disabled' })
           const body = z
             .object({
               sourceId: z.string().min(1).max(100),
@@ -446,10 +473,12 @@ app.http('api', {
           const registered = await store.sharePointSource(body.sourceId)
           if (
             !registered ||
-            registered.source.sampleOnly !== true ||
+            !sharePointFactExtractionModeEnabled(
+              registered.source.sampleOnly,
+            ) ||
             !registered.source.workloadIds.includes(body.workloadId)
           )
-            return reply(404, { error: 'Eligible sample source not found' })
+            return reply(404, { error: 'Eligible SharePoint source not found' })
           processingStage = 'sharepoint-fact-assessment-read'
           const assessment = body.assessmentId
             ? await store.assessment(body.assessmentId)
@@ -468,13 +497,16 @@ app.http('api', {
             snapshot.configurationVersion !==
               registered.source.configurationVersion ||
             !revision ||
-            revision.sampleOnly !== true
+            revision.sampleOnly !== registered.source.sampleOnly
           )
             return reply(409, {
               error: 'Document is not in the current snapshot',
             })
           processingStage = 'sharepoint-fact-grounding-read'
-          const existing = await store.documentGrounding(body.workloadId, true)
+          const existing = await store.documentGrounding(
+            body.workloadId,
+            registered.source.sampleOnly,
+          )
           if (
             existing &&
             existing.sourceConfigurationVersion !==
@@ -502,6 +534,8 @@ app.http('api', {
             sampleOnly: revision.sampleOnly,
             observedAt: revision.observedAt,
           })
+          processingStage = 'sharepoint-fact-batching'
+          const batches = splitDocumentTextForFactExtraction(extractedText)
           const priorExtraction = existing?.extractionRecords?.find(
             (record) =>
               record.sourceId === body.sourceId &&
@@ -512,7 +546,7 @@ app.http('api', {
               record.deployment === deployment &&
               record.modelVersion === modelVersion,
           )
-          const rawId = hash({
+          const legacyRawId = hash({
             sourceId: body.sourceId,
             itemId: body.itemId,
             contentHash: revision.contentHash,
@@ -520,51 +554,82 @@ app.http('api', {
             deployment,
             modelVersion,
           })
-          let raw: unknown
-          let reusedExtraction = false
-          if (priorExtraction) {
+          const factCandidates = new Map<
+            string,
+            ReturnType<typeof bindDocumentFactProposalsFromResponse>[number]
+          >()
+          let reusedExtraction = batches.length > 0
+          for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+            const batch = batches[batchIndex]!
+            const rawId = hash({
+              sourceId: body.sourceId,
+              itemId: body.itemId,
+              contentHash: revision.contentHash,
+              promptVersion: DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION,
+              deployment,
+              modelVersion,
+              sampleOnly: registered.source.sampleOnly,
+              batchIndex,
+              batchHash: hash(
+                batch.blocks.map(({ blockId, text }) => ({ blockId, text })),
+              ),
+            })
+            let raw: unknown
             processingStage = 'sharepoint-fact-cached-response-read'
             try {
               raw = await store.get('model-raw', rawId)
-              reusedExtraction = true
             } catch (error) {
               if ((error as { statusCode?: number }).statusCode !== 404)
                 throw error
             }
+            if (
+              raw === undefined &&
+              priorExtraction &&
+              registered.source.sampleOnly &&
+              batches.length === 1
+            ) {
+              try {
+                raw = await store.get('model-raw', legacyRawId)
+              } catch (error) {
+                if ((error as { statusCode?: number }).statusCode !== 404)
+                  throw error
+              }
+            }
+            if (raw === undefined) {
+              reusedExtraction = false
+              processingStage = 'sharepoint-fact-budget-reservation'
+              await store.reserveModelCall(config().modelCalls)
+              const batchResult = await extractDocumentFacts(
+                endpoint,
+                deployment,
+                batch,
+                body.workloadId,
+                async (response) => store.put('model-raw', rawId, response),
+                assessment?.resources ?? [],
+                (stage) => {
+                  processingStage = `sharepoint-fact-${stage}`
+                },
+              )
+              for (const fact of batchResult.facts)
+                factCandidates.set(fact.factId, fact)
+              continue
+            }
+            const facts = bindDocumentFactProposalsFromResponse({
+              document: batch,
+              workloadId: body.workloadId,
+              raw,
+              availableResources: assessment?.resources ?? [],
+            })
+            for (const fact of facts) factCandidates.set(fact.factId, fact)
           }
-          let extraction
-          if (extractedText.blocks.length === 0) {
-            extraction = {
-              facts: [],
-              promptVersion: DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION,
-            }
-          } else if (raw !== undefined) {
-            extraction = {
-              facts: bindDocumentFactProposalsFromResponse({
-                document: extractedText,
-                workloadId: body.workloadId,
-                raw,
-                availableResources: assessment?.resources ?? [],
-              }),
-              promptVersion: DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION,
-            }
-          } else {
-            processingStage = 'sharepoint-fact-budget-reservation'
-            await store.reserveModelCall(config().modelCalls)
-            processingStage = 'sharepoint-fact-model-extraction'
-            extraction = await extractDocumentFacts(
-              endpoint,
-              deployment,
-              extractedText,
-              body.workloadId,
-              async (response) => store.put('model-raw', rawId, response),
-              assessment?.resources ?? [],
-            )
+          const extraction = {
+            facts: [...factCandidates.values()],
+            promptVersion: DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION,
           }
           const current = existing ?? {
             schemaVersion: '1' as const,
             workloadId: body.workloadId,
-            sampleOnly: true,
+            sampleOnly: registered.source.sampleOnly,
             sourceConfigurationVersion: registered.source.configurationVersion,
             documentRevisions: [],
             facts: [],
@@ -674,6 +739,7 @@ app.http('api', {
           requireUserRole(principal, apiRolePolicy.businessContext)
           const body = z
             .object({
+              sourceId: z.string().min(1).max(100),
               workloadId: z.string().min(1).max(200),
               assessmentId: z.string().min(1).max(200).nullable(),
               groundingHash: z.string().regex(/^[a-f0-9]{64}$/),
@@ -699,7 +765,17 @@ app.http('api', {
             })
             .strict()
             .parse(JSON.parse(await request.text()))
-          const existing = await store.documentGrounding(body.workloadId, true)
+          const registered = await store.sharePointSource(body.sourceId)
+          if (
+            !registered ||
+            !registered.source.workloadIds.includes(body.workloadId) ||
+            !sharePointSourceModeEnabled(registered.source.sampleOnly)
+          )
+            return reply(404, { error: 'Eligible SharePoint source not found' })
+          const existing = await store.documentGrounding(
+            body.workloadId,
+            registered.source.sampleOnly,
+          )
           if (!existing || hash(existing) !== body.groundingHash)
             return reply(409, {
               error: 'Document facts changed; reload before review',
@@ -854,9 +930,11 @@ app.http('api', {
             return reply(404, { error: 'SharePoint source not found' })
           if (
             registered.source.tenantId !== config().tenantId ||
-            registered.source.sampleOnly !== true
+            !sharePointSourceModeEnabled(registered.source.sampleOnly)
           )
-            return reply(400, { error: 'SharePoint source is not eligible' })
+            return reply(400, {
+              error: 'SharePoint source mode is not enabled',
+            })
           const now = new Date().toISOString()
           const run = await store.createSharePointSyncRun({
             runId: randomUUID(),

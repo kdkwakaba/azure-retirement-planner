@@ -20,4 +20,5 @@ param decisionReevaluationEnabled = toLower(readEnvironmentVariable('ARP_DECISIO
 param projectProgressSyncEnabled = toLower(readEnvironmentVariable('ARP_PROJECT_PROGRESS_SYNC_ENABLED', 'false')) == 'true'
 param sharePointSyncEnabled = toLower(readEnvironmentVariable('ARP_SHAREPOINT_SYNC_ENABLED', 'false')) == 'true'
 param sharePointFactExtractionEnabled = toLower(readEnvironmentVariable('ARP_SHAREPOINT_FACT_EXTRACTION_ENABLED', 'false')) == 'true'
+param sharePointLiveSourcesEnabled = toLower(readEnvironmentVariable('ARP_SHAREPOINT_LIVE_SOURCES_ENABLED', 'false')) == 'true'
 param maxModelCallsPerDay = 200

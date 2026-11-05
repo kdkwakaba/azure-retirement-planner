@@ -6,6 +6,8 @@ import {
   bindDocumentFactProposals,
   DOCUMENT_FACT_EXTRACTION_MAX_COMPLETION_TOKENS,
   DOCUMENT_FACT_EXTRACTION_MAX_INPUT_CHARACTERS,
+  DOCUMENT_FACT_EXTRACTION_MAX_BATCHES,
+  splitDocumentTextForFactExtraction,
   extractDocumentFacts,
   extractDocumentText,
 } from '@arp/adapters'
@@ -353,6 +355,48 @@ test('document fact extraction rejects oversized batches before model access', a
       'sample-workload',
       async () => {},
     ),
-    /input exceeds the limit/,
+    /bounded fact extraction input limit/,
+  )
+})
+
+test('large document text is divided into bounded fact extraction batches', () => {
+  const document = documentTextSchema.parse({
+    schemaVersion: '1',
+    revision: {
+      ...metadata,
+      contentHash: 'd'.repeat(64),
+    },
+    blocks: [
+      {
+        sourceId: metadata.sourceId,
+        itemId: metadata.itemId,
+        contentHash: 'd'.repeat(64),
+        blockId: 'paragraph-1',
+        kind: 'Paragraph',
+        text: 'a'.repeat(DOCUMENT_FACT_EXTRACTION_MAX_INPUT_CHARACTERS + 1000),
+        heading: null,
+        sheet: null,
+        row: null,
+        cell: null,
+        sampleOnly: true,
+      },
+    ],
+  })
+
+  const batches = splitDocumentTextForFactExtraction(document)
+  assert.ok(batches.length > 1)
+  assert.ok(batches.length <= DOCUMENT_FACT_EXTRACTION_MAX_BATCHES)
+  assert.ok(
+    batches.every(
+      (batch) =>
+        batch.blocks.reduce((total, block) => total + block.text.length, 0) <=
+        DOCUMENT_FACT_EXTRACTION_MAX_INPUT_CHARACTERS,
+    ),
+  )
+  assert.equal(
+    batches
+      .flatMap((batch) => batch.blocks)
+      .reduce((total, block) => total + block.text.length, 0),
+    document.blocks.reduce((total, block) => total + block.text.length, 0),
   )
 })
