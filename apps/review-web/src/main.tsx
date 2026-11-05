@@ -842,25 +842,6 @@ function App() {
           {testModeEnabled && <span className="notice">テストモード</span>}
           <span>評価対象は読み取り専用</span>
         </div>
-        {canSync && (
-          <SharePointPanel
-            canConfigure={canManageSharePoint}
-            canSync={canSync}
-            syncEnabled={sharePointSyncEnabled}
-            factExtractionEnabled={sharePointFactExtractionEnabled}
-            sampleSourcesEnabled={sharePointSampleSourcesEnabled}
-            liveSourcesEnabled={sharePointLiveSourcesEnabled}
-            assessment={
-              current
-                ? {
-                    id: current.id,
-                    workloadId: current.workloadId,
-                    resources: current.resources,
-                  }
-                : null
-            }
-          />
-        )}
         <section className="operations-summary" aria-labelledby="summary-title">
           <h2 id="summary-title">評価状況</h2>
           <p>
@@ -1708,6 +1689,28 @@ function App() {
             )}
           </section>
         </div>
+        {canSync && (
+          <details className="sharepoint-panel-disclosure">
+            <summary>SharePoint設計書（同期・Fact確認）</summary>
+            <SharePointPanel
+              canConfigure={canManageSharePoint}
+              canSync={canSync}
+              syncEnabled={sharePointSyncEnabled}
+              factExtractionEnabled={sharePointFactExtractionEnabled}
+              sampleSourcesEnabled={sharePointSampleSourcesEnabled}
+              liveSourcesEnabled={sharePointLiveSourcesEnabled}
+              assessment={
+                current
+                  ? {
+                      id: current.id,
+                      workloadId: current.workloadId,
+                      resources: current.resources,
+                    }
+                  : null
+              }
+            />
+          </details>
+        )}
       </main>
       {confirmingUatExport && (
         <div
