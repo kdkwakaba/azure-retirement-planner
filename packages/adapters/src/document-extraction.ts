@@ -20,7 +20,7 @@ const MAX_SPREADSHEET_CELLS = 20_000
 export const DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION = '2026-11-04.1'
 export const DOCUMENT_FACT_EXTRACTION_MAX_BLOCKS = 60
 export const DOCUMENT_FACT_EXTRACTION_MAX_INPUT_CHARACTERS = 12_000
-export const DOCUMENT_FACT_EXTRACTION_MAX_BATCHES = 3
+export const DOCUMENT_FACT_EXTRACTION_MAX_BATCHES = 17
 export const DOCUMENT_FACT_EXTRACTION_MAX_COMPLETION_TOKENS = 1_500
 const unsupportedSchemaKeywords = new Set([
   'maxLength',
@@ -123,8 +123,6 @@ export class DocumentFactInputLimitError extends Error {
 export function splitDocumentTextForFactExtraction(
   document: DocumentText,
 ): DocumentText[] {
-  if (document.blocks.length > DOCUMENT_FACT_EXTRACTION_MAX_BLOCKS)
-    throw new DocumentFactInputLimitError()
   const batches: DocumentText[] = []
   let blocks: DocumentText['blocks'] = []
   let characters = 0

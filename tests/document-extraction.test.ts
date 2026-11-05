@@ -400,3 +400,34 @@ test('large document text is divided into bounded fact extraction batches', () =
     document.blocks.reduce((total, block) => total + block.text.length, 0),
   )
 })
+
+test('documents with more than 60 blocks are divided without dropping blocks', () => {
+  const document = documentTextSchema.parse({
+    schemaVersion: '1',
+    revision: {
+      ...metadata,
+      contentHash: 'e'.repeat(64),
+    },
+    blocks: Array.from({ length: 61 }, (_, index) => ({
+      sourceId: metadata.sourceId,
+      itemId: metadata.itemId,
+      contentHash: 'e'.repeat(64),
+      blockId: `paragraph-${index + 1}`,
+      kind: 'Paragraph' as const,
+      text: `設計事項 ${index + 1}`,
+      heading: null,
+      sheet: null,
+      row: null,
+      cell: null,
+      sampleOnly: true,
+    })),
+  })
+
+  const batches = splitDocumentTextForFactExtraction(document)
+  assert.equal(batches.length, 2)
+  assert.ok(batches.every((batch) => batch.blocks.length <= 60))
+  assert.deepEqual(
+    batches.flatMap((batch) => batch.blocks.map((block) => block.blockId)),
+    document.blocks.map((block) => block.blockId),
+  )
+})

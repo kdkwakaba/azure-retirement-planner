@@ -1,6 +1,6 @@
 # SharePoint設計書を利用した業務影響評価の実装計画
 
-2026-11-05 / PR #144をmainへ配置済み。同期は成功しDOCX／XLSXの2件を列挙したが、両方の事実抽出はHTTP 503で失敗し、groundingも影響評価も完了していない。PR #144時点では失敗段階が広く、原因を特定できなかった。本変更では失敗段階をモデルToken取得・モデル要求・応答保存・応答解析へ分割し、文書抽出入力の上限超過が疑われるケースに最大3バッチ（各12,000文字）の分割を追加する。また、Source区分をテスト／実業務モードで相互排他的にし、サンプル文書は`TEST_MODE_ENABLED=true`のときだけ同期・抽出・レビューできるようにする。実業務Sourceはテストモードを無効化したうえで、専用の`SHAREPOINT_LIVE_SOURCES_ENABLED=true`を明示した場合だけ有効になる。通常Assessmentへ渡るのは既存仕様どおりGovernanceが確認した`sampleOnly=false`の事実だけ。PR配置後に合成文書の再抽出・人手確認・影響評価を再実施する必要がある。SharePointの実業務文書はまだ存在せず、実文書による品質評価は未実施。Graph権限・Site grant、実モデル品質、曖昧な別名候補の自動解決も未完了。
+2026-11-05 / PR #145をmainへ配置済み。同期は成功しDOCX／XLSXの2件を列挙したが、Fact抽出はHTTP 503で失敗し、groundingも影響評価も完了していない。新しいエラー段階は`sharepoint-fact-batching`、型は`DocumentFactInputLimitError`でモデル呼出前に停止した。PR #145では60ブロック超の文書を分割する前に拒否しており、総入力上限も36,000文字（3バッチ）だった。この変更で1バッチ最大60ブロックの制約は維持しながら、最大17バッチ（各12,000文字、文書テキスト上限200,000文字に対応）に広げ、通常サイズのDOCX／XLSXを分割して処理する。テスト用サンプルは`TEST_MODE_ENABLED=true`の場合にだけ処理可能、実業務Sourceは`TEST_MODE_ENABLED=false`かつ`SHAREPOINT_LIVE_SOURCES_ENABLED=true`の場合だけ処理可能。サンプルFactはsampleOnly=trueのまま隔離され、通常Assessmentへは流れない。実業務Sourceで確認済みのsampleOnly=false Factだけが通常Workload評価に使われる。今回の評価はこの抽出上限修正の配置後に再開する。実業務文書は未登録で、実業務文書による品質評価は未実施。Graph権限・Site grant、実モデル品質、曖昧な別名候補の自動解決も未完了。
 
 ## 目的と合意した範囲
 
@@ -63,7 +63,7 @@ SharePointに格納した複数の設計書・ドキュメントから、業務�
 - Queue再試行が尽きるとPoison Queue処理がFailedを記録する。未完了・失敗RunはSnapshotの削除差分に使わない。
 - Governance向けSource登録・更新画面、Operator／Governance向け同期起動・状態表示・取得済み文書一覧を実装済み。Governanceは文書を選び、既存の日次モデル呼出枠を使って明示的に事実候補を抽出し、出典位置を確認して文面修正・確認済み／除外を保存できる。確認者と時刻をGrounding版に記録する。抽出は文書内容Hash・Prompt版・Deployment・Model版ごとに冪等化する。Site URLからIDを解決する機能は未実装。
 - `GET /api/sharepoint-facts`と`POST /api/sharepoint-facts/extract`／`review`はGovernance限定かつSource IDで区分する。サンプルSourceは`TEST_MODE_ENABLED=true`、実業務Sourceは`TEST_MODE_ENABLED=false`かつ`SHAREPOINT_LIVE_SOURCES_ENABLED=true`の場合だけ処理可能。抽出には別途`SHAREPOINT_FACT_EXTRACTION_ENABLED=true`も必要。確認済みのsampleOnly=true事実は通常Assessmentへ流れず、sampleOnly=falseの確認済み事実だけが対象Workloadの通常評価へ接続される。
-- 事実抽出は最大3バッチ、各12,000文字を上限とし、バッチごとに既存の日次モデル呼出上限へ計上する。上限を超える文書は失敗扱いにし、部分的なFact集合をGroundingへ保存しない。失敗段階はToken取得・モデル要求・応答保存・応答解析として個別に記録する。
+- 事実抽出は最大17バッチ、各12,000文字・60ブロックを上限とし、文書テキスト上限200,000文字に対応する。各バッチのモデル呼出を既存の日次上限へ個別計上する。上限を超える文書は失敗扱いにし、部分的なFact集合をGroundingへ保存しない。失敗段階はToken取得・モデル要求・応答保存・応答解析として個別に記録する。
 - API Managed IdentityへのGraph `Sites.Selected`割当てをMicrosoft Graph Bicep拡張の専用Bootstrapとして宣言管理する。対象Siteへの`read` grantはGraph Bicepで宣言できないため管理者のGraph Explorer手順として分離。いずれもAzure環境には未適用。既定では同期フラグを無効にし、画面実装だけで実接続可能とは扱わない。手順は[SharePoint接続ガイド](sharepoint-connection-guide.md)を参照。
 
 抽出契約には、処理名、利用者、稼働時間、停止時の結果、依存方向、利用API／機能、環境、代替手段、許容停止時間、変更案、出典版・引用・位置、確認状態を持たせる。数値・機能利用・停止時間が記載されていなければ創作しない。文書に利用記載があっても実行時の利用を確認したことにはせず、Azure観測と文書記載を区別する。
@@ -107,7 +107,7 @@ LLMは文書から事実候補を抽出し、Decision-1は型付き判断、ル�
 | 段階 | 作業 | 完了条件 |
 |---|---|---|
 | 1 | 参照元配列、文書版、抽出事実、依存関係、サンプル分離の契約と評価資材 | 1フォルダ設定、複数参照元の契約試験、旧データ互換を確認 |
-| 2 | DOCX／XLSX解析、出典保存、構造化抽出と検証 | DOCX段落／XLSXシート・セル抽出、候補Schema・引用元検証、上限付きLLM抽出アダプター、不変Blob保存とsampleOnly／Workload別Tableポインターを追加。専用Sample／Live Sourceから選択した1文書の明示抽出を追加し、最大3バッチ（各12,000文字）へ分割してバッチごとに日次既存モデル呼出枠を予約。Source区分をテスト／実業務モードで分離。実モデル接続・品質、累積予算管理、表・見出しのDOCX細粒度引用、3文書受入確認は未完了 |
+| 2 | DOCX／XLSX解析、出典保存、構造化抽出と検証 | DOCX段落／XLSXシート・セル抽出、候補Schema・引用元検証、上限付きLLM抽出アダプター、不変Blob保存とsampleOnly／Workload別Tableポインターを追加。専用Sample／Live Sourceから選択した1文書の明示抽出を追加し、最大17バッチ（各12,000文字）へ分割してバッチごとに日次既存モデル呼出枠を予約。Source区分をテスト／実業務モードで分離。実モデル接続・品質、累積予算管理、表・見出しのDOCX細粒度引用、3文書受入確認は未完了 |
 | 3 | 依存照合、Decision-1・説明入力、評価Hash・承認管理 | 確認済み文書事実をWorkload EvidenceとしてDecision／説明へ渡し、確認済み内容・依存関係の変更でAssessment Hashを更新。Governanceが表示中AssessmentのResource ID／名前完全一致候補を確認し、Fact同士を明示的に接続して業務処理→機能利用→ResourceDependencyの経路を作る。APIはWorkload、Assessment内Resource、Fact種別・監査・DAGを検証。複数文書の確認済み引用を経路Evidenceにまとめる。合成契約試験は実施、実接続と実モデル品質評価は未実施。曖昧な記述や別名の自動解決、業務影響の意味品質評価は未完了 |
 | 4 | SharePoint接続、Bootstrap、フォルダ全ページ取得、変更検出 | 読取専用コネクター、原本・Snapshotの不変保存、追加・変更・不在の算出を実装。GovernanceによるSource設定、明示Queue起動、状態API、Queue再試行・Poison状態記録を追加。テスト／実業務Sourceを排他的に許可。実業務用Repository Variableは既定false。Graph権限・Site grant Bootstrap、実業務フォルダ接続、実モデル品質、Source更新の監査・無効化は未完了 |
 | 5 | 初期1フォルダの設定・同期・確認・訂正・根拠表示UI | Entra認証下の1フォルダ設定、Queue起動・状態ポーリング、Snapshotの文書名・更新日時・Hash表示、Governance限定の文書単位抽出・Fact訂正・確認／除外・出典位置表示を追加。Source設定とFact管理をGovernance、同期をOperator／Governanceに制限。Graph実接続後の画面UATは未完了 |
