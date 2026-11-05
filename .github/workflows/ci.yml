@@ -32,6 +32,7 @@ jobs:
           az bicep build --file infra/bootstrap/sharepoint/permissions.bicep --stdout > /dev/null
           az bicep build --file validation/azure-workload/main.bicep --stdout > /dev/null
           az bicep build --file validation/azure-workload/workload.bicep --stdout > /dev/null
+          az bicep build --file validation/azure-workload/foundry.bicep --stdout > /dev/null
       - name: Package tested artifacts
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |

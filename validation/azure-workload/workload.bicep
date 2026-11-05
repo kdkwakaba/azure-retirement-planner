@@ -9,6 +9,11 @@ param tenantId string
 param workloadId string
 param ownerTeam string
 param globalNameSuffix string
+@allowed([
+  'F1'
+  'B1'
+])
+param webPlanSku string
 
 var workloadTags = {
   WorkloadId: workloadId
@@ -56,6 +61,14 @@ resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = {
     Application_Type: 'web'
     WorkspaceResourceId: logAnalytics.id
     DisableLocalAuth: true
+  }
+}
+
+module foundry './foundry.bicep' = {
+  name: 'orders-foundry-${uniqueString(subscription().id, resourceGroup().id)}'
+  params: {
+    location: location
+    workloadId: workloadId
   }
 }
 
@@ -169,9 +182,9 @@ resource webPlan 'Microsoft.Web/serverfarms@2024-04-01' = {
   location: location
   tags: applicationTags
   sku: {
-    name: 'B1'
-    tier: 'Basic'
-    size: 'B1'
+    name: webPlanSku
+    tier: webPlanSku == 'F1' ? 'Free' : 'Basic'
+    size: webPlanSku
     capacity: 1
   }
   properties: {
@@ -196,7 +209,7 @@ resource ordersWeb 'Microsoft.Web/sites@2024-04-01' = {
       minTlsVersion: '1.2'
       ftpsState: 'Disabled'
       http20Enabled: true
-      alwaysOn: true
+      alwaysOn: webPlanSku == 'B1'
     }
   }
 }
@@ -377,4 +390,7 @@ output dispatchFunctionResourceId string = ordersDispatch.id
 output reportFunctionResourceId string = ordersReport.id
 output queueResourceId string = '${storage.id}/queueServices/default/queues/orders-queue-prod'
 output applicationInsightsResourceId string = applicationInsights.id
+output foundryAccountResourceId string = foundry.outputs.foundryAccountResourceId
+output foundryProjectResourceId string = foundry.outputs.foundryProjectResourceId
+output foundryProjectEndpoint string = foundry.outputs.foundryProjectEndpoint
 output workloadId string = workloadId
