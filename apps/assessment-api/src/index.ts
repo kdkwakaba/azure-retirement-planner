@@ -31,6 +31,7 @@ import {
   GitHubGraphQLError,
   logProcessingFailure,
   withProcessingFailureLog,
+  type Principal,
   translateOfficialHtmlToJapanese,
   extractDocumentText,
   extractDocumentFacts,
@@ -104,7 +105,12 @@ app.http('api', {
         request.headers.get('authorization')?.replace(/^Bearer /i, '') ??
         request.headers.get('x-ms-token-aad-id-token')
       if (!token) return reply(401, { error: 'Authentication required' })
-      const principal = await verifier(token)
+      let principal: Principal
+      try {
+        principal = await verifier(token)
+      } catch {
+        return reply(401, { error: 'Authentication failed' })
+      }
       const path = String(request.params.path ?? '').replace(/^\/+|\/+$/g, '')
       if (path === 'ingest' && request.method === 'POST') {
         requireApplicationRole(principal, apiRolePolicy.notification)
@@ -1709,8 +1715,6 @@ app.http('api', {
         return reply(403, { error: 'Forbidden' })
       if (error instanceof z.ZodError && !uatFailureTarget)
         return reply(400, { error: 'Invalid request' })
-      if (/JWT|token|tenant|principal|signature/i.test(message))
-        return reply(401, { error: 'Authentication failed' })
       if (/Stale|承認対象|未承認|検証不適合/.test(message))
         return reply(409, { error: 'Review conflict or validation failed' })
       if (/origin|content-type/.test(message))
