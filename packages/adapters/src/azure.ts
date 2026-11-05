@@ -205,7 +205,7 @@ export async function discover(subscriptionIds: string[], tenantId: string) {
     try {
       const inventory = await argRows(
         [subscription],
-        "resources | where type in~ ('microsoft.network/loadbalancers','microsoft.storage/storageaccounts','microsoft.insights/webtests','microsoft.cognitiveservices/accounts','microsoft.cognitiveservices/accounts/projects','microsoft.machinelearningservices/workspaces') | project id, name, type, location, kind, skuName=tostring(sku.name), workloadId=tostring(tags.WorkloadId), environment=tostring(tags.Environment), ownerTeam=tostring(tags.OwnerTeam), webTestKind=tostring(properties.Kind), hubResourceId=tostring(properties.hubResourceId), storageAccount=tostring(properties.storageAccount), blobStore=tostring(properties.capabilitySettings.blobStore), documentStore=tostring(properties.capabilitySettings.documentStore), vectorStore=tostring(properties.capabilitySettings.vectorStore)",
+        "resources | where type in~ ('microsoft.network/loadbalancers','microsoft.storage/storageaccounts','microsoft.storage/storageaccounts/queueservices/queues','microsoft.insights/webtests','microsoft.insights/components','microsoft.cognitiveservices/accounts','microsoft.cognitiveservices/accounts/projects','microsoft.machinelearningservices/workspaces','microsoft.web/sites','microsoft.web/serverfarms','microsoft.sql/servers','microsoft.sql/servers/databases') | project id, name, type, location, kind, skuName=tostring(sku.name), workloadId=tostring(tags.WorkloadId), environment=tostring(tags.Environment), ownerTeam=tostring(tags.OwnerTeam), webTestKind=tostring(properties.Kind), hubResourceId=tostring(properties.hubResourceId), storageAccount=tostring(properties.storageAccount), blobStore=tostring(properties.capabilitySettings.blobStore), documentStore=tostring(properties.capabilitySettings.documentStore), vectorStore=tostring(properties.capabilitySettings.vectorStore), appState=tostring(properties.state), serverFarmId=tostring(properties.serverFarmId), sqlVersion=tostring(properties.version), sqlStatus=tostring(properties.status), applicationType=tostring(properties.ApplicationType)",
       )
       for (const row of inventory) {
         const id = String(row.id),
@@ -242,6 +242,11 @@ export async function discover(subscriptionIds: string[], tenantId: string) {
             blobStore: row.blobStore ?? null,
             documentStore: row.documentStore ?? null,
             vectorStore: row.vectorStore ?? null,
+            appState: row.appState ?? null,
+            serverFarmId: row.serverFarmId ?? null,
+            sqlVersion: row.sqlVersion ?? null,
+            sqlStatus: row.sqlStatus ?? null,
+            applicationType: row.applicationType ?? null,
           },
         })
       }
