@@ -12,7 +12,7 @@ import { credential } from './azure.ts'
 import { compactExplanationInput } from './grounding.ts'
 import { jsonRequest, safeModelEndpoint } from './http.ts'
 
-export const PROMPT_VERSION = '2026-10-24.1'
+export const PROMPT_VERSION = '2026-11-06.1'
 export const EXPLANATION_PROMPT_VERSION = '2026-11-03.9'
 export const EXPLANATION_MAX_COMPLETION_TOKENS = 2500
 export const EXPLANATION_MAX_WORK_ITEMS = 2
@@ -100,23 +100,18 @@ export function safeModelResponseDiagnostics(raw: unknown) {
   }
 }
 
-const impactOptions = {
-  Low: '軽微、許容範囲内',
-  Medium: '限定影響、代替で継続可能',
-  High: '重要業務や費用・運用に重大な影響',
-  Critical: '事業継続・重大データ損失・重大規制影響',
-  Unknown: '根拠不足で判断不能',
-}
 export const questions = {
   impactIfUnaddressed: {
-    type: 'choice',
-    instructions: '未対応時の業務影響を根拠に判断。期限の近さだけで上げない。',
-    criteria: impactOptions,
+    type: 'score',
+    instructions:
+      '未対応が続いた場合の業務影響を、根拠と対象ワークロードに基づいて評価する。期限の近さだけで上げない。Lowは実質的な業務影響なし、Mediumは限定的な機能低下と回避策あり、Highは重要機能または複数利用者への重大な支障、Criticalは主要業務の広範な停止または代替手段のない重大影響。根拠不足なら分布を分散させ、アプリがUnknownとして人間確認に残す。',
+    criteria: ['Low', 'Medium', 'High', 'Critical'],
   },
   impactDuringAndAfterChange: {
-    type: 'choice',
-    instructions: '対応中・対応後の業務影響。移行方式不明ならUnknown。',
-    criteria: impactOptions,
+    type: 'score',
+    instructions:
+      '対応作業中および変更後に起こり得る業務影響を評価する。Lowは利用者への実質影響なし、Mediumは短時間の限定的支障と回避策あり、Highは重要機能への計画停止または複数チームにまたがる大きな支障、Criticalは主要業務の長時間停止または復旧困難な影響。移行方式・停止許容時間の根拠不足なら分布を分散させ、アプリがUnknownとして人間確認に残す。',
+    criteria: ['Low', 'Medium', 'High', 'Critical'],
   },
   priority: {
     type: 'choice',
@@ -150,9 +145,9 @@ export const questions = {
     criteria: { Low: '小', Medium: '中', High: '大', Unknown: '未確定' },
   },
   projectRequired: {
-    type: 'choice',
-    instructions: '複数チーム・段階工程等からプロジェクト化の要否を判断。',
-    criteria: { Yes: '必要', No: '不要', Unknown: '未確定' },
+    type: 'noul',
+    instructions:
+      'この通知への対応を独立したプロジェクトとして管理する必要があるか。複数チームの調整、複数段階の工程、複数ワークロードの依存調整、専用の進捗・リスク管理が必要ならtrue。単一チームで通常変更として扱えるならfalse。入力に判断根拠がなければ確率を中間にし、アプリがUnknownとして人間確認に残す。',
   },
 } as const
 export function parseDecision(raw: unknown, modelVersion: string): Decision {
@@ -161,33 +156,92 @@ export function parseDecision(raw: unknown, modelVersion: string): Decision {
       model: z.string(),
       answers: z.record(
         z.string(),
-        z.object({
-          type: z.literal('choice'),
-          choice: z.string(),
-          probabilities: z.record(z.string(), z.number().min(0).max(1)),
-        }),
+        z.discriminatedUnion('type', [
+          z.object({
+            type: z.literal('choice'),
+            choice: z.string(),
+            probabilities: z.record(z.string(), z.number().min(0).max(1)),
+          }),
+          z.object({
+            type: z.literal('score'),
+            score: z.number().finite().min(0).max(3),
+            probabilities: z.record(z.string(), z.number().min(0).max(1)),
+          }),
+          z.object({
+            type: z.literal('noul'),
+            noul: z.number().min(0).max(1),
+          }),
+        ]),
       ),
     })
     .parse(raw)
   const probabilities: Decision['probabilities'] = {}
   const selected: Record<string, string | null> = {}
+  const scoreValues: NonNullable<Decision['scoreValues']> = {}
   for (const [key, question] of Object.entries(questions)) {
     const answer = payload.answers[key]
-    if (
-      !answer ||
-      !(answer.choice in question.criteria) ||
-      Object.keys(answer.probabilities).sort().join('|') !==
-        Object.keys(question.criteria).sort().join('|')
-    )
+    if (!answer || answer.type !== question.type)
       throw new Error('Decision response contract mismatch')
-    if (
-      Math.abs(
-        Object.values(answer.probabilities).reduce((a, b) => a + b, 0) - 1,
-      ) > 0.01
-    )
-      throw new Error('Invalid probability distribution')
-    probabilities[key] = answer.probabilities
-    selected[key] = answer.choice === 'Unknown' ? null : answer.choice
+    if (answer.type === 'choice') {
+      if (
+        !('criteria' in question) ||
+        !(answer.choice in question.criteria) ||
+        Object.keys(answer.probabilities).sort().join('|') !==
+          Object.keys(question.criteria).sort().join('|')
+      )
+        throw new Error('Decision response contract mismatch')
+      if (!validDistribution(answer.probabilities))
+        throw new Error('Invalid probability distribution')
+      probabilities[key] = answer.probabilities
+      selected[key] = answer.choice === 'Unknown' ? null : answer.choice
+    } else if (answer.type === 'score') {
+      if (
+        !('criteria' in question) ||
+        !Array.isArray(question.criteria) ||
+        answer.probabilities === undefined ||
+        !validDistribution(answer.probabilities)
+      )
+        throw new Error('Decision response contract mismatch')
+      const levels = question.criteria as readonly string[]
+      const scoreProbabilities = answer.probabilities as Record<string, number>
+      const probabilityKeys = Object.keys(scoreProbabilities).sort()
+      const hasIndexKeys = probabilityKeys.join('|') === '0|1|2|3'
+      const hasLevelKeys =
+        [...levels].sort().join('|') === probabilityKeys.join('|')
+      if (!hasIndexKeys && !hasLevelKeys)
+        throw new Error('Decision response contract mismatch')
+      const byLevel = Object.fromEntries(
+        levels.map((level, index) => [
+          level,
+          scoreProbabilities[hasIndexKeys ? String(index) : level]!,
+        ]),
+      ) as Record<string, number>
+      const expectedScore = levels.reduce(
+        (score, _level, index) =>
+          score +
+          index *
+            scoreProbabilities[hasIndexKeys ? String(index) : levels[index]!]!,
+        0,
+      )
+      if (Math.abs(expectedScore - answer.score) > 0.02)
+        throw new Error('Invalid score result')
+      const sorted = Object.entries(byLevel).sort((a, b) => b[1] - a[1])
+      const [leading, runnerUp] = sorted
+      const classification =
+        leading && leading[1] >= 0.8 && leading[1] - (runnerUp?.[1] ?? 0) >= 0.2
+          ? leading[0]
+          : null
+      probabilities[key] = byLevel
+      scoreValues[key as keyof typeof scoreValues] = answer.score
+      selected[key] = classification
+    } else {
+      if (key !== 'projectRequired')
+        throw new Error('Decision response contract mismatch')
+      const probabilityYes = answer.noul
+      probabilities[key] = { Yes: probabilityYes, No: 1 - probabilityYes }
+      selected[key] =
+        probabilityYes >= 0.8 ? 'Yes' : probabilityYes <= 0.2 ? 'No' : null
+    }
   }
   return decisionSchema.parse({
     ...selected,
@@ -197,6 +251,7 @@ export function parseDecision(raw: unknown, modelVersion: string): Decision {
         : selected.projectRequired === 'Yes',
     ownerTeam: null,
     probabilities,
+    scoreValues,
     status: Object.values(selected).some((v) => v === null)
       ? 'Abstained'
       : 'Proposed',
@@ -246,6 +301,12 @@ export function unavailableDecision(): Decision {
     promptVersion: PROMPT_VERSION,
     ruleVersion: RULE_VERSION,
   }
+}
+
+function validDistribution(distribution: Record<string, number>): boolean {
+  return (
+    Math.abs(Object.values(distribution).reduce((a, b) => a + b, 0) - 1) <= 0.01
+  )
 }
 
 const explanationSections = [

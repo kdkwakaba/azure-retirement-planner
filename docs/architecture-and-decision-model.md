@@ -130,7 +130,7 @@ sequenceDiagram
 
 ## 5. Microsoft-Decision-1の役割
 
-Decision-1はこのシステムで**型付きの判断候補を返すモデル**であり、自由文の根拠説明を作る役割ではない。入力Stateと6つのChoice質問を受け取り、各質問について選択肢と確率分布を返す。現行質問は次の通り。
+Decision-1はこのシステムで**型付きの判断候補を返すモデル**であり、自由文の根拠説明を作る役割ではない。入力Stateと質問ごとに適した型を受け取り、選択肢・Score・Noulを返す。影響度は順序尺度のScore、プロジェクト化要否はNoul、それ以外はChoiceを使う。
 
 | Decision key | 判断対象 | 選択肢 |
 |---|---|---|
@@ -139,7 +139,7 @@ Decision-1はこのシステムで**型付きの判断候補を返すモデル**
 | `priority` | 調査・対応プログラムの着手優先度 | P1 / P2 / P3 / P4 / Unknown |
 | `startWindow` | 最初の作業を始める時期 | Immediate / Within 30 days / Within 90 days / Within 180 days / Later / No action / Unknown |
 | `complexity` | 構成変更・代替・必要工程の難易度 | Low / Medium / High / Unknown |
-| `projectRequired` | 複数チーム・段階工程等を踏まえたプロジェクト化要否 | Yes / No / Unknown |
+| `projectRequired` | 複数チーム・段階工程等を踏まえたプロジェクト化要否 | Noul（Yesの確率）からYes / No / Unknownへ変換 |
 
 未対応時と対応時・対応後は別々に選択する。期限の近さだけを理由に未対応影響を上げない。移行方法が不明なら対応中・対応後影響や難易度をUnknownにできる。`No action`は根拠ある「対応不要」の候補で、空欄や確認未了の意味ではない。
 
@@ -161,7 +161,9 @@ Decision-1はこのシステムで**型付きの判断候補を返すモデル**
 
 ### 応答の検証と解釈
 
-- `model`、回答キー、Choice型、選択肢の完全な確率集合をSchema検証する。
+- `model`、回答キー、質問の型、選択肢・Scoreの確率分布、Noulの範囲をSchema検証する。Scoreは確率加重平均との整合性も確認する。
+- 影響ScoreをLow=0、Medium=1、High=2、Critical=3の順序尺度で扱い、値と分布を監査保存する。最大確率80%以上かつ次点との差が20ポイント以上の場合のみ影響区分へ変換し、それ以外は未確定として人間確認に残す。Scoreは校正済み確率や絶対的な業務影響値ではない。
+- NoulはYes確率80%以上でYes、20%以下でNo、それ以外はUnknownとし、判定確率も監査保存する。
 - 各確率は0〜1、合計は1からの差が0.01以内であることを検証する。
 - 選択値が`Unknown`なら該当値はnullへ変換する。必須判断の一つでもnullならDecision状態は`Abstained`、全て値がある場合だけ`Proposed`。
 - 確率分布はモデルの自己申告した候補分布であり、正解確率・校正済み信頼度・承認ではない。モデル版、Prompt Version、Rule Version、原応答、入力／結果Hashを追跡する。
@@ -174,7 +176,7 @@ Decision-1はこのシステムで**型付きの判断候補を返すモデル**
 |---|---|---|
 | Azure標準サービス | 通知、Advisor Recommendation、Azure Resourceとその属性 | 社内業務優先度、担当、移行計画 |
 | 決定的ルール | 期限差・工程余裕、優先度下限、取得不完全時の引上げ、低確率・僅差、Critical等のレビュー理由 | 業務上の最終許容、代替案採用 |
-| Microsoft-Decision-1 | 上記6項目の型付き選択肢と確率 | 自由文説明、事実・期限の創作、承認 |
+| Microsoft-Decision-1 | 影響度のScore、プロジェクト化要否のNoul、その他の型付き選択肢 | 自由文説明、事実・期限の創作、承認 |
 | 生成説明LLM | 判断根拠・増減要因・不足情報・条件・作業候補を指定Schemaで整理 | 公式事実の創作、IDや期限の確定、承認・本番変更 |
 | 検証器 | Evidence参照、ID、日付、Workload関係、依存DAG、承認版Hash、Schemaを検査 | 検証済みであることだけから作業妥当性を保証 |
 | 人間 | 業務事実の補完、影響・方針・作業・担当・例外の最終判断、外部登録承認 | — |
