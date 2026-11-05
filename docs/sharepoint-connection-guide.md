@@ -187,7 +187,7 @@ Sourceのデータ区分はアプリ設定から決まり、Source登録時に�
 - **サンプル検証**：`ARP_TEST_MODE_ENABLED=true`、`ARP_SHAREPOINT_SYNC_ENABLED=true`。抽出する場合は`ARP_SHAREPOINT_FACT_EXTRACTION_ENABLED=true`。この間は`sampleOnly=true`だけが登録・同期・抽出・レビューでき、サンプル事実は通常の実通知評価に入りません。
 - **実業務文書**：`ARP_TEST_MODE_ENABLED=false`、`ARP_SHAREPOINT_LIVE_SOURCES_ENABLED=true`、`ARP_SHAREPOINT_SYNC_ENABLED=true`。事実抽出には`ARP_SHAREPOINT_FACT_EXTRACTION_ENABLED=true`も必要です。この設定では`sampleOnly=false`のSourceだけを処理できます。Governanceが候補Factを内容と出典位置で確認して「確認済み」にした後、その事実が同一Workloadの通常Assessment入力に使われます。
 
-テストモードと実業務モードは排他的です。実業務モードへ切り替えるとサンプルSourceの処理は停止します。切替はRepository Variablesを変更し、Manual PoC deploymentの`plan`でWhat-Ifを確認してから`apply`します。データ区分が混ざらないことを画面の表示とSource区分で確認してください。実業務フォルダを使う前に、API Managed Identityへ対象SharePoint Siteの`read`許可があることを確認してください。文書抽出は最大3バッチ、1バッチ12,000文字までです。超過文書は部分評価せず失敗として表示します。各バッチのモデル呼出は日次上限に計上されます。
+テストモードと実業務モードは排他的です。実業務モードへ切り替えるとサンプルSourceの処理は停止します。切替はRepository Variablesを変更し、Manual PoC deploymentの`plan`でWhat-Ifを確認してから`apply`します。データ区分が混ざらないことを画面の表示とSource区分で確認してください。実業務フォルダを使う前に、API Managed Identityへ対象SharePoint Siteの`read`許可があることを確認してください。文書抽出は最大17バッチ、1バッチ12,000文字までです。超過文書は部分評価せず失敗として表示します。各バッチのモデル呼出は日次上限に計上されます。
 
 ## 参考
 

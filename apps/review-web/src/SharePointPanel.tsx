@@ -832,7 +832,7 @@ export function SharePointPanel({
           )}
           {factExtractionEnabled && (
             <p className="muted">
-              文書は最大3つの入力バッチに分けて抽出し、各モデル呼出しをアプリ共通の日次上限へ計上します。同じ文書版・モデル版・Prompt版・Source区分の再実行は保存済み応答を再利用します。
+              文書は最大17個の入力バッチに分けて抽出し、各モデル呼出しをアプリ共通の日次上限へ計上します。同じ文書版・モデル版・Prompt版・Source区分の再実行は保存済み応答を再利用します。
             </p>
           )}
           {!groundingMatchesSource && grounding && (
