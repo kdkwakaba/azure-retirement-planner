@@ -64,6 +64,14 @@ resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = {
   }
 }
 
+module foundry './foundry.bicep' = {
+  name: 'orders-foundry-${uniqueString(subscription().id, resourceGroup().id)}'
+  params: {
+    location: location
+    workloadId: workloadId
+  }
+}
+
 resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: storageName
   location: location
@@ -382,4 +390,7 @@ output dispatchFunctionResourceId string = ordersDispatch.id
 output reportFunctionResourceId string = ordersReport.id
 output queueResourceId string = '${storage.id}/queueServices/default/queues/orders-queue-prod'
 output applicationInsightsResourceId string = applicationInsights.id
+output foundryAccountResourceId string = foundry.outputs.foundryAccountResourceId
+output foundryProjectResourceId string = foundry.outputs.foundryProjectResourceId
+output foundryProjectEndpoint string = foundry.outputs.foundryProjectEndpoint
 output workloadId string = workloadId

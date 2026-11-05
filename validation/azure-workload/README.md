@@ -12,6 +12,7 @@ Azure Retirement Planner本体の配置先・Bicepとは独立した、検証用
 - `orders-dispatch-prod`、`orders-report-prod` Function AppとFlex Consumption Plan
 - Storage V2、`orders-queue-prod` Queue、Functions配備用Blob Container、レポート用Blob Container
 - Application InsightsとLog Analytics Workspace
+- Azure AI Foundryアカウント（AIServices S0）とWorkload用Project。モデルデプロイ、Agent、データ接続は作成しない
 - Function用User Assigned Managed Identityと、同じ検証Storage／Application Insightsに限った必要ロール
 - ARP API Managed IdentityへのReader。スコープはこの検証用Resource Groupのみ
 
@@ -24,6 +25,8 @@ Azure Retirement Planner本体の配置先・Bicepとは独立した、検証用
 | `Environment` | `test` | Test Subscriptionの検証リソースであることを識別 |
 | `ManagedBy` | `bicep` | IaC管理を識別 |
 | `Purpose` | `sharepoint-impact-validation` | 検証用Resource Group内での用途を識別 |
+
+Foundryは構成評価の対象候補として表示できるようアカウントとProjectのみを作成します。Project作成要件に合わせアカウントのシステム割り当てマネージドIDを有効化しますが、ロールは付与しません。モデルをデプロイしないため、推論呼出しやモデル品質は検証しません。アカウント作成だけではMicrosoft-Decision-1の利用やClassic Agent Service APIの利用を意味しません。ネットワークは現行の検証構成に合わせてPublic Network Accessを有効にし、ローカル認証は無効にします。
 
 Azure Queueの個別リソースはResource Managerタグをサポートしないため、タグは親Storage Accountへ付けます。ARPのResource GraphクエリはQueueの親Storage AccountからWorkload ID、環境、担当チームを引き継ぎます。担当チームはWeb／出荷処理=`application-operations`、SQL=`database-operations`、Queue／Storage=`cloud-platform-operations`、監視=`monitoring-operations`、日次レポート=`data-operations`です。
 
