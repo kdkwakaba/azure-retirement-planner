@@ -1,6 +1,6 @@
 # SharePoint設計書を利用した業務影響評価の実装計画
 
-2026-11-05 / 状態: 段階2・3の一部、段階4の一部、段階5を実装。DOCX／XLSX解析、候補抽出・検証・不変保存、確認済み事実の評価接続、DocumentSource設定に基づくGraph読み取り専用取得、文書バイナリの内容Hash保存と全件列挙済みSnapshotの履歴・差分、サンプル限定のGovernance設定・手動Queue起動・状態取得・再試行／Poison記録を追加。PR #142配置後、SharePoint同期は成功したが、事実抽出は原文Blob読出しでAzure SDK `RestError`となり、モデル呼出前に停止した。API Managed IdentityにはStorage Blob Data Contributorがあることを確認。読出し実装が実サイズを見ず10 MiB固定のRangeを要求していたため、Blobのプロパティでサイズを検証し、実サイズだけを読む修正を作成中。マージ・配置後の再抽出と評価は未実施。Governanceが選んだ文書から明示的に候補を抽出し、出典位置を見ながら修正・確認・除外できる。ResourceDependency候補は表示中AssessmentのResource IDをGovernanceが明示選択して紐付けられる。さらに、選択中Assessmentに含まれるAzureリソースだけを対象に、文書本文中のResource IDまたはリソース名の完全一致候補を決定的に提示する。候補は未選択のままで、Governanceの確認が必要。既存の抽出応答を再利用して候補だけを再計算できる。次に、確認済みFact同士をGovernanceが明示的にリンクし、業務処理→機能利用→ResourceDependencyの経路を複数文書の引用とともに1つのAssessment Evidenceへまとめる。候補・未確認Factは経路に入れず、循環・異種リンク・現Assessment外Resourceを拒否する。同期と事実抽出はそれぞれBicep設定で既定無効。sampleOnlyはSource設定から伝播し、自動推定しない。Graphアプリ権限・選択Site付与、実接続、実モデル品質、曖昧な表記・別名候補の自動解決は別途未完了。
+2026-11-05 / PR #144をmainへ配置済み。同期は成功しDOCX／XLSXの2件を列挙したが、両方の事実抽出はHTTP 503で失敗し、groundingも影響評価も完了していない。PR #144時点では失敗段階が広く、原因を特定できなかった。本変更では失敗段階をモデルToken取得・モデル要求・応答保存・応答解析へ分割し、文書抽出入力の上限超過が疑われるケースに最大3バッチ（各12,000文字）の分割を追加する。また、Source区分をテスト／実業務モードで相互排他的にし、サンプル文書は`TEST_MODE_ENABLED=true`のときだけ同期・抽出・レビューできるようにする。実業務Sourceはテストモードを無効化したうえで、専用の`SHAREPOINT_LIVE_SOURCES_ENABLED=true`を明示した場合だけ有効になる。通常Assessmentへ渡るのは既存仕様どおりGovernanceが確認した`sampleOnly=false`の事実だけ。PR配置後に合成文書の再抽出・人手確認・影響評価を再実施する必要がある。SharePointの実業務文書はまだ存在せず、実文書による品質評価は未実施。Graph権限・Site grant、実モデル品質、曖昧な別名候補の自動解決も未完了。
 
 ## 目的と合意した範囲
 
@@ -23,7 +23,7 @@ SharePointに格納した複数の設計書・ドキュメントから、業務�
 | `packages/adapters/src/grounding.ts` | 通知・型付き構成・Evidenceのモデル入力。人間確認済みでsampleOnly=falseの文書事実だけをEvidenceへ変換 | 文書記述からリソース候補を抽出する仕組み、複数段の業務処理→リソース依存経路 |
 | `packages/adapters/src/models.ts` | Decision-1の型付き判断と説明LLM | 文書抽出用の別Prompt／Schema、判断質問・説明入力の改訂 |
 | `apps/assessment-api/src/service.ts` | 業務情報Hash・Evidenceを含む評価、再評価。確認済み文書Grounding Hashを入力HashとAssessmentへ記録 | 文書候補の確認状態を扱うUI・API、Workload・通知条件に沿った依存照合 |
-| `apps/review-web` | 影響2軸、説明、根拠、レビュー | 文書出典、依存関係、サンプル表示、抽出内容の確認・訂正 |
+| `apps/review-web` | 影響2軸、説明、根拠、レビュー、SharePoint Source設定 | Sourceのテスト／実業務区分表示、モードが有効な場合のみ同期・抽出・レビュー操作、実業務Factの確認 |
 
 既存BusinessContextの業務影響あり／なし／不明だけでは、業務処理や構成依存を表現できない。文書からの抽出候補は、確認者必須のBusinessContextと分けて保存し、人間の確認後に確認者・時刻を持つ版へ進める。旧Assessment・既存BusinessContextは新しい任意参照を持たなくても読めるよう互換性を確保する。
 
@@ -56,13 +56,14 @@ SharePointに格納した複数の設計書・ドキュメントから、業務�
 
 ### 現段階の同期起動契約
 
-- Governanceが`POST /api/sharepoint-source`で同一Tenantの`sampleOnly: true`設定だけを登録・更新する。実データ区分のSource登録は許可しない。
+- Governanceが`POST /api/sharepoint-source`で同一TenantのSourceを登録・更新する。`sampleOnly`は明示必須で、テストモードではtrue、実業務モードではfalseのみ受け付ける。テストと実業務Sourceの処理は同時に有効化できない。
 - 初期設定は専用サンプルフォルダ1件に限定する。設定画面ではSite／Drive／Folder Item IDを指定し、Site URLからIDを解決する機能は未実装。
 - Operator／Governanceが`POST /api/sharepoint-sync`で`sourceId`を指定する。`SHAREPOINT_SYNC_ENABLED`が`true`の場合だけQueueへ登録する。
 - `GET /api/sharepoint-sync-status?runId=...`でPending／Queued／Processing／Retrying／Succeeded／Failedを確認する。失敗は分類・HTTP状態だけを保持し、Graph本文や例外文字列は保存しない。
 - Queue再試行が尽きるとPoison Queue処理がFailedを記録する。未完了・失敗RunはSnapshotの削除差分に使わない。
 - Governance向けSource登録・更新画面、Operator／Governance向け同期起動・状態表示・取得済み文書一覧を実装済み。Governanceは文書を選び、既存の日次モデル呼出枠を使って明示的に事実候補を抽出し、出典位置を確認して文面修正・確認済み／除外を保存できる。確認者と時刻をGrounding版に記録する。抽出は文書内容Hash・Prompt版・Deployment・Model版ごとに冪等化する。Site URLからIDを解決する機能は未実装。
-- `GET /api/sharepoint-facts`と`POST /api/sharepoint-facts/extract`／`review`はGovernance限定。抽出は`SHAREPOINT_FACT_EXTRACTION_ENABLED`がtrueの場合だけ実行可能。sampleOnly=trueの事実は通常の実通知評価へ流れない。
+- `GET /api/sharepoint-facts`と`POST /api/sharepoint-facts/extract`／`review`はGovernance限定かつSource IDで区分する。サンプルSourceは`TEST_MODE_ENABLED=true`、実業務Sourceは`TEST_MODE_ENABLED=false`かつ`SHAREPOINT_LIVE_SOURCES_ENABLED=true`の場合だけ処理可能。抽出には別途`SHAREPOINT_FACT_EXTRACTION_ENABLED=true`も必要。確認済みのsampleOnly=true事実は通常Assessmentへ流れず、sampleOnly=falseの確認済み事実だけが対象Workloadの通常評価へ接続される。
+- 事実抽出は最大3バッチ、各12,000文字を上限とし、バッチごとに既存の日次モデル呼出上限へ計上する。上限を超える文書は失敗扱いにし、部分的なFact集合をGroundingへ保存しない。失敗段階はToken取得・モデル要求・応答保存・応答解析として個別に記録する。
 - API Managed IdentityへのGraph `Sites.Selected`割当てをMicrosoft Graph Bicep拡張の専用Bootstrapとして宣言管理する。対象Siteへの`read` grantはGraph Bicepで宣言できないため管理者のGraph Explorer手順として分離。いずれもAzure環境には未適用。既定では同期フラグを無効にし、画面実装だけで実接続可能とは扱わない。手順は[SharePoint接続ガイド](sharepoint-connection-guide.md)を参照。
 
 抽出契約には、処理名、利用者、稼働時間、停止時の結果、依存方向、利用API／機能、環境、代替手段、許容停止時間、変更案、出典版・引用・位置、確認状態を持たせる。数値・機能利用・停止時間が記載されていなければ創作しない。文書に利用記載があっても実行時の利用を確認したことにはせず、Azure観測と文書記載を区別する。
@@ -106,9 +107,9 @@ LLMは文書から事実候補を抽出し、Decision-1は型付き判断、ル�
 | 段階 | 作業 | 完了条件 |
 |---|---|---|
 | 1 | 参照元配列、文書版、抽出事実、依存関係、サンプル分離の契約と評価資材 | 1フォルダ設定、複数参照元の契約試験、旧データ互換を確認 |
-| 2 | DOCX／XLSX解析、出典保存、構造化抽出と検証 | DOCX段落／XLSXシート・セル抽出、候補Schema・引用元検証、上限付きLLM抽出アダプター、不変Blob保存とsampleOnly／Workload別Tableポインターを追加。専用Sample Sourceから選択した1文書の明示抽出を追加し、日次既存モデル呼出枠を予約。実モデル接続・品質、複数バッチ制御・累積予算管理、表・見出しのDOCX細粒度引用、3文書受入確認は未完了 |
+| 2 | DOCX／XLSX解析、出典保存、構造化抽出と検証 | DOCX段落／XLSXシート・セル抽出、候補Schema・引用元検証、上限付きLLM抽出アダプター、不変Blob保存とsampleOnly／Workload別Tableポインターを追加。専用Sample／Live Sourceから選択した1文書の明示抽出を追加し、最大3バッチ（各12,000文字）へ分割してバッチごとに日次既存モデル呼出枠を予約。Source区分をテスト／実業務モードで分離。実モデル接続・品質、累積予算管理、表・見出しのDOCX細粒度引用、3文書受入確認は未完了 |
 | 3 | 依存照合、Decision-1・説明入力、評価Hash・承認管理 | 確認済み文書事実をWorkload EvidenceとしてDecision／説明へ渡し、確認済み内容・依存関係の変更でAssessment Hashを更新。Governanceが表示中AssessmentのResource ID／名前完全一致候補を確認し、Fact同士を明示的に接続して業務処理→機能利用→ResourceDependencyの経路を作る。APIはWorkload、Assessment内Resource、Fact種別・監査・DAGを検証。複数文書の確認済み引用を経路Evidenceにまとめる。合成契約試験は実施、実接続と実モデル品質評価は未実施。曖昧な記述や別名の自動解決、業務影響の意味品質評価は未完了 |
-| 4 | SharePoint接続、Bootstrap、フォルダ全ページ取得、変更検出 | 読取専用コネクター、原本・Snapshotの不変保存、追加・変更・不在の算出を実装。GovernanceによるサンプルSource設定、明示Queue起動、状態API、Queue再試行・Poison状態記録を追加。Graph権限・Site grant Bootstrap、実接続、運用画面、Source更新の監査・無効化、結果の文書解析接続は未完了 |
+| 4 | SharePoint接続、Bootstrap、フォルダ全ページ取得、変更検出 | 読取専用コネクター、原本・Snapshotの不変保存、追加・変更・不在の算出を実装。GovernanceによるSource設定、明示Queue起動、状態API、Queue再試行・Poison状態記録を追加。テスト／実業務Sourceを排他的に許可。実業務用Repository Variableは既定false。Graph権限・Site grant Bootstrap、実業務フォルダ接続、実モデル品質、Source更新の監査・無効化は未完了 |
 | 5 | 初期1フォルダの設定・同期・確認・訂正・根拠表示UI | Entra認証下の1フォルダ設定、Queue起動・状態ポーリング、Snapshotの文書名・更新日時・Hash表示、Governance限定の文書単位抽出・Fact訂正・確認／除外・出典位置表示を追加。Source設定とFact管理をGovernance、同期をOperator／Governanceに制限。Graph実接続後の画面UATは未完了 |
 | 6 | 専用サンプルフォルダからの一貫した実接続・品質評価 | 高影響の誤Low、根拠なし断定、他Workload混入を点検し合否を記録 |
 | 将来 | 複数フォルダの設定UI、参照元別権限・正本規則・部分失敗表示 | 追加サービスの要否を再評価し、混在・重複・矛盾を含むUATを完了 |

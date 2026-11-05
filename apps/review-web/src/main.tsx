@@ -256,6 +256,8 @@ type FeatureStatus = {
   canManageSharePoint: boolean
   sharePointSyncEnabled: boolean
   sharePointFactExtractionEnabled: boolean
+  sharePointSampleSourcesEnabled: boolean
+  sharePointLiveSourcesEnabled: boolean
 }
 type DecisionReevaluationStatus = {
   runId: string
@@ -341,6 +343,10 @@ function App() {
     [canManageSharePoint, setCanManageSharePoint] = useState(false),
     [sharePointSyncEnabled, setSharePointSyncEnabled] = useState(false),
     [sharePointFactExtractionEnabled, setSharePointFactExtractionEnabled] =
+      useState(false),
+    [sharePointSampleSourcesEnabled, setSharePointSampleSourcesEnabled] =
+      useState(false),
+    [sharePointLiveSourcesEnabled, setSharePointLiveSourcesEnabled] =
       useState(false),
     [canReview, setCanReview] = useState(false),
     [showNoAction, setShowNoAction] = useState(false),
@@ -493,6 +499,8 @@ function App() {
       setCanManageSharePoint(uat.canManageSharePoint)
       setSharePointSyncEnabled(uat.sharePointSyncEnabled)
       setSharePointFactExtractionEnabled(uat.sharePointFactExtractionEnabled)
+      setSharePointSampleSourcesEnabled(uat.sharePointSampleSourcesEnabled)
+      setSharePointLiveSourcesEnabled(uat.sharePointLiveSourcesEnabled)
       setCanReview(uat.canReview)
       if (selected && !visible.some((item) => item.id === selected))
         setSelected(null)
@@ -840,6 +848,8 @@ function App() {
             canSync={canSync}
             syncEnabled={sharePointSyncEnabled}
             factExtractionEnabled={sharePointFactExtractionEnabled}
+            sampleSourcesEnabled={sharePointSampleSourcesEnabled}
+            liveSourcesEnabled={sharePointLiveSourcesEnabled}
             assessment={
               current
                 ? {

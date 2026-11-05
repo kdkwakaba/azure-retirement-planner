@@ -88,6 +88,7 @@ export function applyReviewWorkflowPolicy(input: Assessment): Assessment {
   return assessmentSchema.parse(result)
 }
 import { applySyntheticUatDecision } from './uat.ts'
+import { sharePointSourceModeEnabled } from './sharepoint-mode.ts'
 
 export function config() {
   return {
@@ -114,17 +115,15 @@ export async function processSharePointSync(runId: string): Promise<void> {
   const run = await store.claimSharePointSyncRun(runId)
   if (!run) return
   try {
-    if (process.env.SHAREPOINT_SYNC_ENABLED !== 'true')
-      throw new Error('SharePoint document sync is disabled')
     const source = await store.sharePointSourceByHash(
       run.sourceConfigurationHash,
     )
     if (
       source.sourceId !== run.sourceId ||
       source.configurationVersion !== run.configurationVersion ||
-      source.sampleOnly !== true
+      !sharePointSourceModeEnabled(source.sampleOnly)
     )
-      throw new Error('SharePoint source configuration does not match sync run')
+      throw new Error('SharePoint source mode is not enabled for this sync run')
     const result = await readSharePointFolder(source, config().tenantId)
     const changes = await persistSharePointFolderSnapshot(store, source, result)
     await store.finishSharePointSyncRun(runId, 'Succeeded', changes)
