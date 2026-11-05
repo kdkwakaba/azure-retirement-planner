@@ -394,6 +394,20 @@ export function impactDisplay(
     : `影響度は未確定（${axis}）`
 }
 
+export function impactScoreDisplay(
+  decision: Assessment['decision'],
+  key: 'impactIfUnaddressed' | 'impactDuringAndAfterChange',
+): string | null {
+  const score = decision.scoreValues?.[key]
+  if (score === undefined) return null
+  const distribution = decision.probabilities[key]
+  const levels = ['Low', 'Medium', 'High', 'Critical'] as const
+  const probabilities = levels
+    .filter((level) => distribution?.[level] !== undefined)
+    .map((level) => `${level} ${Math.round(distribution![level]! * 100)}%`)
+  return `Decision-1 Score ${score.toFixed(2)} / 3${probabilities.length ? ` · ${probabilities.join(' / ')}` : ''}（順序尺度の補助値。確信度ではありません）`
+}
+
 export function environmentDisplay(environment: string | null): string {
   return environment ?? 'Environmentタグ値なし（Azureタグ設定を確認）'
 }

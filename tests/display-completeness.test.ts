@@ -13,6 +13,7 @@ import {
   evidenceDisplay,
   explanationSectionDisplay,
   impactDisplay,
+  impactScoreDisplay,
   isKnownReviewReason,
   isModelDecisionStatusOnlyReviewReason,
   isPlanSchedulingNote,
@@ -71,6 +72,16 @@ test('incomplete assessment values display their reason and next decision', () =
 
 test('known values remain visible without being replaced by fallback text', () => {
   assert.equal(impactDisplay('Medium', '未対応時'), '評価値: 中')
+  assert.equal(
+    impactScoreDisplay(
+      {
+        scoreValues: { impactIfUnaddressed: 2.25 },
+        probabilities: { impactIfUnaddressed: { High: 0.75, Critical: 0.25 } },
+      } as never,
+      'impactIfUnaddressed',
+    ),
+    'Decision-1 Score 2.25 / 3 · High 75% / Critical 25%（順序尺度の補助値。確信度ではありません）',
+  )
   assert.equal(priorityDisplay('P2'), '優先度 P2')
   assert.equal(plannedDateDisplay('2026-12-01', '開始日'), '開始日: 2026-12-01')
   assert.equal(ownerDisplay('アプリ部門', routing), '確定担当: アプリ部門')

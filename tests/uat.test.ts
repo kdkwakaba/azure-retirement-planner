@@ -43,6 +43,16 @@ test('synthetic UAT preserves synthetic grounding and records a Decision-1 resul
   const source = createSyntheticUatAssessment()
   const answers = Object.fromEntries(
     Object.entries(questions).map(([key, question]) => {
+      if (question.type === 'noul') return [key, { type: 'noul', noul: 0.95 }]
+      if (question.type === 'score')
+        return [
+          key,
+          {
+            type: 'score',
+            score: 3,
+            probabilities: { '0': 0, '1': 0, '2': 0, '3': 1 },
+          },
+        ]
       const options = Object.keys(question.criteria)
       return [
         key,

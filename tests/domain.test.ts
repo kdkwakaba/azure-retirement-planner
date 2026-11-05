@@ -982,17 +982,133 @@ test('probability contract rejects missing distributions', () =>
   ))
 test('probability contract rejects invalid sums', () => {
   const answers = Object.fromEntries(
-    Object.entries(questions).map(([key, q]) => [
-      key,
-      {
-        type: 'choice',
-        choice: Object.keys(q.criteria)[0],
-        probabilities: Object.fromEntries(
-          Object.keys(q.criteria).map((k) => [k, 0.9]),
-        ),
-      },
-    ]),
+    Object.entries(questions).map(([key, q]) => {
+      if (q.type === 'noul') return [key, { type: 'noul', noul: 0.5 }]
+      if (q.type === 'score')
+        return [
+          key,
+          {
+            type: 'score',
+            score: 1.5,
+            probabilities: { '0': 0.9, '1': 0.9, '2': 0.9, '3': 0.9 },
+          },
+        ]
+      return [
+        key,
+        {
+          type: 'choice',
+          choice: Object.keys(q.criteria)[0],
+          probabilities: Object.fromEntries(
+            Object.keys(q.criteria).map((k) => [k, 0.9]),
+          ),
+        },
+      ]
+    }),
   )
+  assert.throws(() =>
+    parseDecision({ model: 'Microsoft-Decision-1', answers }, '1'),
+  )
+})
+
+function validDecisionAnswers(overrides: Record<string, unknown> = {}) {
+  return {
+    impactIfUnaddressed: {
+      type: 'score',
+      score: 2.73,
+      probabilities: { '0': 0.02, '1': 0.03, '2': 0.15, '3': 0.8 },
+    },
+    impactDuringAndAfterChange: {
+      type: 'score',
+      score: 1.15,
+      probabilities: { '0': 0.1, '1': 0.7, '2': 0.15, '3': 0.05 },
+    },
+    priority: {
+      type: 'choice',
+      choice: 'P2',
+      probabilities: { P1: 0.1, P2: 0.7, P3: 0.1, P4: 0.05, Unknown: 0.05 },
+    },
+    startWindow: {
+      type: 'choice',
+      choice: 'Within 90 days',
+      probabilities: {
+        Immediate: 0.05,
+        'Within 30 days': 0.1,
+        'Within 90 days': 0.7,
+        'Within 180 days': 0.1,
+        Later: 0.02,
+        'No action': 0.01,
+        Unknown: 0.02,
+      },
+    },
+    complexity: {
+      type: 'choice',
+      choice: 'Medium',
+      probabilities: { Low: 0.1, Medium: 0.8, High: 0.05, Unknown: 0.05 },
+    },
+    projectRequired: { type: 'noul', noul: 0.93 },
+    ...overrides,
+  }
+}
+
+test('Decision-1 score and noul answers are mapped to impacts and project requirement', () => {
+  const decision = parseDecision(
+    { model: 'Microsoft-Decision-1', answers: validDecisionAnswers() },
+    '1',
+  )
+  assert.equal(decision.impactIfUnaddressed, 'Critical')
+  assert.equal(decision.impactDuringAndAfterChange, null)
+  assert.equal(decision.scoreValues?.impactIfUnaddressed, 2.73)
+  assert.equal(decision.scoreValues?.impactDuringAndAfterChange, 1.15)
+  assert.equal(decision.projectRequired, true)
+  const yesProbability = decision.probabilities.projectRequired?.Yes
+  const noProbability = decision.probabilities.projectRequired?.No
+  assert.equal(yesProbability, 0.93)
+  assert.ok(
+    typeof noProbability === 'number' && Math.abs(noProbability - 0.07) < 1e-9,
+  )
+  assert.equal(decision.status, 'Abstained')
+})
+
+test('Decision-1 noul returns false only when the no probability is decisive', () => {
+  const answers = validDecisionAnswers({
+    projectRequired: { type: 'noul', noul: 0.08 },
+  })
+  const decision = parseDecision(
+    { model: 'Microsoft-Decision-1', answers },
+    '1',
+  )
+  assert.equal(decision.projectRequired, false)
+  const yesProbability = decision.probabilities.projectRequired?.Yes
+  const noProbability = decision.probabilities.projectRequired?.No
+  assert.equal(yesProbability, 0.08)
+  assert.ok(
+    typeof noProbability === 'number' && Math.abs(noProbability - 0.92) < 1e-9,
+  )
+})
+
+test('Decision-1 score accepts probabilities keyed by the ordered level names', () => {
+  const answers = validDecisionAnswers({
+    impactIfUnaddressed: {
+      type: 'score',
+      score: 3,
+      probabilities: { Low: 0, Medium: 0, High: 0, Critical: 1 },
+    },
+  })
+  const decision = parseDecision(
+    { model: 'Microsoft-Decision-1', answers },
+    '1',
+  )
+  assert.equal(decision.impactIfUnaddressed, 'Critical')
+})
+
+test('Decision-1 score is rejected when probability weighted score disagrees', () => {
+  const answers = validDecisionAnswers({
+    impactIfUnaddressed: {
+      type: 'score',
+      score: 0,
+      probabilities: { '0': 0.02, '1': 0.03, '2': 0.15, '3': 0.8 },
+    },
+  })
   assert.throws(() =>
     parseDecision({ model: 'Microsoft-Decision-1', answers }, '1'),
   )
