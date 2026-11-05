@@ -101,9 +101,9 @@ function fakeStore() {
   return { store, rows, sentMessages }
 }
 
-test('SharePoint sync contract exposes safe state and rejects live sources', () => {
+test('SharePoint sync contract exposes safe state for sample and live sources', () => {
   assert.doesNotThrow(() => sharePointSyncRunSchema.parse(runFixture()))
-  assert.throws(() =>
+  assert.doesNotThrow(() =>
     sharePointSyncRunSchema.parse(runFixture({ sampleOnly: false })),
   )
   assert.throws(() =>
@@ -167,7 +167,7 @@ test('SharePoint source changes require a new configuration version', async (t) 
       ...source,
       sourceId: 'second-sample-source',
     }),
-    /one sample source/,
+    /one source per data mode/,
   )
 })
 
