@@ -99,10 +99,13 @@ const priorityDescriptions: Record<string, string> = {
   P3: '通常の変更計画へ組み込み、進捗を確認します。GitHubラベルはMediumです。',
   P4: '影響が限定的で余裕がある状態です。経過観察または将来計画として扱います。GitHubラベルはLowです。',
 }
-const impactDescriptions: Record<'未対応時' | '対応時・対応後', string> = {
-  未対応時:
+const impactDescriptions: Record<
+  '未対応時のリスク' | '対応時・対応後の影響',
+  string
+> = {
+  未対応時のリスク:
     '通知の適用条件に該当する場合、未対応で起こり得る機能・運用上の影響を一般的な想定として示します。影響度の評価値とは別の説明です。個別業務との対応情報がない場合は処理名を特定しません。',
-  '対応時・対応後':
+  '対応時・対応後の影響':
     '更新・移行・切替を行う場合に想定される作業上の影響を示します。作業方式と構成が分からない場合、停止の有無や時間は断定しません。',
 }
 function HelpTip({
@@ -162,9 +165,13 @@ function PriorityHelp({
   )
 }
 
-function ImpactHelp({ axis }: { axis: '未対応時' | '対応時・対応後' }) {
+function ImpactHelp({
+  axis,
+}: {
+  axis: '未対応時のリスク' | '対応時・対応後の影響'
+}) {
   return (
-    <HelpTip label={`${axis}の業務影響について`}>
+    <HelpTip label={`${axis}の説明を表示`}>
       <span>{impactDescriptions[axis]}</span>
     </HelpTip>
   )
@@ -1053,14 +1060,16 @@ function App() {
                     <div className="metrics">
                       <article>
                         <small className="summary-caption">
-                          未対応時 <ImpactHelp axis="未対応時" />
+                          未対応時のリスク{' '}
+                          <ImpactHelp axis="未対応時のリスク" />
                         </small>
                         <strong>
                           {impactDisplay(
                             current.humanContext
                               ? current.humanContext.impactIfUnaddressed
                               : current.decision.impactIfUnaddressed,
-                            '未対応時',
+                            '未対応時のリスク',
+                            current.decision.probabilities.impactIfUnaddressed,
                           )}
                         </strong>
                         {impactScoreDisplay(
@@ -1082,14 +1091,17 @@ function App() {
                       </article>
                       <article>
                         <small className="summary-caption">
-                          対応時・対応後 <ImpactHelp axis="対応時・対応後" />
+                          対応時・対応後の影響{' '}
+                          <ImpactHelp axis="対応時・対応後の影響" />
                         </small>
                         <strong>
                           {impactDisplay(
                             current.humanContext
                               ? current.humanContext.impactDuringAndAfterChange
                               : current.decision.impactDuringAndAfterChange,
-                            '対応時・対応後',
+                            '対応時・対応後の影響',
+                            current.decision.probabilities
+                              .impactDuringAndAfterChange,
                           )}
                         </strong>
                         {impactScoreDisplay(

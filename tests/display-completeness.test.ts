@@ -47,7 +47,10 @@ const routing = {
 } satisfies NonNullable<WorkItem['workflowRouting']>
 
 test('incomplete assessment values display their reason and next decision', () => {
-  assert.match(impactDisplay(null, '未対応時'), /影響度は未確定/)
+  assert.match(
+    impactDisplay(null, '未対応時のリスク'),
+    /影響度は未確定（未対応時のリスク）/,
+  )
   assert.match(priorityDisplay(null), /対象範囲と影響を確認後/)
   assert.match(plannedDateDisplay(null, '完了日'), /計画担当が設定/)
   assert.match(ownerDisplay(null, routing), /情報システム部門が初動窓口/)
@@ -71,7 +74,7 @@ test('incomplete assessment values display their reason and next decision', () =
 })
 
 test('known values remain visible without being replaced by fallback text', () => {
-  assert.equal(impactDisplay('Medium', '未対応時'), '評価値: 中')
+  assert.equal(impactDisplay('Medium', '未対応時のリスク'), '評価値: 中')
   assert.equal(
     impactScoreDisplay(
       {
@@ -81,6 +84,23 @@ test('known values remain visible without being replaced by fallback text', () =
       'impactIfUnaddressed',
     ),
     'Decision-1 Score 2.25 / 3 · High 75% / Critical 25%（順序尺度の補助値。確信度ではありません）',
+  )
+  assert.equal(
+    impactDisplay(null, '未対応時のリスク', {
+      Low: 0.42,
+      Medium: 0.25,
+      High: 0.17,
+      Critical: 0.15,
+    }),
+    'Decision-1の最有力Score: 小（Low、42%）',
+  )
+  assert.equal(
+    impactDisplay(null, '対応時・対応後の影響', {
+      Low: 0.25,
+      Medium: 0.375,
+      High: 0.375,
+    }),
+    'Decision-1の最有力Score: 中（Medium、38%） / 大（High、38%）',
   )
   assert.equal(priorityDisplay('P2'), '優先度 P2')
   assert.equal(plannedDateDisplay('2026-12-01', '開始日'), '開始日: 2026-12-01')
