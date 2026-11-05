@@ -38,6 +38,8 @@ import {
   bindDocumentFactProposalsFromResponse,
   documentFactDependencyResourceIds,
   DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION,
+  DocumentFactExtractionResponseError,
+  readDocumentFactResponseCache,
   splitDocumentTextForFactExtraction,
 } from '@arp/adapters'
 import {
@@ -758,28 +760,28 @@ app.http('api', {
                 batch.blocks.map(({ blockId, text }) => ({ blockId, text })),
               ),
             })
-            let raw: unknown
             processingStage = 'sharepoint-fact-cached-response-read'
-            try {
-              raw = await store.get('model-raw', rawId)
-            } catch (error) {
-              if ((error as { statusCode?: number }).statusCode !== 404)
-                throw error
-            }
-            if (
-              raw === undefined &&
-              priorExtraction &&
+            const cachedExtraction = await readDocumentFactResponseCache({
+              rawId,
+              read: (id) => store.get('model-raw', id),
+              validate: (raw) => {
+                processingStage = 'sharepoint-fact-cached-response-validate'
+                return bindDocumentFactProposalsFromResponse({
+                  document: batch,
+                  workloadId: body.workloadId,
+                  raw,
+                  availableResources: assessment?.resources ?? [],
+                })
+              },
+              ...(priorExtraction &&
               registered.source.sampleOnly &&
               batches.length === 1
-            ) {
-              try {
-                raw = await store.get('model-raw', legacyRawId)
-              } catch (error) {
-                if ((error as { statusCode?: number }).statusCode !== 404)
-                  throw error
-              }
-            }
-            if (raw === undefined) {
+                ? { fallbackIds: [legacyRawId] }
+                : {}),
+            })
+            let factsForBatch = cachedExtraction.facts ?? undefined
+            const rawCacheId = cachedExtraction.writeId
+            if (factsForBatch === undefined) {
               reusedExtraction = false
               processingStage = 'sharepoint-fact-budget-reservation'
               await store.reserveModelCall(config().modelCalls)
@@ -788,23 +790,17 @@ app.http('api', {
                 deployment,
                 batch,
                 body.workloadId,
-                async (response) => store.put('model-raw', rawId, response),
+                async (response) =>
+                  store.put('model-raw', rawCacheId, response),
                 assessment?.resources ?? [],
                 (stage) => {
                   processingStage = `sharepoint-fact-${stage}`
                 },
               )
-              for (const fact of batchResult.facts)
-                factCandidates.set(fact.factId, fact)
-              continue
+              factsForBatch = batchResult.facts
             }
-            const facts = bindDocumentFactProposalsFromResponse({
-              document: batch,
-              workloadId: body.workloadId,
-              raw,
-              availableResources: assessment?.resources ?? [],
-            })
-            for (const fact of facts) factCandidates.set(fact.factId, fact)
+            for (const fact of factsForBatch)
+              factCandidates.set(fact.factId, fact)
           }
           const extraction = {
             facts: [...factCandidates.values()],
@@ -1762,6 +1758,9 @@ app.http('api', {
         httpStatus: facts.httpStatus,
         operation: githubFailure.operation,
         providerCode: githubFailure.providerCode,
+        ...(error instanceof DocumentFactExtractionResponseError
+          ? { extractionFailureCode: error.failureCode }
+          : {}),
         errorType,
         correlationId,
       })
