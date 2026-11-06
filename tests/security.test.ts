@@ -6,6 +6,8 @@ import {
   compactExplanationInput,
   groundedInput,
   jsonRequest,
+  readLimitedRequestText,
+  RequestBodyTooLargeError,
   RemoteError,
 } from '@arp/adapters'
 import { PlatformIdentity } from '../packages/adapters/src/identity.ts'
@@ -204,6 +206,48 @@ test('HTTP streamed responses are size bounded', async () => {
       async () =>
         new Response('x', { headers: { 'content-length': '9000000' } }),
     ),
+  )
+})
+test('HTTP request bodies are bounded while streaming, including missing length headers', async () => {
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new Uint8Array(8))
+      controller.enqueue(new Uint8Array(3))
+    },
+  })
+  const request = new Request('https://example.invalid', {
+    method: 'POST',
+    body,
+    duplex: 'half',
+  } as RequestInit)
+  await assert.rejects(
+    readLimitedRequestText(request, 10),
+    RequestBodyTooLargeError,
+  )
+})
+test('HTTP request bodies at the byte limit preserve their text', async () => {
+  const text = 'こんにちは'
+  const request = new Request('https://example.invalid', {
+    method: 'POST',
+    body: text,
+  })
+  assert.equal(
+    await readLimitedRequestText(request, Buffer.byteLength(text)),
+    text,
+  )
+})
+test('HTTP request text decoding preserves Request.text BOM handling', async () => {
+  const text = '\uFEFF{"value":1}'
+  const request = new Request('https://example.invalid', {
+    method: 'POST',
+    body: text,
+  })
+  assert.equal(
+    await readLimitedRequestText(request, Buffer.byteLength(text)),
+    await new Request('https://example.invalid', {
+      method: 'POST',
+      body: text,
+    }).text(),
   )
 })
 test('platform identity refuses external token endpoints without contacting them', async (t) => {

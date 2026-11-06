@@ -35,6 +35,46 @@ export class RemoteError extends Error {
     this.retryAfterMs = retryAfterMs
   }
 }
+
+export class RequestBodyTooLargeError extends Error {
+  constructor() {
+    super('Request body exceeds the size limit')
+    this.name = 'RequestBodyTooLargeError'
+  }
+}
+
+export async function readLimitedRequestText(
+  request: {
+    headers: Headers
+    body: unknown
+  },
+  maxBytes: number,
+): Promise<string> {
+  const body = request.body as ReadableStream<unknown> | null
+  const declaredLength = Number(request.headers.get('content-length') ?? 0)
+  if (declaredLength > maxBytes) {
+    await body?.cancel().catch(() => undefined)
+    throw new RequestBodyTooLargeError()
+  }
+  const reader = body?.getReader()
+  if (!reader) return ''
+  const chunks: Uint8Array[] = []
+  let size = 0
+  for (;;) {
+    const part = await reader.read()
+    if (part.done) break
+    if (!(part.value instanceof Uint8Array))
+      throw new TypeError('Request body stream returned invalid data')
+    size += part.value.byteLength
+    if (size > maxBytes) {
+      await reader.cancel().catch(() => undefined)
+      throw new RequestBodyTooLargeError()
+    }
+    chunks.push(part.value)
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks, size))
+}
+
 export async function jsonRequest(
   url: string,
   init: RequestInit = {},

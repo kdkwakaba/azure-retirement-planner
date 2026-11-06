@@ -114,11 +114,23 @@ export class AzureStore {
   async get<T>(collection: string, id: string): Promise<T> {
     if (!/^[a-z-]+$/.test(collection) || !/^[a-f0-9]{64}$/.test(id))
       throw new Error('Invalid object key')
-    const content = await this.blobs
+    const blob = this.blobs
       .getContainerClient('records')
       .getBlobClient(`${collection}/${id}.json`)
-      .downloadToBuffer(0, undefined, { conditions: {} })
-    if (content.length > 8_000_000) throw new Error('Stored record too large')
+    const properties = await blob.getProperties({ conditions: {} })
+    const contentLength = properties.contentLength
+    if (
+      typeof contentLength !== 'number' ||
+      !Number.isSafeInteger(contentLength) ||
+      contentLength <= 0 ||
+      contentLength > 8_000_000
+    )
+      throw new Error('Stored record size is invalid')
+    const content = await blob.downloadToBuffer(0, contentLength, {
+      conditions: {},
+    })
+    if (content.length !== contentLength)
+      throw new Error('Stored record size changed during download')
     return JSON.parse(content.toString('utf8')) as T
   }
   async assessment(id: string): Promise<Assessment> {

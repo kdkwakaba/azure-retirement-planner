@@ -170,7 +170,7 @@ resource functions 'Microsoft.Web/sites@2024-11-01' = [for (name,i) in ['api','e
       minTlsVersion: '1.2'
       scmMinTlsVersion: '1.2'
       ftpsState: 'Disabled'
-      appSettings: [
+      appSettings: concat([
         { name: 'AzureWebJobsStorage__accountName', value: hostStorage.name }
         { name: 'AzureWebJobsStorage__credential', value: 'managedidentity' }
         { name: 'DATA_QUEUE__queueServiceUri', value: dataStorage.properties.primaryEndpoints.queue }
@@ -178,7 +178,6 @@ resource functions 'Microsoft.Web/sites@2024-11-01' = [for (name,i) in ['api','e
         { name: 'DATA_STORAGE_ACCOUNT', value: dataStorage.name }
         { name: 'TENANT_ID', value: tenantId }
         { name: 'ENTRA_CLIENT_ID', value: entraClientId }
-        { name: 'ENTRA_CLIENT_SECRET', value: '@Microsoft.KeyVault(VaultName=${vault.name};SecretName=entra-client-secret)' }
         { name: 'TARGET_SUBSCRIPTION_IDS', value: join(targetSubscriptionIds, ',') }
         { name: 'APP_ORIGIN', value: 'https://${prefix}-api-${suffix}.azurewebsites.net' }
         { name: 'DECISION_ENDPOINT', value: decisionEndpoint }
@@ -213,7 +212,9 @@ resource functions 'Microsoft.Web/sites@2024-11-01' = [for (name,i) in ['api','e
         { name: 'GITHUB_PROJECT_DUE_DATE_FIELD_ID', value: githubProjectDueDateFieldId }
         { name: 'GITHUB_TOKEN', value: '@Microsoft.KeyVault(VaultName=${vault.name};SecretName=github-token)' }
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: insights.properties.ConnectionString }
-      ]
+      ], name == 'api' ? [
+        { name: 'ENTRA_CLIENT_SECRET', value: '@Microsoft.KeyVault(VaultName=${vault.name};SecretName=entra-client-secret)' }
+      ] : [])
     }
   }
 }]
