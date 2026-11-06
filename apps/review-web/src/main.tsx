@@ -846,7 +846,6 @@ function App() {
             </button>
           )}
           {testModeEnabled && <span className="notice">テストモード</span>}
-          <span>評価対象は読み取り専用</span>
         </div>
         <section className="operations-summary" aria-labelledby="summary-title">
           <h2 id="summary-title">評価状況</h2>
@@ -1457,14 +1456,6 @@ function App() {
                           </button>
                         </div>
                       )}
-                    {current.reevaluation && (
-                      <div className="notice" role="note">
-                        <b>テスト用再評価結果・参照専用</b>
-                        <p>
-                          Decision-1と説明LLMの動作確認用です。この評価は修正・承認・対応不要判定・外部登録の対象にできません。元の評価と履歴は保持されています。
-                        </p>
-                      </div>
-                    )}
                     {syntheticUatEnabled &&
                       current.event.trackingId === syntheticUatTrackingId && (
                         <div className="notice">

@@ -41,6 +41,59 @@ test('UI assessment reads remain GET without a request body', async (t) => {
   assert.deepEqual(await request('assessments', 'GET'), [])
 })
 
+test('UI refreshes an expired Easy Auth session and retries a safe GET once', async (t) => {
+  let assessmentCalls = 0
+  t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit) => {
+    if (url === '/.auth/refresh') {
+      assert.equal(init.method, 'GET')
+      assert.equal(init.credentials, 'same-origin')
+      assert.equal(init.redirect, 'manual')
+      return new Response(null, { status: 200 })
+    }
+    assert.equal(url, '/api/assessments?includeNoAction=true')
+    assert.equal(init.method, 'GET')
+    assert.equal(init.credentials, 'same-origin')
+    assessmentCalls += 1
+    return assessmentCalls === 1
+      ? new Response(null, { status: 401 })
+      : Response.json([{ id: 'current-and-no-action-assessments' }])
+  })
+
+  assert.deepEqual(await request('assessments?includeNoAction=true', 'GET'), [
+    { id: 'current-and-no-action-assessments' },
+  ])
+  assert.equal(assessmentCalls, 2)
+})
+
+test('UI preserves the original authentication error if Easy Auth refresh fails', async (t) => {
+  const requestedUrls: string[] = []
+  t.mock.method(globalThis, 'fetch', async (url: string) => {
+    requestedUrls.push(url)
+    return new Response(null, { status: 401 })
+  })
+
+  await assert.rejects(request('assessments?includeNoAction=true', 'GET'), {
+    message: 'サインインが必要です',
+  })
+  assert.deepEqual(requestedUrls, [
+    '/api/assessments?includeNoAction=true',
+    '/.auth/refresh',
+  ])
+})
+
+test('UI does not automatically retry a POST after an authentication failure', async (t) => {
+  const requestedUrls: string[] = []
+  t.mock.method(globalThis, 'fetch', async (url: string) => {
+    requestedUrls.push(url)
+    return new Response(null, { status: 401 })
+  })
+
+  await assert.rejects(request('review', 'POST', { reason: 'review' }), {
+    message: 'サインインが必要です',
+  })
+  assert.deepEqual(requestedUrls, ['/api/review'])
+})
+
 test('sync feedback reports reprocessed existing notices', () => {
   assert.match(
     syncFeedback({
