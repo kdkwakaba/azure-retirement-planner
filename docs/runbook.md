@@ -2,6 +2,8 @@
 
 This runbook describes deployment and service operations. Replace angle-bracket placeholders with values approved for your environment. Never commit resulting IDs, endpoints, tokens, or payloads.
 
+For first-time setup from Azure provisioning through a SharePoint-backed assessment, follow the [end-to-end deployment and SharePoint evaluation guide](deployment-and-sharepoint-evaluation.md). This runbook covers individual operational procedures and recovery.
+
 ## 1. Local verification
 
 Use the Node.js and npm versions defined in `.node-version` and `package.json`.

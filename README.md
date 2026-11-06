@@ -27,6 +27,7 @@ The repository contains a TypeScript and React application, Azure Functions APIs
 | [Review interface behavior](docs/review-interface.md) | Authorization, correction, approval, and export behavior |
 | [User guide](docs/user-operations-guide.md) | Sign-in, synchronization, assessment review, and approvals |
 | [Operations runbook](docs/runbook.md) | Bootstrap, release, access, monitoring, and recovery |
+| [Deployment and SharePoint assessment guide](docs/deployment-and-sharepoint-evaluation.md) | End-to-end Azure deployment, Graph permissions, SharePoint setup, and assessment review |
 | [Implementation status](docs/implementation-backlog.md) | Implemented capabilities and remaining product limitations |
 | [CI failure agent](docs/ci-failure-agent.md) | Automated CI failure triage and patch workflow |
 

@@ -2,6 +2,8 @@
 
 This guide explains how to configure a SharePoint document folder as a source. Source records contain tenant, site, drive, folder item, workload, allowed extensions, and a configuration version. Do not commit real IDs or URLs to this repository.
 
+For the complete build sequence, including Bicep deployment, Azure RBAC, live SharePoint Source setup, and evaluation, see the [end-to-end deployment and SharePoint evaluation guide](deployment-and-sharepoint-evaluation.md).
+
 ## Requirements
 
 - A SharePoint administrator or site owner who can grant the API Managed Identity read access to the target site.
