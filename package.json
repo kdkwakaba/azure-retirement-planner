@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=24.22.1 <25",
+    "node": ">=24.22.2 <25",
     "npm": ">=11 <12"
   },
   "packageManager": "npm@11.20.0",
@@ -32,6 +32,7 @@
     "@types/react-dom": "19.3.0",
     "esbuild": "0.28.2",
     "eslint": "10.13.0",
+    "fflate": "0.8.3",
     "globals": "17.13.0",
     "prettier": "3.9.10",
     "typescript": "6.0.3",
@@ -40,7 +41,7 @@
     "yaml": "2.9.1"
   },
   "volta": {
-    "node": "24.22.1",
+    "node": "24.22.2",
     "npm": "11.20.0"
   },
   "overrides": {

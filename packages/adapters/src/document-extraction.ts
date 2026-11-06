@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import mammoth from 'mammoth'
+import { Unzip, UnzipInflate, UnzipPassThrough } from 'fflate'
 import readExcelFile from 'read-excel-file/node'
 import { z } from 'zod'
 import {
@@ -16,6 +17,8 @@ import { credential } from './azure.ts'
 import { jsonRequest, safeModelEndpoint } from './http.ts'
 
 const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024
+const MAX_OFFICE_XML_BYTES = 50 * 1024 * 1024
+const MAX_OFFICE_ARCHIVE_ENTRIES = 1_000
 const MAX_TEXT_CHARACTERS = 200_000
 const MAX_SPREADSHEET_CELLS = 20_000
 export const DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION = '2026-11-05.2'
@@ -492,6 +495,65 @@ function columnName(index: number): string {
   return result
 }
 
+function validateOfficeArchiveExpansion(content: Uint8Array): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let archiveEntries = 0
+    let xmlBytes = 0
+    let xmlEntries = 0
+    let completedXmlEntries = 0
+    let settled = false
+    const fail = (error: Error) => {
+      if (settled) return
+      settled = true
+      reject(error)
+    }
+    const unzip = new Unzip((file) => {
+      if (++archiveEntries > MAX_OFFICE_ARCHIVE_ENTRIES) {
+        const error = new Error(
+          'Office document contains too many archive entries',
+        )
+        fail(error)
+        throw error
+      }
+      if (!/\.xml(?:\.rels)?$/i.test(file.name)) return
+      xmlEntries++
+      file.ondata = (error, chunk, final) => {
+        if (error) {
+          fail(new Error('Office document XML could not be decompressed'))
+          return
+        }
+        xmlBytes += chunk.byteLength
+        if (xmlBytes > MAX_OFFICE_XML_BYTES) {
+          void file.terminate()
+          fail(new Error('Office document XML exceeds the 50 MiB limit'))
+          return
+        }
+        if (final) completedXmlEntries++
+      }
+      try {
+        file.start()
+      } catch {
+        fail(new Error('Office document uses unsupported ZIP compression'))
+      }
+    })
+    unzip.register(UnzipInflate)
+    unzip.register(UnzipPassThrough)
+    try {
+      unzip.push(content, true)
+    } catch {
+      fail(new Error('Office document ZIP archive is invalid'))
+      return
+    }
+    if (settled) return
+    if (!xmlEntries || completedXmlEntries !== xmlEntries) {
+      fail(new Error('Office document XML entries could not be fully checked'))
+      return
+    }
+    settled = true
+    resolve()
+  })
+}
+
 export async function extractDocumentText(
   content: Buffer,
   metadata: Omit<DocumentRevision, 'contentHash' | 'observedAt'> & {
@@ -500,6 +562,7 @@ export async function extractDocumentText(
 ): Promise<DocumentText> {
   if (!content.length || content.length > MAX_DOCUMENT_BYTES)
     throw new Error('Document size is empty or exceeds the 10 MiB limit')
+  await validateOfficeArchiveExpansion(content)
   const revision: DocumentRevision = {
     ...metadata,
     contentHash: createHash('sha256').update(content).digest('hex'),

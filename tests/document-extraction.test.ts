@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import test from 'node:test'
+import { strToU8, Zip, ZipDeflate, zipSync } from 'fflate'
 import {
   AzureStore,
   DocumentFactExtractionResponseError,
@@ -47,6 +48,60 @@ test('document extraction rejects malformed spreadsheets', async () => {
       extension: '.xlsx',
     }),
   )
+})
+
+test('document extraction stops XML expansion when actual streamed bytes exceed the limit', async () => {
+  const archive = zipSync({
+    'word/document.xml': new Uint8Array(50 * 1024 * 1024 + 1),
+  })
+  await assert.rejects(
+    extractDocumentText(Buffer.from(archive), metadata),
+    /Office document XML exceeds the 50 MiB limit/,
+  )
+})
+
+test('document extraction stops archives with excessive entry counts', async () => {
+  const entries = Object.fromEntries(
+    Array.from({ length: 1_001 }, (_, index) => [
+      `file-${index}.txt`,
+      new Uint8Array(),
+    ]),
+  )
+  const archive = zipSync(entries)
+  await assert.rejects(
+    extractDocumentText(Buffer.from(archive), metadata),
+    /Office document contains too many archive entries/,
+  )
+})
+
+test('document extraction accepts streaming Office ZIP entries with central-directory sizes', async () => {
+  const entries = {
+    '[Content_Types].xml':
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>',
+    '_rels/.rels':
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>',
+    'word/document.xml':
+      '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Hello</w:t></w:r></w:p></w:body></w:document>',
+  }
+  const content = await new Promise<Buffer>((resolve, reject) => {
+    const chunks: Buffer[] = []
+    const zip = new Zip((error, chunk, final) => {
+      if (error) {
+        reject(error)
+        return
+      }
+      chunks.push(Buffer.from(chunk))
+      if (final) resolve(Buffer.concat(chunks))
+    })
+    for (const [name, text] of Object.entries(entries)) {
+      const file = new ZipDeflate(name)
+      zip.add(file)
+      file.push(strToU8(text), true)
+    }
+    zip.end()
+  })
+  const document = await extractDocumentText(content, metadata)
+  assert.ok(document.blocks.some((block) => block.text.includes('Hello')))
 })
 
 test('SharePoint blob reads request only the stored document length', async () => {
@@ -96,6 +151,50 @@ test('SharePoint blob reads reject invalid sizes before downloading', async () =
   await assert.rejects(
     store.sharePointDocument('sample-folder', contentHash),
     /size is invalid/,
+  )
+  assert.equal(downloaded, false)
+})
+
+test('stored record reads cap size before downloading', async () => {
+  const content = Buffer.from('{"valid":true}')
+  let requestedCount = 0
+  const store = new AzureStore('sampleaccount')
+  store.blobs = {
+    getContainerClient: () => ({
+      getBlobClient: () => ({
+        getProperties: async () => ({ contentLength: content.length }),
+        downloadToBuffer: async (_offset: number, count: number) => {
+          requestedCount = count
+          return content
+        },
+      }),
+    }),
+  } as never
+
+  assert.deepEqual(await store.get('assessments', 'a'.repeat(64)), {
+    valid: true,
+  })
+  assert.equal(requestedCount, content.length)
+})
+
+test('stored record reads reject oversized blobs before downloading', async () => {
+  let downloaded = false
+  const store = new AzureStore('sampleaccount')
+  store.blobs = {
+    getContainerClient: () => ({
+      getBlobClient: () => ({
+        getProperties: async () => ({ contentLength: 8_000_001 }),
+        downloadToBuffer: async () => {
+          downloaded = true
+          return Buffer.from('{}')
+        },
+      }),
+    }),
+  } as never
+
+  await assert.rejects(
+    store.get('assessments', 'a'.repeat(64)),
+    /Stored record size is invalid/,
   )
   assert.equal(downloaded, false)
 })
