@@ -105,21 +105,46 @@ export class ApiRequestError extends Error {
   }
 }
 
+let authRefresh: Promise<boolean> | null = null
+
+function refreshAuthSession(): Promise<boolean> {
+  if (!authRefresh) {
+    authRefresh = fetch('/.auth/refresh', {
+      method: 'GET',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      redirect: 'manual',
+    })
+      .then((response) => response.ok)
+      .catch(() => false)
+      .finally(() => {
+        authRefresh = null
+      })
+  }
+  return authRefresh
+}
+
 export async function request(
   path: string,
   method: 'GET' | 'POST',
   body?: unknown,
 ) {
-  const response = await fetch('/api/' + path, {
+  const init: RequestInit = {
     method,
     credentials: 'same-origin',
+    cache: 'no-store',
     ...(method === 'POST'
       ? {
           headers: { 'Content-Type': 'application/json', 'X-ARP-Request': '1' },
           body: JSON.stringify(body ?? {}),
         }
       : {}),
-  })
+  }
+  let response = await fetch('/api/' + path, init)
+  if (method === 'GET' && response.status === 401) {
+    const refreshed = await refreshAuthSession()
+    if (refreshed) response = await fetch('/api/' + path, init)
+  }
   if (!response.ok) {
     const result: unknown = await response.json().catch(() => ({}))
     const details =
