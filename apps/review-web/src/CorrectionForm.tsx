@@ -251,11 +251,11 @@ export function CorrectionForm({
         />
         Critical workload（チェック時のみ指定）
       </label>
-      <small>
-        {form.criticalWorkload
-          ? 'Criticalとして指定されています。根拠と業務責任者の確認を記録してください。'
-          : 'Critical指定なし（非該当の人間確認とは区別されます）。'}
-      </small>
+      {form.criticalWorkload && (
+        <small>
+          Criticalとして指定されています。根拠と業務責任者の確認を記録してください。
+        </small>
+      )}
       <label>
         <input
           type="checkbox"
