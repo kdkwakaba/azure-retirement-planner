@@ -15,6 +15,7 @@ import type {
 } from '@arp/contracts'
 import {
   assessmentSchema,
+  assessmentReviewSchema,
   approvalSchema,
   decisionReevaluationRunSchema,
   businessContextSchema,
@@ -41,6 +42,7 @@ export interface Head {
   etag?: string
   assessmentId: string
   packageHash: string
+  lastReviewId?: string
   entityKind: string
   disposition?: 'Active' | 'NoAction'
 }
@@ -1133,10 +1135,32 @@ export class AzureStore {
       queryOptions: { filter: "entityKind eq 'head'" },
     })) {
       if (!includeNoAction && entity.disposition === 'NoAction') continue
+      let latestReview: Assessment['latestReview'] = null
+      if (typeof entity.lastReviewId === 'string') {
+        const approval = approvalSchema.parse(
+          await this.get<Approval>('approvals', entity.lastReviewId),
+        )
+        if (
+          approval.assessmentId !== entity.assessmentId ||
+          approval.packageHash !== entity.packageHash
+        )
+          throw new Error(
+            'Stored approval does not match the current assessment',
+          )
+        latestReview = assessmentReviewSchema.parse({
+          assessmentId: approval.assessmentId,
+          packageHash: approval.packageHash,
+          approvedItemIds: approval.approvedItemIds,
+          reviewedAt: approval.reviewedAt,
+          reason: approval.reason,
+          result: approval.result,
+        })
+      }
       results.push({
         ...(await this.assessment(entity.assessmentId)),
         reviewDisposition:
           entity.disposition === 'NoAction' ? 'NoAction' : 'Active',
+        latestReview,
       })
       if (results.length >= 100) break
     }

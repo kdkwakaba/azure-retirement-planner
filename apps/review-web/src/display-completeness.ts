@@ -384,17 +384,14 @@ export function impactDisplay(
   axis: '未対応時のリスク' | '対応時・対応後の影響',
   probabilities?: Record<string, number>,
 ): string {
-  const impactLabels: Record<string, string> = {
-    Low: '小',
-    Medium: '中',
-    High: '大',
-    Critical: '重大',
-  }
-  if (value) return `評価値: ${impactLabels[value] ?? value}`
+  const impactLevels = ['Low', 'Medium', 'High', 'Critical']
+  if (value && impactLevels.includes(value)) return value
 
   const rankedProbabilities = Object.entries(probabilities ?? {}).filter(
     ([level, probability]) =>
-      level in impactLabels && Number.isFinite(probability) && probability >= 0,
+      impactLevels.includes(level) &&
+      Number.isFinite(probability) &&
+      probability >= 0,
   )
   if (!rankedProbabilities.length) return `影響度は未確定（${axis}）`
 
@@ -404,27 +401,38 @@ export function impactDisplay(
   const highestLevels = rankedProbabilities.filter(
     ([, probability]) => probability === highestProbability,
   )
-  const highestScore = highestLevels
-    .map(
-      ([level, probability]) =>
-        `${impactLabels[level]}（${level}、${Math.round(probability * 100)}%）`,
-    )
-    .join(' / ')
-  return `Decision-1の最有力Score: ${highestScore}`
+  return highestLevels.map(([level]) => level).join(' / ')
 }
 
-export function impactScoreDisplay(
-  decision: Assessment['decision'],
-  key: 'impactIfUnaddressed' | 'impactDuringAndAfterChange',
-): string | null {
-  const score = decision.scoreValues?.[key]
-  if (score === undefined) return null
-  const distribution = decision.probabilities[key]
-  const levels = ['Low', 'Medium', 'High', 'Critical'] as const
-  const probabilities = levels
-    .filter((level) => distribution?.[level] !== undefined)
-    .map((level) => `${level} ${Math.round(distribution![level]! * 100)}%`)
-  return `Decision-1 Score ${score.toFixed(2)} / 3${probabilities.length ? ` · ${probabilities.join(' / ')}` : ''}（順序尺度の補助値。確信度ではありません）`
+export function dateTimeDisplay(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(date)
+}
+
+export function generalImpactTextDisplay(text: string): string {
+  return text
+    .replace(
+      /個別の業務処理との対応情報がないため、処理名や影響範囲は特定していません。?/g,
+      '',
+    )
+    .replace(
+      /個別の業務処理との対応情報がないため、処理名は特定していません。?/g,
+      '',
+    )
+    .replace(
+      /作業方式と個別の業務処理との対応情報がないため、停止時間や影響する処理名は断定していません。?/g,
+      '',
+    )
+    .trim()
 }
 
 export function environmentDisplay(environment: string | null): string {
@@ -433,10 +441,6 @@ export function environmentDisplay(environment: string | null): string {
 
 export function ownerTagDisplay(ownerTeam: string | null): string {
   return ownerTeam ?? 'OwnerTeamタグ値なし（実担当をWorkload責任者と確認）'
-}
-
-export function modelVersionDisplay(version: string | null): string {
-  return version ?? 'モデル版の記録なし（監査記録を確認）'
 }
 
 export function modelInvocationStatusDisplay(
@@ -508,12 +512,6 @@ export function assessmentStatusDisplay(assessment: Assessment): string {
   if (assessment.humanReviewRequired === false)
     return '定型結果（評価レビュー省略可能。作業承認は別途必要）'
   return '人による評価確認が必要'
-}
-
-export function criticalWorkloadDisplay(isCritical: boolean): string {
-  return isCritical
-    ? 'Criticalとして指定済み（人間確認）'
-    : 'Critical指定なし（非該当の人間確認とは区別）'
 }
 
 export function plannedDateDisplay(
@@ -633,45 +631,38 @@ export function milestoneDateDisplay(
   date: string | null,
   rawDateText: string | null,
 ): string {
-  if (date) return date
-  if (rawDateText)
-    return `公式原文の記載: ${rawDateText}（日付の適用範囲を確認）`
+  if (date) {
+    const parsed = new Date(`${date}T00:00:00`)
+    return Number.isNaN(parsed.getTime())
+      ? date
+      : new Intl.DateTimeFormat('ja-JP', {
+          timeZone: 'Asia/Tokyo',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        }).format(parsed)
+  }
+  if (rawDateText) {
+    const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(rawDateText.trim())
+    const parsed = hasTimezone ? new Date(rawDateText) : null
+    const formatted =
+      parsed && !Number.isNaN(parsed.getTime())
+        ? dateTimeDisplay(rawDateText)
+        : rawDateText
+    return `公式原文の記載: ${formatted}（日付の適用範囲を確認）`
+  }
   return '日付を特定できていません（公式通知の原文を確認）'
 }
 
-export function undecidedDecisionFields(
-  decision: Assessment['decision'],
-): string[] {
-  const fields: Array<[keyof Assessment['decision'], string]> = [
-    ['impactIfUnaddressed', '未対応時の影響度'],
-    ['impactDuringAndAfterChange', '対応時・対応後の影響度'],
-    ['priority', '優先度'],
-    ['startWindow', '対応開始時期'],
-    ['complexity', '移行難易度'],
-    ['projectRequired', 'プロジェクト化の要否'],
-    ['ownerTeam', '担当チーム'],
-  ]
-  return fields
-    .filter(([key]) => decision[key] === null)
-    .map(([, label]) => label)
-}
-
-export function decisionStatusDisplay(
-  status: string,
-  undecidedFields: string[] = [],
-): string {
+export function approvalResultDisplay(result: string): string {
   const labels: Record<string, string> = {
-    Proposed: '判断案あり（人の確認前）',
-    Abstained: undecidedFields.length
-      ? `モデル判断保留（確定できなかった項目: ${undecidedFields.join('、')}）`
-      : 'モデル判断保留（未確定項目が結果に記録されていません）',
-    Unavailable: '判断機能を利用できず保留',
-    NotRequired: '定型結果のため判断機能は不要',
-    NotConfigured: '判断機能が構成されていません。手動確認が必要',
-    NotStarted: '判断未実行。手動確認が必要',
-    Failed: '判断処理失敗。手動確認が必要',
+    Approved: '承認',
+    Partial: '部分承認',
+    Returned: '差戻し',
+    Held: '保留',
+    NoAction: '対応不要',
   }
-  return labels[status] ?? '判断状態を確認してください'
+  return labels[result] ?? '判断結果を確認'
 }
 
 export function reviewReasonDisplay(reason: string): string {
