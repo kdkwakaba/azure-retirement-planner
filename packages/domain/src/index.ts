@@ -517,84 +517,122 @@ export function resourceVerificationWorkItems(input: {
     })
     groups.set(key, [...(groups.get(key) ?? []), resource])
   }
-  return [...groups.entries()].map(([key, resources]) => {
-    const sample = resources[0]!
-    const attributes = [...sample.missingAttributes].sort()
-    const resourceTypes = [...new Set(resources.map((r) => r.type))].sort()
-    const resourceIds = [...new Set(resources.map((r) => r.id))].sort()
-    const resourceIdSet = new Set(resourceIds.map((id) => id.toLowerCase()))
-    const eventEvidenceIds = input.eventEvidence
-      .filter((item) => {
-        const resourceSubjects = item.subjectIds.filter((subjectId) =>
-          input.resources.some(
-            (resource) => resource.id.toLowerCase() === subjectId.toLowerCase(),
-          ),
-        )
-        return resourceSubjects.length
-          ? resourceSubjects.some((subjectId) =>
-              resourceIdSet.has(subjectId.toLowerCase()),
-            )
-          : item.subjectIds.includes(input.eventId) ||
-              item.subjectIds.includes(input.workloadId)
-      })
-      .map((item) => item.id)
-    const evidenceIds = [
-      ...new Set([
-        ...eventEvidenceIds,
-        ...resources.flatMap((r) => r.evidenceIds),
-      ]),
-    ].sort()
-    const detail =
-      resourceVerificationReason(sample) ??
-      '分類理由が記録されていません。リソースの評価状態と根拠を確認してください。'
-    const title =
-      sample.classificationReason === 'RequiredAttributeMissing'
-        ? `影響確認: ${attributes.join('、')} の確認`
-        : sample.classificationReason === 'NoApplicableProfile'
-          ? '影響確認: 判定プロファイルの適用範囲'
-          : sample.classificationReason === 'NoMatchingProfileCondition'
-            ? `影響確認: 条件不一致 (${resourceTypes.join('、')})`
-            : `影響確認: ${sample.classification}`
-    return {
-      id: hash({
-        eventId: input.eventId,
-        workloadId: input.workloadId,
-        group: key,
-        resourceIds,
-      }),
-      category: 'Impact Verification',
-      title,
-      description: `${resources.length}件の対象候補（${resourceTypes.join('、')}）: ${detail} 結論と根拠を訂正理由へ記録し、確認できなければUnknownを維持してください。この作業は影響確認であり、移行必須やAzureリソース変更を意味しません。`,
+  return [...groups.entries()].map(([key, resources]) =>
+    createResourceVerificationWorkItem(input, key, resources),
+  )
+}
+
+function createResourceVerificationWorkItem(
+  input: {
+    eventId: string
+    workloadId: string
+    priority: Priority | null
+    eventEvidence: Evidence[]
+    resources: ResourceImpact[]
+  },
+  key: string,
+  resources: ResourceImpact[],
+): WorkItem {
+  const sample = resources[0]!
+  const attributes = [...sample.missingAttributes].sort()
+  const resourceTypes = [...new Set(resources.map((r) => r.type))].sort()
+  const resourceIds = [...new Set(resources.map((r) => r.id))].sort()
+  const evidenceIds = resourceVerificationEvidenceIds(
+    input,
+    resources,
+    resourceIds,
+  )
+  const detail =
+    resourceVerificationReason(sample) ??
+    '分類理由が記録されていません。リソースの評価状態と根拠を確認してください。'
+  const title = resourceVerificationTitle(sample, attributes, resourceTypes)
+  return {
+    id: hash({
+      eventId: input.eventId,
       workloadId: input.workloadId,
+      group: key,
       resourceIds,
-      ownerTeam: null,
-      necessity: 'Recommended',
-      priority: input.priority,
-      plannedStartDate: null,
-      dueDate: null,
-      applicableMilestoneIds: [],
-      prerequisites: [],
-      completionCriteria: [
-        '根拠と結論、確認できなかった情報を人が訂正理由へ記録する',
-        '影響分類を確定できない場合はUnknownを維持し、移行・変更の要否は別途判断する',
+    }),
+    category: 'Impact Verification',
+    title,
+    description: `${resources.length}件の対象候補（${resourceTypes.join('、')}）: ${detail} 結論と根拠を訂正理由へ記録し、確認できなければUnknownを維持してください。この作業は影響確認であり、移行必須やAzureリソース変更を意味しません。`,
+    workloadId: input.workloadId,
+    resourceIds,
+    ownerTeam: null,
+    necessity: 'Recommended',
+    priority: input.priority,
+    plannedStartDate: null,
+    dueDate: null,
+    applicableMilestoneIds: [],
+    prerequisites: [],
+    completionCriteria: [
+      '根拠と結論、確認できなかった情報を人が訂正理由へ記録する',
+      '影響分類を確定できない場合はUnknownを維持し、移行・変更の要否は別途判断する',
+    ],
+    humanApprovalRequired: true,
+    evidenceIds,
+    sourceType: 'Mixed',
+    officialReferenceIds: [],
+    dependencyIds: [],
+    status: 'Draft',
+    confidence: {
+      kind: 'EvidenceSupport',
+      value: null,
+      method: 'ResourceImpactの分類理由と不足属性からの決定的抽出',
+      limitations: [
+        '確認作業の生成は影響や移行必須を確定しない',
+        'Unknownを対象外へ自動変換しない',
       ],
-      humanApprovalRequired: true,
-      evidenceIds,
-      sourceType: 'Mixed',
-      officialReferenceIds: [],
-      dependencyIds: [],
-      status: 'Draft',
-      confidence: {
-        kind: 'EvidenceSupport',
-        value: null,
-        method: 'ResourceImpactの分類理由と不足属性からの決定的抽出',
-        limitations: [
-          '確認作業の生成は影響や移行必須を確定しない',
-          'Unknownを対象外へ自動変換しない',
-        ],
-      },
-    }
-  })
+    },
+  }
+}
+
+function resourceVerificationEvidenceIds(
+  input: {
+    eventId: string
+    workloadId: string
+    eventEvidence: Evidence[]
+    resources: ResourceImpact[]
+  },
+  groupResources: ResourceImpact[],
+  resourceIds: string[],
+): string[] {
+  const resourceIdSet = new Set(resourceIds.map((id) => id.toLowerCase()))
+  const eventEvidenceIds = input.eventEvidence
+    .filter((item) => {
+      const resourceSubjects = item.subjectIds.filter((subjectId) =>
+        input.resources.some(
+          (resource) => resource.id.toLowerCase() === subjectId.toLowerCase(),
+        ),
+      )
+      return resourceSubjects.length
+        ? resourceSubjects.some((subjectId) =>
+            resourceIdSet.has(subjectId.toLowerCase()),
+          )
+        : item.subjectIds.includes(input.eventId) ||
+            item.subjectIds.includes(input.workloadId)
+    })
+    .map((item) => item.id)
+  return [
+    ...new Set([
+      ...eventEvidenceIds,
+      ...groupResources.flatMap((resource) => resource.evidenceIds),
+    ]),
+  ].sort()
+}
+
+function resourceVerificationTitle(
+  sample: ResourceImpact,
+  attributes: string[],
+  resourceTypes: string[],
+): string {
+  return sample.classificationReason === 'RequiredAttributeMissing'
+    ? `影響確認: ${attributes.join('、')} の確認`
+    : sample.classificationReason === 'NoApplicableProfile'
+      ? '影響確認: 判定プロファイルの適用範囲'
+      : sample.classificationReason === 'NoMatchingProfileCondition'
+        ? `影響確認: 条件不一致 (${resourceTypes.join('、')})`
+        : `影響確認: ${sample.classification}`
 }
 
 export function packageHash(assessment: Assessment): string {
