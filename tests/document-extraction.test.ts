@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import test from 'node:test'
+import { strToU8, Zip, ZipDeflate, zipSync } from 'fflate'
 import {
   AzureStore,
   DocumentFactExtractionResponseError,
@@ -47,6 +48,57 @@ test('document extraction rejects malformed spreadsheets', async () => {
       extension: '.xlsx',
     }),
   )
+})
+
+test('document extraction rejects Office archives with excessive declared XML expansion before parsing', async () => {
+  const archive = Buffer.from(
+    zipSync({ 'word/document.xml': strToU8('small document') }, { level: 0 }),
+  )
+  const centralDirectoryOffset = archive.indexOf(
+    Buffer.from([0x50, 0x4b, 0x01, 0x02]),
+  )
+  const localHeaderOffset = archive.indexOf(
+    Buffer.from([0x50, 0x4b, 0x03, 0x04]),
+  )
+  assert.notEqual(centralDirectoryOffset, -1)
+  assert.notEqual(localHeaderOffset, -1)
+  const expandedSize = 50 * 1024 * 1024 + 1
+  archive.writeUInt32LE(expandedSize, centralDirectoryOffset + 24)
+  archive.writeUInt32LE(expandedSize, localHeaderOffset + 22)
+  await assert.rejects(
+    extractDocumentText(archive, metadata),
+    /Office document XML exceeds the 50 MiB limit/,
+  )
+})
+
+test('document extraction accepts streaming Office ZIP entries with central-directory sizes', async () => {
+  const entries = {
+    '[Content_Types].xml':
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>',
+    '_rels/.rels':
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>',
+    'word/document.xml':
+      '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Hello</w:t></w:r></w:p></w:body></w:document>',
+  }
+  const content = await new Promise<Buffer>((resolve, reject) => {
+    const chunks: Buffer[] = []
+    const zip = new Zip((error, chunk, final) => {
+      if (error) {
+        reject(error)
+        return
+      }
+      chunks.push(Buffer.from(chunk))
+      if (final) resolve(Buffer.concat(chunks))
+    })
+    for (const [name, text] of Object.entries(entries)) {
+      const file = new ZipDeflate(name)
+      zip.add(file)
+      file.push(strToU8(text), true)
+    }
+    zip.end()
+  })
+  const document = await extractDocumentText(content, metadata)
+  assert.ok(document.blocks.some((block) => block.text.includes('Hello')))
 })
 
 test('SharePoint blob reads request only the stored document length', async () => {

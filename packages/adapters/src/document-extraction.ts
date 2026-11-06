@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import mammoth from 'mammoth'
+import JSZip from 'jszip'
 import readExcelFile from 'read-excel-file/node'
 import { z } from 'zod'
 import {
@@ -16,6 +17,8 @@ import { credential } from './azure.ts'
 import { jsonRequest, safeModelEndpoint } from './http.ts'
 
 const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024
+const MAX_OFFICE_XML_BYTES = 50 * 1024 * 1024
+const MAX_OFFICE_XML_ENTRIES = 1_000
 const MAX_TEXT_CHARACTERS = 200_000
 const MAX_SPREADSHEET_CELLS = 20_000
 export const DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION = '2026-11-05.2'
@@ -492,6 +495,33 @@ function columnName(index: number): string {
   return result
 }
 
+async function validateOfficeArchiveExpansion(
+  content: Uint8Array,
+): Promise<void> {
+  let xmlBytes = 0
+  let xmlEntries = 0
+  // JSZip reads central-directory sizes without inflating document entries.
+  const archive = await JSZip.loadAsync(content)
+  for (const entry of Object.values(archive.files)) {
+    if (entry.dir || !/\.xml(?:\.rels)?$/i.test(entry.name)) continue
+    if (++xmlEntries > MAX_OFFICE_XML_ENTRIES)
+      throw new Error('Office document contains too many XML entries')
+    const originalSize = (
+      entry as JSZip.JSZipObject & {
+        _data?: { uncompressedSize?: number }
+      }
+    )._data?.uncompressedSize
+    if (
+      typeof originalSize !== 'number' ||
+      !Number.isSafeInteger(originalSize) ||
+      originalSize < 0 ||
+      originalSize > MAX_OFFICE_XML_BYTES - xmlBytes
+    )
+      throw new Error('Office document XML exceeds the 50 MiB limit')
+    xmlBytes += originalSize
+  }
+}
+
 export async function extractDocumentText(
   content: Buffer,
   metadata: Omit<DocumentRevision, 'contentHash' | 'observedAt'> & {
@@ -500,6 +530,7 @@ export async function extractDocumentText(
 ): Promise<DocumentText> {
   if (!content.length || content.length > MAX_DOCUMENT_BYTES)
     throw new Error('Document size is empty or exceeds the 10 MiB limit')
+  await validateOfficeArchiveExpansion(content)
   const revision: DocumentRevision = {
     ...metadata,
     contentHash: createHash('sha256').update(content).digest('hex'),

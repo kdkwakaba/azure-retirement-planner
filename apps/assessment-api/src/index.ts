@@ -26,6 +26,8 @@ import {
   requireUserRole,
   apiRolePolicy,
   required,
+  readLimitedRequestText,
+  RequestBodyTooLargeError,
   verifyWriteRequest,
   failureFacts,
   GitHubGraphQLError,
@@ -118,9 +120,7 @@ app.http('api', {
         requireApplicationRole(principal, apiRolePolicy.notification)
         if (process.env.INGEST_ENABLED !== 'true')
           return reply(503, { error: 'Ingestion disabled' })
-        const content = await request.text()
-        if (Buffer.byteLength(content) > 200000)
-          return reply(413, { error: 'Request too large' })
+        const content = await readLimitedRequestText(request, 200_000)
         const raw = z.record(z.string(), z.unknown()).parse(JSON.parse(content))
         const store = new AzureStore(config().account)
         const receiptId = await store.receiveNotice(raw)
@@ -416,16 +416,12 @@ app.http('api', {
           request.headers.get('content-type'),
           request.headers.get('x-arp-request'),
         )
-        if (Number(request.headers.get('content-length') ?? 0) > 200000)
-          return reply(413, { error: 'Request too large' })
+        const requestContent = await readLimitedRequestText(request, 200_000)
         if (path === 'business-context') {
           requireUserRole(principal, apiRolePolicy.businessContext)
-          const content = await request.text()
-          if (Buffer.byteLength(content) > 200000)
-            return reply(413, { error: 'Request too large' })
           const payload = businessContextSchema
             .omit({ reviewedBy: true, reviewedAt: true })
-            .parse(JSON.parse(content))
+            .parse(JSON.parse(requestContent))
           await store.saveBusinessContext({
             ...payload,
             reviewedBy: principal.id,
@@ -448,7 +444,7 @@ app.http('api', {
               groundingHash: z.string().regex(/^[a-f0-9]{64}$/),
             })
             .strict()
-            .parse(JSON.parse(await request.text()))
+            .parse(JSON.parse(requestContent))
           const registered = await store.sharePointSource(body.sourceId)
           if (
             !registered?.source.sampleOnly ||
@@ -557,9 +553,6 @@ app.http('api', {
         }
         if (path === 'sharepoint-source') {
           requireUserRole(principal, apiRolePolicy.businessContext)
-          const content = await request.text()
-          if (Buffer.byteLength(content) > 200000)
-            return reply(413, { error: 'Request too large' })
           const input = z
             .object({
               sourceId: z.string().min(1).max(100),
@@ -572,7 +565,7 @@ app.http('api', {
               sampleOnly: z.boolean(),
             })
             .strict()
-            .parse(JSON.parse(content))
+            .parse(JSON.parse(requestContent))
           const source = documentSourceSchema.parse({
             ...input,
             tenantId: config().tenantId,
@@ -594,7 +587,7 @@ app.http('api', {
               groundingHash: z.string().regex(/^[a-f0-9]{64}$/),
             })
             .strict()
-            .parse(JSON.parse(await request.text()))
+            .parse(JSON.parse(requestContent))
           const registered = await store.sharePointSource(body.sourceId)
           if (
             !registered ||
@@ -654,7 +647,7 @@ app.http('api', {
               assessmentId: z.string().min(1).max(200).nullable(),
             })
             .strict()
-            .parse(JSON.parse(await request.text()))
+            .parse(JSON.parse(requestContent))
           processingStage = 'sharepoint-fact-source-read'
           const registered = await store.sharePointSource(body.sourceId)
           if (
@@ -944,7 +937,7 @@ app.http('api', {
                 .max(200),
             })
             .strict()
-            .parse(JSON.parse(await request.text()))
+            .parse(JSON.parse(requestContent))
           const registered = await store.sharePointSource(body.sourceId)
           if (
             !registered ||
@@ -1104,7 +1097,7 @@ app.http('api', {
           const body = z
             .object({ sourceId: z.string().min(1).max(100) })
             .strict()
-            .parse(JSON.parse(await request.text()))
+            .parse(JSON.parse(requestContent))
           const registered = await store.sharePointSource(body.sourceId)
           if (!registered)
             return reply(404, { error: 'SharePoint source not found' })
@@ -1144,13 +1137,10 @@ app.http('api', {
                 .default([]),
             })
             .strict()
-            .parse(JSON.parse(await request.text()))
+            .parse(JSON.parse(requestContent))
           return reply(202, await synchronize(body.assessmentIds))
         }
-        const content = await request.text()
-        if (Buffer.byteLength(content) > 200000)
-          return reply(413, { error: 'Request too large' })
-        const payload: unknown = JSON.parse(content)
+        const payload: unknown = JSON.parse(requestContent)
         if (path === 'decision-reevaluation') {
           requireUserRole(principal, apiRolePolicy.decisionReevaluation)
           if (
@@ -1704,6 +1694,8 @@ app.http('api', {
       return reply(404, { error: 'Not found' })
     } catch (error) {
       const message = error instanceof Error ? error.message : ''
+      if (error instanceof RequestBodyTooLargeError)
+        return reply(413, { error: 'Request too large' })
       if (
         message === 'Forbidden' ||
         message === 'Application identity required'
