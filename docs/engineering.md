@@ -1,51 +1,61 @@
 # 開発・運用基準
 
-2026-10-29 / 状態: PR #56までのmainコード・IaC・API／ExporterをAzureへ配置済み。Service Health実通知7件とDecision-1実応答1件は過去に確認済み。最新の認証済み画面UAT、Advisor正の相関、説明LLM、GitHub実Project登録、Poison Queue復旧は未確認。実装状態は[バックログ](implementation-backlog.md)、配置・検証記録は[Runbook](runbook.md)を正とする。
+このリポジトリはAzure Functions、Bicep、GitHub Actionsを使うTypeScript／Reactモノレポです。Node.jsとnpmの正本は.node-versionとpackage.jsonです。
 
-## 技術とモノレポ
+## リポジトリ構成
 
-採用済みはBicep、TypeScript＋React、GitHub Actions CI＋手動CD。npm workspaces、Functions Flex Consumption、React＋Viteを基本構成案とする。確定Version・リージョン・SKUはサポートと実現性確認後に記録し、EOLの固定例を残さない。
+- apps/assessment-api：認証済みAPI、同期、評価、レビュー、React画面の配信。
+- apps/work-item-exporter：Queue経由のGitHub作業項目登録。
+- apps/review-web：API Artifactに含めて配信するReact画面。
+- packages/contracts：版管理されたRequest、Response、保存RecordのSchema。
+- packages/domain：決定的な業務規則とModel非依存の評価処理。
+- packages/adapters：Azure、Microsoft Graph、Model、Storage、GitHubの接続処理。
+- infra：Bicep配置Module、環境Parameter、権限付きBootstrap Template。
+- validation：別管理のAzure Workload Template。
 
-apps/assessment-api、apps/work-item-exporter、apps/review-webを実行単位、packages/contracts・domain・adaptersを共有単位とする計画。infra/bootstrap・modules・environments、prompts、policies、tests、spikes、scriptsを用途に応じ追加。まだ存在しないフォルダ・コマンドを実装済みとして扱わない。
+Cloud SDK、HTTP Client、認証情報、環境変数の参照をpackages/domainに置かない。既存書式を維持し、具体的な不足がない限り依存を追加しない。
 
-Schema・イベント・永続形式は版管理し、原本を保持する。破壊的変更は移行と旧版再処理を検討する。業務基準はdecision-policy.mdと将来policies、Promptは将来promptsに集約しSkillsへ重複しない。
+## 変更と検証
 
-## CI・CD
+短期間のBranchを使い、Pull Requestで変更をレビューする。共有Contractを変える場合は依存する全アプリを確認する。保存Schemaを変える場合は不変Recordと後方互換Readを維持し、破壊的変更の移行方法を記録する。
 
-短命ブランチ＋PRを推奨。個人PoCでは本人レビューの確認記録、本番では第三者レビューへ移行する。契約上利用できるブランチ保護・Environment機能はSpikeで確認する。
+提出前に次を実行する。
 
-通常PR CIはformat／lint／型／ビルド／Unit／契約・Schema／Bicep静的検証／依存監査／文書リンク。共有契約・Lockfile変更は依存アプリも確認。差分検査の省略を成功扱いしない。CIは実モデル、有料Azure処理、GitHub作業登録を呼ばず、固定・合成資材を用いる。実接続とモデル評価は別の許可された手動実行。
+~~~sh
+npm ci --ignore-scripts
+npm run verify
+~~~
 
-mainの検査済Commitに成果物Hashを付け、手動でリリース候補選択→IaC検証・What-if→差分確認→手動適用→同成果物配置→疎通確認→記録。手動起動は第三者強制承認の代替ではない。What-ifに必要な書込相当権限を未信頼PRへ渡さない。未信頼コードを特権Workflowでcheckoutして実行しない。
+npm run verifyはFormat、Lint、型検査、Test、Build、文書検査、Runtime／Artifact検査、依存監査を実行する。Bicep Templateもコンパイルする。CIでは本番外Fixtureを使い、有料Modelを呼ばず、Azureを変更せず、GitHubへ作業を登録しない。
 
-OIDCでActions→Azure。Bootstrap（RG、初回Identity、Federation、RBAC）と通常CDを分離。権限付与・Subscription-wide変更を通常CDへ持たせない。評価対象の変更は禁止だが、本システム専用環境は承認されたCDで変更可能。アプリ前版再配置とデータ・IaC復旧は別であり不可逆変更を自動切戻ししない。
+## リリースとID
 
-## 画面・データ・登壇
+リリースWorkflowはmainで成功したCI Artifactだけを受け付け、Artifact Hashを検証し、Bicep What-Ifを再計算してApply時に同一Plan Hashを要求する。アプリPackageはそのArtifactから配置する。権限付与Bootstrapは通常のリリースと分離する。リリースIdentityへ広範なSubscription権限を与えない。
 
-Spike、PoC、登壇ともAzure上の画面とEntra ID認証。APIはToken・役割・承認対象を検証し、UIの表示制御だけに頼らない。サービス間MI、Actions OIDC、GitHub資格情報を分離。
+利用者認証にはEntraを使い、保護された全APIで認可を検証する。Azureサービス間はManaged Identity、GitHub ActionsからAzureへはOIDCを使う。画面上で操作を隠すだけでは認可にならない。
 
-登壇はデータを分けず同じ実データと処理経路でライブ実行。保存結果再生やlocalhostを標準にしない。3分のライブ可否、実対象の有無、モデル遅延、事前サインインをSpike・リハーサルで確認する。履歴データを使う場面は履歴と表示し、合成を実取得と偽らない。
+標準Bicep配置はアプリと関連サービスのPublic Network Accessを有効にする。Private Network、特定のデータ所在地、災害復旧、組織固有の保持要件がある環境では追加設計と設定が必要。
 
-Gitへ入れないものは秘密、実環境Snapshot、モデル実入出力、個人情報、環境依存の実設定。実データは許可されたAzure保存先で管理。通常テスト用の非実データfixtureはコードと共に保持できる。公開資料に見せる範囲は利用権限・秘密情報・個人情報を確認する。
+## データとModelの扱い
 
-## 依存・ランタイムの保守
+Microsoft文書と社内文書を信頼できない入力として扱う。文書内の命令を実行せず、任意リンクをたどらず、未承認の項目をModelへ送らない。Source Evidence、Model Output、説明、人の訂正、承認を別Recordとして保持する。該当するModel、Prompt、Schema、Rule、Source、Assessmentの版を記録する。
 
-NodeとFunctionsの両方でサポートされるLTSを確認。直接・間接・dev依存、Actions、Bicep／CLI／テストツールも対象。EOL・既知脆弱性のある版は新規採用・リリース不可。検査障害は未完了。サポート表のないライブラリに架空EOLを定義しない。
+Secret、Token、接続文字列、実環境のTenant／Subscription／Resource ID、SharePoint ID、実Payload、個人情報、Model入出力をコミットしない。CI Fixtureは合成データまたは承認済み匿名データだけを使う。運用Recordは承認済みの保護された保存先に置く。
 
-Lockfileとnpm ciで再現性を確保し、Actionsは完全SHA固定。固定は更新不要を意味しない。新規採用・PR・デプロイ直前・日次のnpm監査と日次Node EOL/patch確認をWorkflowで実装。ActionsのAdvisory確認とFunctions/CLI/Bicepの対応確認もリリース時に行う。最新Advisoryによる再検査を行い、未知の脆弱性ゼロを保証しない。脆弱性の包括ignore・閾値低下で通さない。
+## 依存関係とセキュリティ
 
-既存環境に新たな問題が判明した場合は新規リリースを止め、悪用可能性・到達性・露出・修正版を調べ、更新または機能停止・接続遮断・資格情報失効を検討する。評価・承認の業務SLAなしと、セキュリティ対応期限は別。具体的な対応期限・責任者・連絡先は未決で、本番運用前に決める。
+Node.js、Azure Functions、npmの直接・間接依存、GitHub Actions、Bicep、Azure CLI、Test Toolのサポート状況と既知脆弱性を調べる。Actionsは完全なCommit SHAで固定し、定期更新する。検査失敗を無視や閾値引き下げで回避しない。
 
-## 費用と終了処理
+npm run verifyに組み込まれたnpm audit --audit-level=lowを使う。リリース前に最新のAdvisory結果を確認する。監査の合格は未知の脆弱性がないことを保証しない。
 
-Spikeは期間累計5,000円、PoCはSpike込み累計20,000円。50/80/100%通知、80%抑制、上限新規推論停止。課金反映遅延とStorage／ログ残費用を考慮する。CIの追加有料分も対象。実行回数・Token・時間を管理し無断増額しない。
+## 費用、保持、リソースのライフサイクル
 
-PoC終了後90日保持という旧方針は撤回。終了時に専用Azureリソース、RG外に作成した通知・RBAC・Federation／App登録、Project、Issue・添付、実データ、資格情報、実データを含むCIログ・成果物を削除／失効する。既存共有資源や評価対象は触らない。
+Model呼出上限、Cost Alert、Runtime Scale上限は運用上の制御であり、正確な支出上限ではない。推論停止後もStorage、Log、Network、遅延計上の費用が発生する可能性がある。配置設定を変える前に価格、Quota、リージョン提供状況を確認する。
 
-作成時に台帳へ所有者、Scope、ID、用途、共有／専用、削除方法、依存を記録。削除は専用対象とユーザー承認範囲を照合して実施し、データ保護の削除待ち・サービス側保持等で即時物理消去できないものは残存として報告する。削除できると未確認のAPIを仮定しない。コード・設計書・非実データテスト資材のみリポジトリに残す。
+専用Resource、Identity、Grant、外部Project項目、保持設定、依存関係を台帳で管理する。所有範囲と依存を確認した上で、本アプリが所有するResourceだけを撤去する。評価対象や共有Resourceは削除しない。サービス側の保持期間やSoft Deleteの遅延を明記する。
 
-## 完了条件と現状
+## 文書と完了報告
 
-動作すること→要件を満たすこと→必要なテスト・ビルド・セキュリティ検査合格、をすべて満たす。優先順は検査を省略する意味ではない。今回の文書・Skill作成はリンク・構文・メタデータ・内容整合を検証し、未実装アプリのビルド・Azure疎通を成功扱いしない。
+現行のRuntime動作、任意設定、将来対応を分けて記載する。Tenant固有のResource名、ID、URL、利用者名、Token、運用ログを公開しない。CodeやIaCにAdapterがあるだけで、連携が稼働中だと記載しない。Adapter、設定、実際に確認した動作を区別する。
 
-npm run verify、Bootstrapを含むBicep、PR/push CI・日次監査・手動CDを実装。UIはAPIと同一Azure Functionsで配信しEasy Auth＋APIのJWT検証を使用。Node24.22.1を初期基準とする。Shadow→実登録は実接続ゲート後。本番ゲート、セキュリティ対応期限、モデル提供条件は未確定。本文の設計目標すべてが実装済みとは限らないため実装バックログを参照する。
+変更内容、要件、実施した検査、未実施の検査、重要な制約を報告する。実際に確認していない配置、Live連携、Model品質を成功と記載しない。

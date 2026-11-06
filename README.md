@@ -1,54 +1,61 @@
 # Azure Retirement Planner
 
-Azureの非推奨化・新規作成停止・サポート終了・リタイアメント情報と自社の構成・業務情報から、根拠付きの影響評価と対応計画を作成するシステム。
+Azure Retirement Plannerは、Azureのライフサイクル通知を収集し、影響を受ける可能性のあるAzureリソースを調査し、根拠に基づく評価と作業案を人が確認できる形で提示します。評価対象のAzureリソースを変更、移行、削除する機能はありません。
 
-**TypeScript/Reactのモノレポ、Functions、Bicep、CI・手動CD、判断・検証・レビュー・GitHub連携を実装しています。2026-10-29時点でmainのAPI／ExporterをAzureへ配置し、過去にService Health実通知7件の取得とMicrosoft-Decision-1の実応答1件を確認しました。認証済み画面の最新UAT、Advisorとの正の相関、説明LLM、GitHub実Project登録などは未確認で、PoC全体の完了ではありません。現在の状態と未完了項目は[実装バックログ](docs/implementation-backlog.md)、配置・実データ確認の詳細は[Runbook](docs/runbook.md)を参照してください。**
+このリポジトリには、TypeScript／Reactアプリ、Azure Functions API、Bicepによるインフラ、GitHub Actions Workflowが含まれます。Azure Service Health、Resource Graph、Microsoft-Decision-1、Azure AI Foundry、SharePoint文書、レビュー画面と連携します。機能や配置設定は環境ごとに異なります。このリポジトリにはテナント固有のIDや認証情報を含めません。
 
-## 設計書
+## 主な機能
+
+- 読み取り専用のAzure APIからライフサイクル通知とAzure構成を取得します。
+- リソースが通知の対象に該当するかと、業務への影響を分けて評価します。不足情報を保持し、根拠とMicrosoft公式情報へのリンクを提示します。
+- 型付き判断案にはMicrosoft-Decision-1を使い、ポリシー制約には決定的なルールを適用します。説明モデルは別に設定し、呼び出し状況を評価ごとに記録します。
+- Microsoft Graph経由で設定済みのSharePointフォルダを読み取り、DOCX／XLSXから文章と事実候補を抽出します。Governanceユーザーが事実と依存関係を確認してから、評価根拠として使います。
+- 評価を確認、訂正、承認、保留、対応不要として記録できます。承認は特定の評価版に対するもので、Azureリソースを変更する許可にはなりません。
+- 承認済み作業だけを、設定済みのGitHub IssueおよびProjectへ登録できます。作業登録とProject進捗の同期は個別に設定します。
+
+## 構成と運用
 
 | 文書 | 内容 |
 |---|---|
-| [システム設計書](docs/design.md) | 要件、論理設計、データ、セキュリティ、運用 |
-| [現行構成・Decision-1解説](docs/architecture-and-decision-model.md) | 登壇向けの構成図、処理／データフロー、Decision-1の入力・判断・出力と検証状況 |
-| [判断・承認基準](docs/decision-policy.md) | 影響度2軸、確度分類、P1〜P4、不確実性、人間レビュー、作業項目生成 |
-| [ワークフロー設定基準](docs/workflow-configuration.md) | 企業別の担当割当、部署調整、承認、移行順序の設定方式 |
-| [SharePoint設計書による影響評価計画](docs/sharepoint-document-impact-plan.md) | 専用サンプルフォルダ内の複数文書、将来の複数フォルダ参照、依存関係・根拠・品質評価 |
-| [SharePointサンプルフォルダ接続手順](docs/sharepoint-connection-guide.md) | Graph ExplorerでSite／Drive／Folder IDを取得し、Managed Identity・Source設定・同期を確認する手順 |
-| [Spike・テスト計画](docs/spike-and-testing.md) | 実現性、3事例、30テスト（非推奨6件追加）、品質評価、予算 |
-| [登壇・デモ計画](docs/presentation-demo.md) | 15分発表、実データによる3分ライブデモ |
-| [合意・未決事項](docs/decisions.md) | 採用済み事項、未確定条件、次の判断ゲート |
-| [開発・運用基準](docs/engineering.md) | モノレポ、CI/CD、認証、セキュリティ、終了時削除 |
-| [実装バックログ](docs/implementation-backlog.md) | 依存関係、実装状態、実接続ゲートと残作業 |
-| [利用者向け操作ガイド](docs/user-operations-guide.md) | サインイン、同期、評価・Evidence確認、訂正、承認、デモ準備 |
-| [合成UAT手順](docs/synthetic-uat.md) | 合成データをDecision-1で評価し、人間承認後にGitHub Issue／Project登録を確認 |
-| [Runbook](docs/runbook.md) | 初期構築、Entra・MI、手動CD、復旧、撤去 |
-| [AGENTS.md](AGENTS.md) | エージェントが守る共通ルール |
+| [システム設計](docs/design.md) | 現行コンポーネント、データフロー、要件、制約 |
+| [アーキテクチャと判断モデル](docs/architecture-and-decision-model.md) | 実行構成、各モデルの役割、根拠、評価動作 |
+| [判断ポリシー](docs/decision-policy.md) | 影響軸、優先度、リソース分類、レビュー規則 |
+| [Workflow設定](docs/workflow-configuration.md) | チーム振り分け、調整、承認、作業依存関係 |
+| [SharePoint連携](docs/sharepoint-document-impact-plan.md) | 文書取得、事実確認、根拠、現行上限 |
+| [SharePoint接続ガイド](docs/sharepoint-connection-guide.md) | Graph ID、権限、Source設定、同期 |
+| [テストと品質](docs/testing-and-quality.md) | 自動チェック、モデル品質評価、安全要件 |
+| [レビュー画面の動作](docs/review-interface.md) | 認可、訂正、承認、外部登録 |
+| [利用者向けガイド](docs/user-operations-guide.md) | サインイン、同期、評価確認、承認 |
+| [運用Runbook](docs/runbook.md) | Bootstrap、リリース、アクセス、監視、復旧 |
+| [構築・SharePoint評価ガイド](docs/deployment-and-sharepoint-evaluation.md) | Azure配置、Graph権限、SharePoint設定、評価までの一連の手順 |
+| [実装状況](docs/implementation-backlog.md) | 実装済み機能と製品上の制約 |
+| [CI失敗エージェント](docs/ci-failure-agent.md) | CI失敗の自動調査と修正PR作成 |
 
-## 基本方針
+## セキュリティと制約
 
-- Service Health、Advisor、Resource Graphの標準機能を利用する。
-- Microsoft-Decision-1の型付き判断、生成LLMの説明、ルール検証、人間承認を分離する。
-- 評価対象の変更を実行しない。本システム専用環境は承認された手動CDで管理する。
-- PoCは個人GitHubの非公開Repository／Project。本番はOrganization＋GitHub Apps。
-- Spike予算は期間累計5,000円、PoCはSpike込み期間累計20,000円。料金見積もりではなく予算枠。
+- 評価対象Subscriptionは読み取り専用です。本システム自身のResource Groupは、レビュー済みのBicep配置Workflowで別途管理します。
+- 標準配置ではEntra認証とAPI認可で保護した公開Azure Endpointを使います。Private Networkが必要な環境では、別途設計・設定が必要です。
+- SharePoint権限の対象を明示します。アプリのManaged IdentityにはGraphのSites.Selectedとサイト単位の許可が必要です。アプリに単一フォルダを設定しても、サイト単位の許可範囲はサイト全体です。
+- Azure上にリソースが存在することだけでは、実行時の利用状況や業務上の重要度を証明できません。ゲストOS、アプリケーションコード、データプレーンは調査しません。
+- 判断モデルが返す確率分布は、校正済みの信頼度や正解率ではありません。不確実な判断やポリシーに関わる判断は人が確認します。
+- GitHub登録にはKey Vaultに保管した認証情報を使います。現行アダプターはGitHub AppのInstallation Token方式ではありません。
+- 運用者は、利用環境に合わせてID、データ保持、ネットワーク制御、ポリシー、Quota、モデル配置、外部連携を設定します。
 
-## 開発用Skills
+## 開発
 
-- [arp-feature](.agents/skills/arp-feature/SKILL.md): 機能追加・修正と検証。
-- [arp-security-maintenance](.agents/skills/arp-security-maintenance/SKILL.md): 脆弱性・EOL調査と更新。
-- [arp-release](.agents/skills/arp-release/SKILL.md): 専用環境へのリリース計画と手動CD。
+Node.jsとnpmは、.node-versionおよびpackage.jsonに記載された版を使います。
 
-各Skillにagents/openai.yamlを持つ。Skillの利用は外部変更の包括許可ではない。
-
-## コードの検証
-
-Nodeとnpmの版は`.node-version`と`package.json`を使用する。
-
-```sh
+~~~sh
 npm ci --ignore-scripts
 npm run verify
-```
+~~~
 
-`apps/assessment-api`はAPI・収集・判断・レビューとUI配信、`apps/work-item-exporter`は承認済み作業の登録、`apps/review-web`はReact画面。共有契約・業務ルール・接続を`packages/`へ分ける。通常CIはクラウドを変更しない。Azure配信はEntra認証を必須にし、[Runbook](docs/runbook.md)のBootstrap後にmainのCI成果物を手動CDする。
+verifyは、Format、Lint、型検査、Unit／Contract Test、Build、文書リンク、Runtime／Artifact検査、依存パッケージ監査を実行します。通常のCIではAzure変更、有料モデル呼び出し、GitHubへの作業登録を行いません。
 
-合意事項と実装状況は随時更新。Microsoftの機能・期限・価格は利用時に公式情報で再確認する。
+手動リリースWorkflowは、mainの成功済みCI Artifactだけを配置します。Bicep What-Ifを再計算し、Apply時にレビュー済みPlan Hashを照合します。同一ArtifactからAPIとExporterのパッケージを配置できます。詳細は運用Runbookを参照してください。
+
+## 設定
+
+インフラパラメーターと実行時Feature Flagは、Bicepパラメーターと配置変数から設定します。明示的に有効化しない機能は無効です。Tenant ID、Subscription ID、SharePoint ID、Resource ID、認証情報、実データ、モデル入出力をコミットしないでください。環境固有の設定や記録は、承認済みの非公開運用先に保管してください。
+
+環境固有の現行設定と製品上の制約は[実装状況](docs/implementation-backlog.md)を参照してください。
