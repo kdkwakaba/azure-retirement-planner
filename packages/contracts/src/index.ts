@@ -831,10 +831,26 @@ export const correctionSchema = z
       .default([]),
   })
   .strict()
+export const approvalSchema = z
+  .object({
+    id: z.string(),
+    assessmentId: z.string(),
+    packageHash: z.string(),
+    approvedItemIds: z.array(z.string()),
+    reviewerId: z.string(),
+    reviewedAt: z.iso.datetime(),
+    reason: z.string().min(1),
+    result: z.enum(['Approved', 'Partial', 'Returned', 'Held', 'NoAction']),
+  })
+  .strict()
+export const assessmentReviewSchema = approvalSchema
+  .omit({ id: true, reviewerId: true })
+  .strict()
 export const assessmentSchema = z
   .object({
     id: z.string(),
     reviewDisposition: z.enum(['Active', 'NoAction']).optional(),
+    latestReview: assessmentReviewSchema.nullable().optional(),
     sourceInputHash: z.string().optional(),
     documentGroundingHash: z
       .string()
@@ -915,18 +931,6 @@ export const decisionReevaluationRunSchema = z
       ])
       .nullable(),
     updatedAt: z.iso.datetime(),
-  })
-  .strict()
-export const approvalSchema = z
-  .object({
-    id: z.string(),
-    assessmentId: z.string(),
-    packageHash: z.string(),
-    approvedItemIds: z.array(z.string()),
-    reviewerId: z.string(),
-    reviewedAt: z.iso.datetime(),
-    reason: z.string().min(1),
-    result: z.enum(['Approved', 'Partial', 'Returned', 'Held', 'NoAction']),
   })
   .strict()
 export type LifecycleEvent = z.infer<typeof eventSchema>

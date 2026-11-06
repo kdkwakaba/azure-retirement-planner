@@ -71,11 +71,18 @@ test('general impact narratives describe lifecycle consequences without inventin
   assert.deepEqual(narratives[1]?.decisionRefs, ['impactDuringAndAfterChange'])
   assert.ok(narratives.every((claim) => claim.evidenceIds.length > 0))
   assert.match(narratives[0]!.text, /退役後.*機能を継続利用できなくなる可能性/)
-  assert.match(narratives[0]!.text, /処理名や影響範囲は特定していません/)
-  assert.match(narratives[1]!.text, /停止時間.*断定していません/)
+  assert.doesNotMatch(
+    narratives[0]!.text,
+    /個別の業務処理との対応情報がないため/,
+  )
+  assert.doesNotMatch(
+    narratives[1]!.text,
+    /停止時間や影響する処理名は断定していません/,
+  )
+  assert.match(narratives[1]!.text, /切替後の動作確認/)
   assessment.explanation.impact.push(...narratives)
   assert.deepEqual(validateAssessment(assessment), [])
-  assert.equal(IMPACT_NARRATIVE_VERSION, '2026-11-02.1')
+  assert.equal(IMPACT_NARRATIVE_VERSION, '2026-11-06.1')
 })
 
 test('resource verification reasons describe the specific unavailable evidence', () => {

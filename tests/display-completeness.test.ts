@@ -6,23 +6,22 @@ import {
   approvalDisplay,
   claimKindDisplay,
   assessmentStatusDisplay,
+  approvalResultDisplay,
   coordinationDisplay,
-  criticalWorkloadDisplay,
   deduplicateExplanationClaims,
-  decisionStatusDisplay,
   evidenceDisplay,
   explanationSectionDisplay,
   impactDisplay,
-  impactScoreDisplay,
   isKnownReviewReason,
   isModelDecisionStatusOnlyReviewReason,
   isPlanSchedulingNote,
   milestoneDateDisplay,
+  dateTimeDisplay,
+  generalImpactTextDisplay,
   milestoneKindDisplay,
   modelInvocationStatusDisplay,
   ownerDisplay,
   ownerTagDisplay,
-  modelVersionDisplay,
   plannedDateDisplay,
   planSchedulingNoteDisplay,
   priorityDisplay,
@@ -31,7 +30,6 @@ import {
   reviewReasonDisplay,
   routingDisplay,
   sequenceDisplay,
-  undecidedDecisionFields,
   workloadDisplay,
 } from '../apps/review-web/src/display-completeness.ts'
 
@@ -61,7 +59,6 @@ test('incomplete assessment values display their reason and next decision', () =
   assert.match(projectProgressDisplay(null), /登録状態と同期結果を確認/)
   assert.match(evidenceDisplay([], [])[0]!.label, /根拠が紐付いていません/)
   assert.match(ownerTagDisplay(null), /実担当をWorkload責任者と確認/)
-  assert.match(modelVersionDisplay(null), /監査記録を確認/)
   assert.equal(explanationSectionDisplay('missingInformation'), '不足情報')
   assert.equal(claimKindDisplay('Unknown'), '根拠不足で不明')
   assert.equal(claimKindDisplay('General Impact'), '一般的な影響想定')
@@ -74,17 +71,7 @@ test('incomplete assessment values display their reason and next decision', () =
 })
 
 test('known values remain visible without being replaced by fallback text', () => {
-  assert.equal(impactDisplay('Medium', '未対応時のリスク'), '評価値: 中')
-  assert.equal(
-    impactScoreDisplay(
-      {
-        scoreValues: { impactIfUnaddressed: 2.25 },
-        probabilities: { impactIfUnaddressed: { High: 0.75, Critical: 0.25 } },
-      } as never,
-      'impactIfUnaddressed',
-    ),
-    'Decision-1 Score 2.25 / 3 · High 75% / Critical 25%（順序尺度の補助値。確信度ではありません）',
-  )
+  assert.equal(impactDisplay('Medium', '未対応時のリスク'), 'Medium')
   assert.equal(
     impactDisplay(null, '未対応時のリスク', {
       Low: 0.42,
@@ -92,7 +79,7 @@ test('known values remain visible without being replaced by fallback text', () =
       High: 0.17,
       Critical: 0.15,
     }),
-    'Decision-1の最有力Score: 小（Low、42%）',
+    'Low',
   )
   assert.equal(
     impactDisplay(null, '対応時・対応後の影響', {
@@ -100,13 +87,12 @@ test('known values remain visible without being replaced by fallback text', () =
       Medium: 0.375,
       High: 0.375,
     }),
-    'Decision-1の最有力Score: 中（Medium、38%） / 大（High、38%）',
+    'Medium / High',
   )
   assert.equal(priorityDisplay('P2'), '優先度 P2')
   assert.equal(plannedDateDisplay('2026-12-01', '開始日'), '開始日: 2026-12-01')
   assert.equal(ownerDisplay('アプリ部門', routing), '確定担当: アプリ部門')
   assert.equal(ownerTagDisplay('app-team'), 'app-team')
-  assert.equal(modelVersionDisplay('1'), '1')
   assert.equal(projectProgressDisplay('In Progress'), 'In Progress')
   const evidence = fixture().event.evidence[0]!
   const azureEvidence = {
@@ -129,6 +115,19 @@ test('known values remain visible without being replaced by fallback text', () =
   assert.equal(
     milestoneDateDisplay(null, '26 August 2026'),
     '公式原文の記載: 26 August 2026（日付の適用範囲を確認）',
+  )
+  assert.equal(milestoneDateDisplay('2026-08-26', null), '2026年8月26日')
+  assert.match(
+    milestoneDateDisplay(null, '2026-08-26T00:00:00Z'),
+    /公式原文の記載: 2026\/08\/26 09:00/,
+  )
+  assert.match(dateTimeDisplay('2026-08-26T00:00:00Z'), /2026\/08\/26 09:00/)
+  assert.equal(approvalResultDisplay('Partial'), '部分承認')
+  assert.equal(
+    generalImpactTextDisplay(
+      '対象機能が停止する可能性があります。個別の業務処理との対応情報がないため、処理名や影響範囲は特定していません。',
+    ),
+    '対象機能が停止する可能性があります。',
   )
 })
 
@@ -395,13 +394,7 @@ test('explanation model status states clearly when no generated text is availabl
   )
 })
 
-test('decision statuses have a Japanese actionable label', () => {
-  const decision = fixture().decision
-  assert.match(
-    decisionStatusDisplay('Abstained', undecidedDecisionFields(decision)),
-    /確定できなかった項目: 未対応時の影響度、対応時・対応後の影響度、優先度/,
-  )
-  assert.match(decisionStatusDisplay('Failed'), /手動確認が必要/)
+test('review reasons omit model status and scheduling notes', () => {
   const planDateReason =
     '計画日を算定できません。適用期限と承認済みの工程期間を確認後、計画担当が設定します。'
   assert.equal(isPlanSchedulingNote(planDateReason), true)
@@ -427,7 +420,6 @@ test('decision statuses have a Japanese actionable label', () => {
     ),
     false,
   )
-  assert.match(criticalWorkloadDisplay(false), /非該当の人間確認とは区別/)
   assert.match(
     assessmentStatusDisplay({ ...fixture(), humanReviewRequired: false }),
     /評価レビュー省略可能/,

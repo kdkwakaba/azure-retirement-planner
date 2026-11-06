@@ -11,26 +11,25 @@ import { CorrectionForm } from './CorrectionForm.tsx'
 import { SharePointPanel } from './SharePointPanel.tsx'
 import {
   approvalDisplay,
+  approvalResultDisplay,
   assessmentStatusDisplay,
   claimKindDisplay,
   coordinationDisplay,
-  criticalWorkloadDisplay,
-  decisionStatusDisplay,
   environmentDisplay,
   evidenceDisplay,
   explanationSectionDisplay,
   impactDisplay,
-  impactScoreDisplay,
   isKnownReviewReason,
   isModelDecisionStatusOnlyReviewReason,
   isPlanSchedulingNote,
   modelInvocationStatusDisplay,
   officialDeadlineDisplay,
   milestoneDateDisplay,
+  dateTimeDisplay,
+  generalImpactTextDisplay,
   milestoneKindDisplay,
   ownerDisplay,
   ownerTagDisplay,
-  modelVersionDisplay,
   plannedDateDisplay,
   priorityDisplay,
   planSchedulingNoteDisplay,
@@ -42,7 +41,6 @@ import {
   routingDisplay,
   sequenceDisplay,
   workloadDisplay,
-  undecidedDecisionFields,
 } from './display-completeness.ts'
 import { EvidenceCard, safeOfficialEvidenceUrl } from './EvidenceFact.tsx'
 import { summarizeAssessments } from './summary.ts'
@@ -190,7 +188,7 @@ function ImpactNarrative({
   return (
     <div className="impact-narrative">
       <span>一般的な影響想定</span>
-      <p>{claim.text}</p>
+      <p>{generalImpactTextDisplay(claim.text)}</p>
       <EvidenceReferences
         evidenceIds={claim.evidenceIds}
         evidence={evidence}
@@ -949,7 +947,13 @@ function App() {
                   {priorityDisplay(item.effectivePriority)}
                 </small>
                 <small>
-                  {item.createdAt} · {assessmentStatusDisplay(item)}
+                  {dateTimeDisplay(item.createdAt)} ·{' '}
+                  {assessmentStatusDisplay(item)}
+                </small>
+                <small>
+                  {item.latestReview
+                    ? `ユーザー判断: ${approvalResultDisplay(item.latestReview.result)}`
+                    : 'ユーザー判断: 未記録'}
                 </small>
               </button>
             ))}
@@ -972,26 +976,6 @@ function App() {
                   {workloadDisplay(current.workloadId)} ／ 評価基準日:{' '}
                   {current.asOf}
                 </p>
-                {canSync &&
-                  current.event.trackingId !== syntheticUatTrackingId &&
-                  current.humanContext?.scopeDisposition !== 'OutOfScope' && (
-                    <div
-                      className="notice"
-                      role="region"
-                      aria-label="既存通知の再評価"
-                    >
-                      <b>既存通知を最新のAzure構成で再評価</b>
-                      <p>
-                        通知本文は保存済みのものを使い、Azure構成と明示影響対象を再取得します。新しい評価版をバックグラウンドで作成し、以前の承認は引き継ぎません。
-                      </p>
-                      <button
-                        disabled={busy}
-                        onClick={() => void refreshCurrentResources()}
-                      >
-                        {busy ? '処理中…' : 'リソース候補を再評価'}
-                      </button>
-                    </div>
-                  )}
                 {decisionReevaluationEnabled &&
                   canReevaluate &&
                   current.event.trackingId !== syntheticUatTrackingId && (
@@ -1072,17 +1056,6 @@ function App() {
                             current.decision.probabilities.impactIfUnaddressed,
                           )}
                         </strong>
-                        {impactScoreDisplay(
-                          current.decision,
-                          'impactIfUnaddressed',
-                        ) && (
-                          <small>
-                            {impactScoreDisplay(
-                              current.decision,
-                              'impactIfUnaddressed',
-                            )}
-                          </small>
-                        )}
                         <ImpactNarrative
                           claim={impactNarrativeFor('impactIfUnaddressed')}
                           evidence={current.event.evidence}
@@ -1104,17 +1077,6 @@ function App() {
                               .impactDuringAndAfterChange,
                           )}
                         </strong>
-                        {impactScoreDisplay(
-                          current.decision,
-                          'impactDuringAndAfterChange',
-                        ) && (
-                          <small>
-                            {impactScoreDisplay(
-                              current.decision,
-                              'impactDuringAndAfterChange',
-                            )}
-                          </small>
-                        )}
                         <ImpactNarrative
                           claim={impactNarrativeFor(
                             'impactDuringAndAfterChange',
@@ -1132,14 +1094,6 @@ function App() {
                         </strong>
                       </article>
                     </div>
-                    <p>
-                      モデル: {current.decision.model} /{' '}
-                      {modelVersionDisplay(current.decision.modelVersion)} ·{' '}
-                      {decisionStatusDisplay(
-                        current.decision.status,
-                        undecidedDecisionFields(current.decision),
-                      )}
-                    </p>
                     <details>
                       <summary>モデル呼び出しの監査記録</summary>
                       {!current.modelInvocations?.length ? (
@@ -1234,10 +1188,6 @@ function App() {
                     <p>確認理由は登録されていません。</p>
                   )}
                 </details>
-                <p>
-                  重要Workload:{' '}
-                  {criticalWorkloadDisplay(current.criticalWorkload)}
-                </p>
                 <h3>公式期限</h3>
                 {!current.event.milestones.length ? (
                   <p>{officialDeadlineDisplay()}</p>
@@ -1415,7 +1365,7 @@ function App() {
                               ? 'Azure構成情報'
                               : e.sourceType}
                         </b>
-                        <small>{e.observedAt}</small>
+                        <small>{dateTimeDisplay(e.observedAt)}</small>
                       </div>
                       <EvidenceCard
                         evidence={e}
@@ -1461,6 +1411,52 @@ function App() {
                 ) : (
                   <>
                     <h3>作業案・部分承認</h3>
+                    {current.latestReview ? (
+                      <div className="notice" role="status">
+                        <b>
+                          最新のユーザー判断:{' '}
+                          {approvalResultDisplay(current.latestReview.result)}
+                        </b>
+                        <p>
+                          {dateTimeDisplay(current.latestReview.reviewedAt)}
+                          {' · 承認対象: '}
+                          {current.latestReview.approvedItemIds.length
+                            ? current.workItems
+                                .filter((item) =>
+                                  current.latestReview!.approvedItemIds.includes(
+                                    item.id,
+                                  ),
+                                )
+                                .map((item) => item.title)
+                                .join('、') || '現在の作業案に該当なし'
+                            : '作業の承認なし'}
+                        </p>
+                        <p>判断理由: {current.latestReview.reason}</p>
+                      </div>
+                    ) : (
+                      <p role="status">
+                        この通知に対するユーザー判断は未記録です。
+                      </p>
+                    )}
+                    {canSync &&
+                      current.event.trackingId !== syntheticUatTrackingId && (
+                        <div
+                          className="notice"
+                          role="region"
+                          aria-label="既存通知の再評価"
+                        >
+                          <b>既存通知を最新のAzure構成で再評価</b>
+                          <p>
+                            通知本文は保存済みのものを使い、Azure構成と明示影響対象を再取得します。新しい評価版をバックグラウンドで作成し、以前の承認は引き継ぎません。
+                          </p>
+                          <button
+                            disabled={busy}
+                            onClick={() => void refreshCurrentResources()}
+                          >
+                            {busy ? '処理中…' : 'リソース候補を再評価'}
+                          </button>
+                        </div>
+                      )}
                     {current.reevaluation && (
                       <div className="notice" role="note">
                         <b>テスト用再評価結果・参照専用</b>
@@ -1626,12 +1622,7 @@ function App() {
                           {ownerDisplay(w.ownerTeam, w.workflowRouting)}
                         </p>
                         <div className="notice">
-                          <b>
-                            担当・調整・承認の進め方
-                            {w.workflowRouting
-                              ? `（設定 ${w.workflowRouting.policyVersion}）`
-                              : ''}
-                          </b>
+                          <b>担当・調整・承認の進め方</b>
                           <p>{routingDisplay(w.workflowRouting)}</p>
                           <p>
                             調整部署:{' '}

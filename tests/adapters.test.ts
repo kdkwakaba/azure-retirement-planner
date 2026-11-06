@@ -33,10 +33,88 @@ import {
 import { fixture, tenant, resourceId } from './fixtures.ts'
 import { hash } from '@arp/domain'
 import {
+  assessmentSchema,
   categorySchema,
   documentGroundingSchema,
   type Approval,
 } from '@arp/contracts'
+
+test('assessment listing includes the latest user approval stored separately', async () => {
+  const assessment = fixture()
+  const approval: Approval = {
+    id: 'review-record-1',
+    assessmentId: assessment.id,
+    packageHash: assessment.packageHash,
+    approvedItemIds: [assessment.workItems[0]!.id],
+    reviewerId: 'entra-user-id',
+    reviewedAt: '2026-11-06T02:30:00.000Z',
+    reason: '業務影響と作業内容を確認しました。',
+    result: 'Partial',
+  }
+  const store = Object.create(AzureStore.prototype) as AzureStore
+  store.table = {
+    listEntities: () => ({
+      async *[Symbol.asyncIterator]() {
+        yield {
+          partitionKey: 'assessment:logical',
+          rowKey: 'head',
+          entityKind: 'head',
+          assessmentId: assessment.id,
+          packageHash: assessment.packageHash,
+          disposition: 'Active',
+          lastReviewId: approval.id,
+        }
+      },
+    }),
+  } as unknown as AzureStore['table']
+  store.assessment = async () => assessment
+  store.get = async <T>() => approval as T
+
+  const [listed] = await store.list()
+  assert.deepEqual(listed?.latestReview, {
+    assessmentId: approval.assessmentId,
+    packageHash: approval.packageHash,
+    approvedItemIds: approval.approvedItemIds,
+    reviewedAt: approval.reviewedAt,
+    reason: approval.reason,
+    result: approval.result,
+  })
+  assert.doesNotThrow(() => assessmentSchema.parse(listed))
+})
+
+test('assessment listing rejects an approval from a different assessment revision', async () => {
+  const assessment = fixture()
+  const store = Object.create(AzureStore.prototype) as AzureStore
+  store.table = {
+    listEntities: () => ({
+      async *[Symbol.asyncIterator]() {
+        yield {
+          partitionKey: 'assessment:logical',
+          rowKey: 'head',
+          entityKind: 'head',
+          assessmentId: assessment.id,
+          packageHash: assessment.packageHash,
+          disposition: 'Active',
+          lastReviewId: 'review-record-1',
+        }
+      },
+    }),
+  } as unknown as AzureStore['table']
+  store.assessment = async () => assessment
+  store.get = async <T>() =>
+    ({
+      id: 'review-record-1',
+      assessmentId: assessment.id,
+      packageHash: '0'.repeat(64),
+      approvedItemIds: [],
+      reviewerId: 'entra-user-id',
+      reviewedAt: '2026-11-06T02:30:00.000Z',
+      reason: '前の評価版での判断',
+      result: 'Held',
+    }) as T
+
+  await assert.rejects(store.list(), /does not match the current assessment/)
+})
 
 test('GPT-6 Luna explanation request stays within the configured token and work-item budgets', async (t) => {
   t.mock.method(credential, 'getToken', async () => ({
