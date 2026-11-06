@@ -50,24 +50,27 @@ test('document extraction rejects malformed spreadsheets', async () => {
   )
 })
 
-test('document extraction rejects Office archives with excessive declared XML expansion before parsing', async () => {
-  const archive = Buffer.from(
-    zipSync({ 'word/document.xml': strToU8('small document') }, { level: 0 }),
-  )
-  const centralDirectoryOffset = archive.indexOf(
-    Buffer.from([0x50, 0x4b, 0x01, 0x02]),
-  )
-  const localHeaderOffset = archive.indexOf(
-    Buffer.from([0x50, 0x4b, 0x03, 0x04]),
-  )
-  assert.notEqual(centralDirectoryOffset, -1)
-  assert.notEqual(localHeaderOffset, -1)
-  const expandedSize = 50 * 1024 * 1024 + 1
-  archive.writeUInt32LE(expandedSize, centralDirectoryOffset + 24)
-  archive.writeUInt32LE(expandedSize, localHeaderOffset + 22)
+test('document extraction stops XML expansion when actual streamed bytes exceed the limit', async () => {
+  const archive = zipSync({
+    'word/document.xml': new Uint8Array(50 * 1024 * 1024 + 1),
+  })
   await assert.rejects(
-    extractDocumentText(archive, metadata),
+    extractDocumentText(Buffer.from(archive), metadata),
     /Office document XML exceeds the 50 MiB limit/,
+  )
+})
+
+test('document extraction stops archives with excessive entry counts', async () => {
+  const entries = Object.fromEntries(
+    Array.from({ length: 1_001 }, (_, index) => [
+      `file-${index}.txt`,
+      new Uint8Array(),
+    ]),
+  )
+  const archive = zipSync(entries)
+  await assert.rejects(
+    extractDocumentText(Buffer.from(archive), metadata),
+    /Office document contains too many archive entries/,
   )
 })
 
@@ -148,6 +151,50 @@ test('SharePoint blob reads reject invalid sizes before downloading', async () =
   await assert.rejects(
     store.sharePointDocument('sample-folder', contentHash),
     /size is invalid/,
+  )
+  assert.equal(downloaded, false)
+})
+
+test('stored record reads cap size before downloading', async () => {
+  const content = Buffer.from('{"valid":true}')
+  let requestedCount = 0
+  const store = new AzureStore('sampleaccount')
+  store.blobs = {
+    getContainerClient: () => ({
+      getBlobClient: () => ({
+        getProperties: async () => ({ contentLength: content.length }),
+        downloadToBuffer: async (_offset: number, count: number) => {
+          requestedCount = count
+          return content
+        },
+      }),
+    }),
+  } as never
+
+  assert.deepEqual(await store.get('assessments', 'a'.repeat(64)), {
+    valid: true,
+  })
+  assert.equal(requestedCount, content.length)
+})
+
+test('stored record reads reject oversized blobs before downloading', async () => {
+  let downloaded = false
+  const store = new AzureStore('sampleaccount')
+  store.blobs = {
+    getContainerClient: () => ({
+      getBlobClient: () => ({
+        getProperties: async () => ({ contentLength: 8_000_001 }),
+        downloadToBuffer: async () => {
+          downloaded = true
+          return Buffer.from('{}')
+        },
+      }),
+    }),
+  } as never
+
+  await assert.rejects(
+    store.get('assessments', 'a'.repeat(64)),
+    /Stored record size is invalid/,
   )
   assert.equal(downloaded, false)
 })

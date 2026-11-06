@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import mammoth from 'mammoth'
-import JSZip from 'jszip'
+import { Unzip, UnzipInflate, UnzipPassThrough } from 'fflate'
 import readExcelFile from 'read-excel-file/node'
 import { z } from 'zod'
 import {
@@ -18,7 +18,7 @@ import { jsonRequest, safeModelEndpoint } from './http.ts'
 
 const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024
 const MAX_OFFICE_XML_BYTES = 50 * 1024 * 1024
-const MAX_OFFICE_XML_ENTRIES = 1_000
+const MAX_OFFICE_ARCHIVE_ENTRIES = 1_000
 const MAX_TEXT_CHARACTERS = 200_000
 const MAX_SPREADSHEET_CELLS = 20_000
 export const DOCUMENT_FACT_EXTRACTION_PROMPT_VERSION = '2026-11-05.2'
@@ -495,31 +495,63 @@ function columnName(index: number): string {
   return result
 }
 
-async function validateOfficeArchiveExpansion(
-  content: Uint8Array,
-): Promise<void> {
-  let xmlBytes = 0
-  let xmlEntries = 0
-  // JSZip reads central-directory sizes without inflating document entries.
-  const archive = await JSZip.loadAsync(content)
-  for (const entry of Object.values(archive.files)) {
-    if (entry.dir || !/\.xml(?:\.rels)?$/i.test(entry.name)) continue
-    if (++xmlEntries > MAX_OFFICE_XML_ENTRIES)
-      throw new Error('Office document contains too many XML entries')
-    const originalSize = (
-      entry as JSZip.JSZipObject & {
-        _data?: { uncompressedSize?: number }
+function validateOfficeArchiveExpansion(content: Uint8Array): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let archiveEntries = 0
+    let xmlBytes = 0
+    let xmlEntries = 0
+    let completedXmlEntries = 0
+    let settled = false
+    const fail = (error: Error) => {
+      if (settled) return
+      settled = true
+      reject(error)
+    }
+    const unzip = new Unzip((file) => {
+      if (++archiveEntries > MAX_OFFICE_ARCHIVE_ENTRIES) {
+        const error = new Error(
+          'Office document contains too many archive entries',
+        )
+        fail(error)
+        throw error
       }
-    )._data?.uncompressedSize
-    if (
-      typeof originalSize !== 'number' ||
-      !Number.isSafeInteger(originalSize) ||
-      originalSize < 0 ||
-      originalSize > MAX_OFFICE_XML_BYTES - xmlBytes
-    )
-      throw new Error('Office document XML exceeds the 50 MiB limit')
-    xmlBytes += originalSize
-  }
+      if (!/\.xml(?:\.rels)?$/i.test(file.name)) return
+      xmlEntries++
+      file.ondata = (error, chunk, final) => {
+        if (error) {
+          fail(new Error('Office document XML could not be decompressed'))
+          return
+        }
+        xmlBytes += chunk.byteLength
+        if (xmlBytes > MAX_OFFICE_XML_BYTES) {
+          void file.terminate()
+          fail(new Error('Office document XML exceeds the 50 MiB limit'))
+          return
+        }
+        if (final) completedXmlEntries++
+      }
+      try {
+        file.start()
+      } catch {
+        fail(new Error('Office document uses unsupported ZIP compression'))
+      }
+    })
+    unzip.register(UnzipInflate)
+    unzip.register(UnzipPassThrough)
+    try {
+      unzip.push(content, true)
+    } catch {
+      fail(new Error('Office document ZIP archive is invalid'))
+      return
+    }
+    if (settled) return
+    if (!xmlEntries || completedXmlEntries !== xmlEntries) {
+      fail(new Error('Office document XML entries could not be fully checked'))
+      return
+    }
+    settled = true
+    resolve()
+  })
 }
 
 export async function extractDocumentText(
