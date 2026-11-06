@@ -1,65 +1,50 @@
-# 実装タスクと検証状態
+# 実装状況
 
-2026-11-05。状態はコードの実装と接続検証を分ける。ローカル検査合格はPoC成功・実環境動作・モデル品質の証明ではない。
+本書は現在のmainのCodeと保守対象Deployment設定をまとめます。環境固有IDは含みません。他の配置先では設定値が異なる場合があります。
 
-2026-11-05: PR #146をmainへ配置後、SharePointサンプルDOCX抽出は分割段階を通過したが、モデル呼出しがHTTP 429で失敗しFactは保存されなかった。文書抽出の入力・出力上限縮小と429一回再試行、およびGovernance限定の合成UAT専用評価・表示を追加する。サンプル評価は確認済みFactと合成評価内リソースの明示リンクを照合する。通常Assessment／Projectへは流さず、影響度・優先度も推定しない。PR merge・再配置後のSharePoint実抽出、Fact確認、画面表示は未実施。
-2026-11-05: PR #148を配置後、合成UAT設定・サンプルSource・DOCX／XLSX Snapshot取得を確認。DOCXは保存応答読込時のJSON不正、XLSXはモデル応答解析時のJSON不正でFactができず、Grounding／影響評価は空。調査で、モデル応答をSchema検証前にキャッシュ保存していたため、不正・途中応答を再利用する再発経路を特定。この変更では検証後保存、壊れたキャッシュを避ける代替キー、旧失敗キャッシュを無効化するPrompt版更新、最大5件・短文・出力1,000 tokensの上限制御、失敗理由の安全な分類を追加。合成テスト・verify済み。PR merge後の実モデル再評価と表示UATは未実施。
+## 実装済み機能
 
-2026-11-05 実業務文書経路: `sampleOnly=false`のSourceを評価モードに応じて選別するUI・API・Grounding・Assessment連携は既存実装済みだが、SharePoint Source保存、同期Run作成、同期Run Schemaにサンプル限定の拒否条件が残り、実業務文書の同期を開始できない。今回の修正で各データ区分につき1 Sourceを登録可能にし、実業務同期Runも保存可能にする。実業務モードは`TEST_MODE_ENABLED=false`かつ`SHAREPOINT_LIVE_SOURCES_ENABLED=true`が必要で、既定設定は変更しない。確認済みの実業務Factは通常Assessment入力へ含まれる。SharePoint実接続・実文書評価・ブラウザー表示確認は未実施。
+| 領域 | 現行動作 |
+|---|---|
+| API／画面 | Entra認証、Role認可、Reactレビュー画面を備えたAzure Functions API |
+| 受付・調査 | Service Health通知、Azure Resource Graph Inventory、一部Advisor／Control Plane情報を取得。Sourceごとの完全性と失敗Metadataを保持 |
+| Assessment | Workload単位の不変Assessment、通知別Resource Profile、2つの影響軸、優先度Rule、人のReview、Evidence、訂正、再評価履歴 |
+| 判断Model | Microsoft-Decision-1型付き判断Adapter。Score分布と呼出状態をAssessmentに保存 |
+| 説明 | 設定済みGPT-6 Luna Deploymentと、独立した決定的な一般影響説明経路。AssessmentにLLM呼出成功状況を記録し、一般説明をLLMの代替にしない |
+| SharePoint | Microsoft GraphによるFolder同期、不変Document Snapshot、DOCX／XLSX文章抽出、Fact候補、Governance Review、確認済みFact／依存経路のWorkload Evidence利用 |
+| Review／承認 | 版単位の訂正、部分承認、保留、対応不要。承認はAzure Resource変更を許可しない |
+| GitHub | 承認済み作業のIssue／ProjectへのQueue登録、照合、再試行。Project進捗同期は個別設定 |
+| Infrastructure／Release | Bicep管理Resource、OIDC Release Identity、Artifact Hash検証、What-If Plan Hash、手動Apply Workflow |
+| Security検査 | Runtime検査、npm audit、Unit／Contract Test、Bicep静的検査、依存／Action固定 |
 
-2026-11-04追加計画: IMP-09/09bの業務情報連携、IMP-11/12の判断・説明、IMP-13/14の根拠・承認、IMP-19の品質評価を拡張する[SharePoint設計書による影響評価計画](sharepoint-document-impact-plan.md)を作成。初期は専用サンプル用フォルダ1件の複数文書、将来は複数フォルダを参照する。PR #125でDOCX／XLSX抽出、PR #126で候補引用検証、PR #127で上限付きLLM抽出、PR #128でGrounding不変保存、PR #129でsampleOnly=falseの確認済み事実をAssessmentへ接続。PR #130でGraph読み取り専用コネクター、原本不変保存、Snapshot差分を追加。PR #131でサンプルSource設定、Feature Flag既定無効のQueue同期要求・状態API、Queue再試行とPoison状態記録を追加。PR #132でGovernance設定UI、同期状態・文書Snapshot一覧UIを追加。PR #133でGovernance限定の文書単位明示抽出、出典位置付き候補修正・確認／除外、確認者・時刻付き不変Grounding版保存を追加。PR #135でResourceDependency事実に対し表示中Assessment内のResource ID／名前完全一致候補を提示（未選択）し、保存済みモデル抽出を再利用。今回、Governanceが確認済みFact間の依存経路を明示リンクし、複数文書の根拠を1つのAssessment Evidenceへまとめる。経路変更をAssessment入力Hashへ含め、APIで監査、Fact種別、Workload、Assessment内Resource、DAGを検証する。合成検証は行い、SharePoint実接続・実モデル品質評価はこの段階の対象外。曖昧な別名候補の自動解決と意味的影響品質は未完了。
+## 保守対象Deploymentの設定
 
-| ID | Epic / 作業・成果物 | 依存 | 完了条件 | 状態 | Size / Role / 並列可 |
-|---|---|---|---|---|---|
-| IMP-01 | Foundation: npm workspaces、TS/React、整形・型・Lint・Lockfile | — | 再現可能なインストールと検査 | 実装済 | M / Dev / Yes |
-| IMP-02 | Security: Node24、完全SHA Actions、全npm依存監査、日次保守 | 01 | 既知脆弱性0、EOL拒否、検査障害は失敗 | 実装済。ActionsのAdvisory調査はリリース時にも確認 | M / Security / Yes |
-| IMP-03 | Foundation: Schema、Evidence、Hash、元データ・原出力保存 | 01 | 厳密Schema、承認変更検知、原出力の保存 | 実装済。実データ取得後のQueue評価・Blob/Table保存を確認 | M / Dev / Yes |
-| IMP-04 | IaC: Flex2アプリ、Storage、Key Vault、監視、MI、Entra設定 | 01 | 静的コンパイル＋対象RGで疎通 | 専用Azure環境へ配置・再配置済。Entra認証、実通知・構成取得、Queue評価、永続化を確認 | L / Cloud / Yes |
-| IMP-05 | Release: OIDC Bootstrap、CI成果物Hash、What-if手動CD | 02,04 | main CI成果物のみ、差分Hash一致、権限分離 | main CI→OIDC→What-if/Hash→Bicep手動apply→API／Exporter ZIP配置まで実施済み。2026-10-29のPR #56 merge commit `df34d20`、CI run #40792872416、plan #40793055079、apply #40793281310。What-ifは専用RG内3 Modify、19 NoChange、5 IgnoreでCreate／Deleteなし。 | L / Cloud / Yes |
-| IMP-06 | Ingestion: Secure Webhook、原本受付、Queue/Outbox | 03,04 | アプリ権限検証、重複・停止・再開・Poison確認 | 受付経路は実装済。Service Health実通知7件をARG取得しQueue評価を確認。Action Groupの実配送は未検証 | L / Dev+Cloud / Yes |
-| IMP-07 | Discovery: ARG Health Advisory、Advisor関連、対象リソース構成 | 03 | 全ページ、部分失敗、公式明示対象・不明を区別 | Service Health実データ7件・構成2件を確認。Health AdvisoryとResource Graph inventoryを独立実行し、一方の失敗で他方の結果を失わない実装を追加。Service Health impacted resources、Advisor、公式参照も取得元別category／HTTP status／correlation IDをAssessmentと画面へ渡す契約・合成試験を追加。Foundry AIServices／projectとClassic hub／projectのARG取得を追加。候補表示を通知プロファイルのResource Typeに合わせ、Unknown属性を持つ同種リソースと公式明示対象を保持。プロファイル未対応通知は明示対象だけを候補にし、インベントリ全件を表示せずProfileUnavailableとしてレビューする。候補0件ではモデルを呼び出さない。Storage関連付けは制御プレーン情報として取得するが、影響を自動確定しない。2026-11-02に保存済みFoundry Agent Service実通知1件を再取得し、ARG inventory 5件・取得失敗0・scopeComplete=trueを確認。新版ではCognitive Services account 1件とproject 1件だけが表示され、他種別は候補から除外。両候補はVerification Required、Decision-1成功／Abstained、説明LLM未設定、レビュー必須、検証エラー0件。現行Service Health Advisoryは0件のためAdvisor正相関とClassic API利用は未検証。全ページ網羅・実環境精度も未検証 | L / Dev / Yes |
-| IMP-08 | Normalization: 非推奨ほか4種、版・旧通知・不明日付 | 07 | 非推奨開始日を廃止日にせず旧版巻戻し拒否 | TST-11/12を回帰確認。公式分類を保持しHuman scope dispositionで無関係通知を理由・根拠付き対象外にできるUI、作業・優先度抑止、承認ガードを追加。自動除外はしない。Health AdvisoryのImpactMitigationTimeに加え、Retirement subtypeの公式表題／本文で廃止に日付が直接結び付く限定表現を解析し、Evidenceへ根拠を保持する実装・合成試験を追加。非Retirement、移行期限、競合・複数日付は未確定のまま維持。正規化バージョン変更はsource hashと分離した新EventVersionを生成する。2026-10-27のLive UIではタイトル記載日が公式期限欄に出ず、値の不在か正規化漏れか未判定。PRマージ後に実通知の取得・期限反映・再評価を再検証 | M / Dev / No |
-| IMP-09 | Context: タグ集約、未設定Owner・業務情報の確認 | 07 | 構成は実値、業務値は推測しない | Unknown／Possible／Verification Requiredの理由と不足属性を表示し、説明モデル停止時もEvidence付きImpact Verification作業を決定的に生成。評価結果をCandidatesFound／NoResourcesDetected／NoImpactMatched／ProfileUnavailable／Incompleteに分け、Scope・Resource Type・適用プロファイルID／版を保存。完全取得済みの該当なし／対象外のみではモデル呼出と汎用作業を省略し、評価レビュー省略可と表示。CMDB、依存探索、RTO/RPO・提供時間等の構造化入力は追加対象 | M / Dev+Architect / Yes |
-| IMP-09a | Workflow Policy: 構造化設定、役割参照検証、担当・調整候補、承認段階表示、作業依存適用、版Hash記録 | 03,09 | Schema／参照／DAG検証、曖昧・不足は人間確認、Ownerを推測しない | ランタイム適用・UI表示・合成テスト実装済。組織固有設定、運用者レビュー、認証ロール別承認は未実施 | M / Dev+Governance / Yes |\n| IMP-09b | Business Workflow: 顧客・他チーム調整、ベンダー／費用／予算・契約カテゴリ、複数候補表示、デモ専用サンプル設定 | 09a | 条件入力の出所と確度を保持し、根拠なしの費用確定・移行必須化なし。複数候補を全件表示 | Workload完全一致の合成業務プロファイル、条件付き作業テンプレート、Evidence付与、費用未確定時の承認抑止、複数候補全件表示をPR #56で実装・main配置済み。サンプル期間・変更禁止日はEvidence表示のみで計画日計算しない。既定業務ポリシーは空。今回追加: Governance限定の`GET/POST /api/business-context`、厳密Schema、Source System／Record ID／更新時刻／確認者付きの不変版保存、Assessment入力Hash反映、内部Evidence化。CMDB実コネクタと画面入力UIは未実装。接続先と項目マッピングの指定が必要であり、手動API経路を実データ連携完了とは扱わない。 | L / Dev+Governance / Yes |
-| IMP-10 | Spike: Decision-1と説明モデルの利用条件・MI・応答契約 | 04,05 | SP-01/04。3事例×3回、確率・版・費用の実測 | Decision-1 v1 DataZoneStandard capacity 500、API設定、Foundry限定MIロールを反映済み。2026-11-03にFoundry catalogでgpt-6-luna version 2026-09-22のDataZoneStandardを確認し、capacity 1 deploymentはSucceeded／Running。CLI利用者での合成Chat Completions＋JSON Schema契約は確認済み。PR #102後の実通知再評価でAPI MIのDecision-1呼出しはSucceeded、説明要求はHTTP 400で失敗。モデル呼出し自体と実説明品質は未完了。原因とSchema制約の修正はPRレビュー待ち | L / AI+Cloud / Yes |
-| IMP-11 | Decision: 影響2軸、P1〜P4、余裕、低確率・欠損レビュー | 03 | 境界日、未確定、移行強制なしを単体試験 | 実装済 | M / Architect+Dev / Yes |
-| IMP-12 | Explanation: 10区分、ID別名化、根拠参照、作業案 | 10,11 | 元応答保存、Schema・ID参照検証、失敗は手動確認 | 説明LLMの結果はSchema検証し、未設定・失敗時や応答項目が空の場合に固定テンプレートで補完しない。GPT-6 Lunaを配置し、API設定済み。PR #103のStructured Outputs Schema修正を配置済み。PR #104でdeployment容量3（3,000 TPM）、Claim定義のSchema縮小を適用。PR #105で説明要求のみ長文抜粋・Decision確率等除外、PR #106で`reasoning_effort=low`、PR #107で本文非公開の診断APIを配置済み。PR #108の`reasoning_effort=none`でreasoning tokensは0になったが、応答が1,500 tokensで切れてJSON不正。PR #109で`verbosity=low`、説明各区分最大1 claim、作業案最大2件と短文化を適用。PR #109配置後の再評価では説明9 claims・作業案1件を保存した一方、判断欄のConfirmed FactにEvidenceがない業務検証エラーが1件残った。PR #113配置後の再評価では可視出力だけで1,500 tokens上限に到達しJSON不正。今回の修正ではGPT-6 Lunaを維持し、出力上限を2,500 tokensへ上げた。続く対応として説明区分をClaimまたはnullの固定スロット、作業案を2スロットにし、要求内Evidence別名のenum制約と保存前の実ID解決・候補外拒否を追加する。合成契約試験済み、実通知再評価と品質確認はPR merge・配置後 | 一部実装 / L / AI / No |
-| IMP-13 | Guardrails: ID・日付・DAG・根拠・Owner・承認Hash | 03,11 | 架空・旧版・不適合の登録0 | プロファイル固定のMicrosoft Learn 3 canonical URLについて本文取得、サイズ／redirect制限、1時間プロセスキャッシュ、全文Hash、取得失敗時のIncomplete化を実装。根拠版更新時も同一通知版のHumanContext／Evidenceを引き継ぎ、旧承認を失効して再レビューを要求。引用EvidenceのWorkload／Resource scope検証を追加。合成試験合格。実環境本文取得と後継サービスの意味検証は未完了 | L / Security+Dev / Yes |
-| IMP-14 | Human Review: Azure配信React、訂正、部分承認・保留・差戻し | 04,11,13 | APIロール、訂正新版、承認失効、Entraログイン | [レビュー画面UAT手順](review-screen-uat.md)にLive UAT記録。再認証後7件同期、最新1評価のNoApplicableProfile理由とEvidence照合（6 Claim中4参照、参照切れ0）を確認。未認証APIはAuthentication required、未認証UIは空シェル＋サインイン案内。同期POSTは成功したが現ロール名を取得できず、別ロール拒否／サインアウト後未検証。APIロール表（Reader／Reviewer／Operator／Governance）とApplication限定NotificationSenderの合成認可試験を追加。Live role別認可・訂正・承認は未実施。TST-29 fixture/domain試験CI成功、API/UI統合未検証 | L / Frontend+Security / Yes |
-| IMP-15 | Integration: Issue本文・親／フェーズ／作業Sub-Issue・優先度ラベル・Project追加 | 13,14 | 無承認拒否、階層・ラベルの冪等性、重複防止、Project失敗のみ再開 | Work Itemのタイトル・説明・完了条件・前提を本文へ出し、P1→High、P2/P3→Medium、P4→LowのRepositoryラベルを同期する実装を追加。Retirement×Workload親Issue→影響確認／設計／変更／テストの必要フェーズIssue→承認済みWork Item IssueのSub-Issue関係を追加し、各階層のIssue参照をTable Outboxへ保存。Parent／フェーズ／Work Item／Projectの既存照合、部分失敗再試行、UIの段階表示、合成API試験を追加。2026-11-02に実環境の合成UATを再照合し、Exported／completedと3階層Issue URLを確認。再送はalreadyExported=trueで重複なし。GitHub Project readを付与後、GraphQLでtest-projectの7件（1ページ）を読取、現在の親#82・フェーズ#84・作業#85と旧テストIssue #66を確認。実Queue再配送・個人Project権限SP-05は未検証 | L / Dev / Yes |
-| IMP-16 | Integration: Projectフィールド、改訂Issue更新・進捗取込 | 15 | 項目対応、競合・手動編集を保持、自動Closeなし | Issue管理領域の改訂更新、Priority／Due date同期、初期Status、重複照合を実装。Project Statusを15分ごとに任意取込し、外部進捗属性として保存、Entra保護APIとレビュー画面へ表示。評価・承認・作業完了を自動変更しない。同期は既定無効。2026-11-02にProjectのStatusフィールドを直接読取し、合成UAT 4件はBacklogを確認。環境設定は`PROJECT_PROGRESS_SYNC_ENABLED=false`のため、アプリの定期取込・レビュー画面表示は未検証 | 実装済（合成試験のみ） / L / Dev / No |
-| IMP-17 | Operations: 再評価・処理ログ・Poison・復旧Runbook | 06–15 | 日次再取得、部分失敗表示、成否不明の手動照合 | ProcessingFailureの任意Scheduled Query AlertとAction Group設定、KQL、Poison Queueの安全な手動照合・再投入手順を追加。Alertは既定無効で、専用RG内の監視構成だけを対象。評価サマリー、取得元別失敗分類／相関、Decision・説明LLM別監査結果をレビュー画面へ追加。モデル本文・入力・Resource IDは通常トレースへ出さない。PR #78にGovernance限定・テストモード限定の保存済み実通知／Workload 1件のみのDecision-1再評価、再評価履歴・状態、合成UAT表示制御を追加。今回の作業ブランチにDecision-1を含む合成UAT、成功必須のGitHub登録ガード、操作Runbookとテストを追加。ローカルverifyのうちSecurityはDNSでnpm auditへ接続できず未完了。PRマージ後のAzure配置、Decision-1実呼出、GitHub実Project登録は未実施 | 一部実装 / M / SRE / Yes |
-| IMP-18 | Cost: 日次呼出回数枠・予算確認手順 | 10,17 | PoC累計20,000円を利用者がCost Managementで確認。要求単位のToken上限は設けない | 利用者の判断で金額ハード停止は実装対象外。API呼出枠は200/日。Cost Managementの予算通知は補助情報 | M / SRE+FinOps / Yes |
-| IMP-19 | Evaluation: 30ケース、108回、精度・Recall・Override | 07–16 | 当時版・独立正解集合、指標・未評価の記録 | `evaluateCases`の純粋micro指標計算と、Observation IDに結び付けた全件採点・split別集計の`evaluateManifest`を追加し、反復Observation数と独立scenario数を区別して表示。`validateEvaluationManifest`でsource区分・参照・asOf・Hash・Model/Prompt/Rule/Contract版・実行・レビュー状態を記録し、同じRetirement familyのSplit漏れ、反復観測のinputHash不一致、raw payloadフィールドを拒否。合成テスト済。説明10区分充足率と根拠・判断参照の不正参照率を評価する関数を追加。機械検査可能な契約品質のみで意味的根拠支持を判定しない。独立正解集合、正解ラベル作成、30／108回のモデル品質評価、閾値合意は未実装 | 一部実装 / L / QA+Architect / Yes |
-| IMP-20 | Demo/UAT: 同一実環境で3分ライブ | 10,14–19 | 事前サインイン、実通知、判断→根拠→承認→登録 | リハーサル待ち。合成をライブ取得と偽らない | M / Presenter+QA / No |
-| IMP-21 | Cleanup: 作成台帳と専用資源・Project・秘密の撤去 | 04,15 | 削除対象照合、残存保持・残費用報告 | 専用Azure資源・Entra App・資格情報を作成済。撤去はPoC終了時に別途実行 | M / Cloud+Owner / No |
-| IMP-22 | UI: Microsoft公式Evidenceの日本語参考訳 | 03,13 | 原文保持、公式Source限定、MI、翻訳と判断根拠の分離、版付きCache | Service Health通知Evidenceの出所検証とUI/API対応はPR #46でmainへ反映済み。run #35はinfra-only applyでアプリZIP配置なし。PR #48により配置stepのoutcomeはJob Summaryへ表示。画面・実翻訳の確認は利用者指示により保留。2026-10-29にPR #56のアプリを再配置済み。API匿名ルート401、Exporterルート200を確認。認証済み画面での日本語表示UATとPoC Translator SKU/費用確認が残る | M / Dev+Cloud / Yes |
-| IMP-23 | SharePointサンプル評価: 429耐性、Fact確認、合成通知とのリソース照合表示 | IMP-09/14 | サンプルSource限定、Governance認可、テスト専用保存、通常Assessment／Projectへの混入なし | 合成UAT Assessmentに対し確認済みサンプルFactと明示リンク済みリソースを照合する専用API／画面を追加。抽出応答は検証後にキャッシュ保存し、壊れたキャッシュを代替キーで回避。不正／途中応答の再利用を防ぎ、上限を1,000 tokens・最大5候補・候補文500文字に制約。429時Retry-Afterを尊重して1回再試行。影響度・優先度は文書から推定しない。ローカルverify済み。PR merge後の実抽出・Fact確認・画面UAT待ち | M / Dev+Governance / No |
-| IMP-07a | Discovery: 保存済み通知の最新構成による再評価 | 07 | 既存Notice版を保持し、最新Inventoryで候補再抽出・新版保存 | PR #94でmainへ反映・Azure配置済み。2026-11-02に実通知Foundry Agent Service noticeを最新Inventoryで再評価し、Storage候補からCognitive Services account／projectへ更新、scopeComplete=trueを確認。 | M / Dev / Yes |
-| IMP-14a | Human Review: 対応不要通知の一覧整理 | 14 | 理由付き判定・監査履歴保持・既定一覧から非表示・再表示 | PR #94でmainへ反映・Azure配置済み。NoAction実データがないため、実通知での選択・非表示UATは未実施。 | S / Frontend+Dev / Yes |
-| IMP-14b | Human Review: 実データ表示の欠落項目を明確化 | 14 | 未取得・未決項目に理由・次の作業・判断役割を示し、根拠なしの値を補完しない | PR #96を2026-11-02にmainへ反映・配置。認証済み画面で項目説明、Claim／Evidence／確認理由の分割、Microsoft公式URL、影響確認の集約UIを確認。保存済み旧評価には変更前の重複作業が残る。 | S / Frontend+Governance / Yes |
-| IMP-14c | Human Review: 一般的な業務影響説明 | 14 | 影響度と文章を分離し、ライフサイクル種別ごとにEvidence付きの条件付き説明を表示。未取得の業務処理名・停止時間を創作しない | Retirement／Support End／New Creation Blocked／Deprecationの決定的説明と旧評価の表示フォールバックを実装。Workload固有のResource→処理対応データは将来拡張 | S / Dev+Governance / Yes |
+次の値はBicep既定値ではなく、Deployment Variableから読み取った保守対象環境の値です。
 
-## 未確定情報と次のゲート
+| 設定 | 現在値／効果 |
+|---|---|
+| Test Mode | 無効 |
+| SharePoint同期 | 有効 |
+| Live SharePoint Source | 有効 |
+| SharePoint Fact抽出 | 有効 |
+| GitHub作業Export | 有効 |
+| Project進捗同期 | 無効 |
+| Decision再評価Endpoint | Test Mode無効時は利用不可 |
+| 合成Assessment Endpoint | Test Mode無効時は利用不可 |
 
-- Azure配置情報は確定しGitHub Variablesへ設定済。FoundryとEntra Appを新規作成。秘密値はKey Vaultへ保存し、Git・チャットへ記録しない。
-- 現在のGitHub CLI Tokenはread:projectスコープがなくProject列挙を拒否された。個人ProjectのToken種別・権限とProject IDはSP-05で実証する。本番Org＋GitHub Appの実装は別ゲート。
-- Decision-1の型・選択肢・確率は公式文書にある。モデル配置・API Managed Identity推論・v1応答は実データ1件で確認済み。合成3事例×3回は全件契約検証合格、全件Abstained相当。これは判断精度評価ではなく、説明LLMは未確認。Basic LBで未対応影響がCritical/Highに分かれた。互換に見える別APIへ自動切替しない。
-- Decision-1は2026-10-26に既存Foundryへ配置し、API Managed Identityでの実呼出しを確認済み。要求単位のToken上限は設定しない。累計20,000円は利用者がCost Managementで確認する。自動停止は実装しない。外部登録・定期同期・通知は引き続き無効。
+Bicep Parameter FileはVariableがない場合、同期、通知受信、Export、Test専用機能、SharePoint機能を無効にします。現在のHosted設定を新規配置の既定値とみなさないでください。
 
-## 検証の読み方
+## 境界と残作業
 
-`tests/`は合成データのみ。TST番号付き単体試験は30シナリオ全体の完了を意味しない。TST-29の人間確定・承認抑止は合成試験済みだが、画面UAT・権限別API試験・実Azure再評価は未実施。実Azure権限・Queue再配送、Project権限・本番相当更新、負荷・Shadow・モデル品質も個別に統合/UATで記録する。TST-11/12はドメイン比較関数、TST-22/23はIssue／Project段階の共通登録関数を通した合成回帰試験で、実環境のQueue再配送までは証明しない。テスト件数は実行結果を正とする。
+- 評価可能なのは設定されたAzure Scope、対応する通知／Resource Profile、確認済みWorkload情報の範囲です。Control Plane Inventoryだけで実行時利用を証明できません。
+- 対応Azure Serviceが増えるにつれ、適用Profileの拡充と条件の独立レビューが必要です。
+- 業務Owner、重要度、営業時間、RTO／RPO、承認済み対応、作業期間をCMDB／ServiceNowから自動取得しません。確認済みSharePoint Factは利用できますが、文書記載には人の確認が必要です。
+- Source設定はFolder単位です。複数Folder検出、Folder別アクセス境界、Source優先順位、競合解決は今後の設計が必要です。
+- Decision確率の校正と独立した人の判断との一致度を評価するには、版管理された代表的な評価セットが必要です。Schema適合だけでは正確性を測れません。
+- GitHub Exportは現在Key Vault内のGitHub Tokenを使います。GitHub App Installation Token認証や組織固有Permission／保持Policyは現行Adapterにありません。
+- 保守対象DeploymentではProject進捗同期が無効です。通知Webhookと各Destinationの認可設定は個別に有効化・確認が必要です。
+- 基本BicepはPublic Network Accessを許可します。Private Network、災害復旧、組織固有の保持／Compliance制御には環境別設定が必要です。
 
-## 2026-10-25〜26 配置・実データ検証
+## Release検証
 
-- [main CI](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/40154424227)の検査済み成果物を[手動CD](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/40155294666)で配置。APIの6関数とExporterの1関数を認識。
-- 匿名アクセスの401、Entra初回同意後の画面表示、API内JWT検証によるGovernanceロール、評価一覧の空配列を実確認。初回認証コールバックで500が発生したが再アクセスで成功。原因未確定のため、再現診断用の認証ログを専用Workspaceへ有効化。
-- 取得ボタンのPOST、Service Healthの数値LastUpdateTime変換、部分取得エラー表示を修正。PR [#7](https://github.com/kdkwakaba/azure-retirement-planner/pull/7) と [#8](https://github.com/kdkwakaba/azure-retirement-planner/pull/8) をmainへ反映。PR #8 の [main CI](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/40196490817) と [再配置](https://github.com/kdkwakaba/azure-retirement-planner/actions/runs/40196936388) は成功。
-- 2026-10-26、Entra認証済み画面から実同期し、Service Health通知7件・Resource Graph構成2件を取得。7件の評価をQueue経由で生成し、一覧・詳細表示を確認。全件scopeComplete=true、validationErrorsは空。Resource IDや実通知本文はこの記録へ複製しない。
-- 実データ7件の当初評価はモデルUnavailableで作成され、後続リリースにより再同期した。1件の詳細でDecision-1 v1のAbstainedを確認し、不確実性レビューを維持した。全件の応答集計、Advisor関連付け、明示対象Resource判定、3サービスの精度、GitHub Project登録、Poison再処理は未検証。
-- Decision-1のモデル呼出回数は200/日、要求Token上限なし。定期同期・通知受付・外部登録は無効。Entra資格情報は2027-01-23に期限切れ。PoC継続時は期限前に更新し、終了時は失効する。
-
-## 2026-10-26 Decision-1配置
-
-Foundry `[foundry-resource-name-removed]` に `arp-decision-1`（Microsoft-Decision-1 v1、DataZoneStandard、capacity 500）を配置し、provisioningState Succeeded・deploymentState Runningを確認。現在のカタログクォータ内であり、デプロイメントのレート制限は500 requests/minute・500,000 tokens/minute。これは要求ごとの生成トークン上限ではなくサービスのスループット上限。利用量を要求ごとに切る設定はしていない。DECISION_ENDPOINT／DEPLOYMENT／MODEL_VERSIONをアプリへ設定し、API Managed IdentityにFoundry限定の推論ロールを付与した。CLI利用者にもFoundryアカウント単位でCognitive Services Userを付与し、1回の契約疎通と合成3事例×3回を実行した。9/9で選択肢・確率Schema検証を通過し、すべてUnknownを含んでAbstained相当。合成評価は精度を証明しない。詳細と不整合は`docs/spike-and-testing.md`を参照。説明LLMは未完了。モデル呼出枠は200/日、要求Token上限は設定しない。PoC累計20,000円は利用者がCost Managementで確認し、自動停止は実装しない。Cost Managementの予算通知は補助情報で、反映は遅延する。
+Release Workflowはmainの成功CI RunとArtifact Hashを検証し、What-Ifを再計算してApply前にレビュー済みHashと比較します。同一ArtifactからFunction Packageを配置できます。Release成功だけではModel精度、Azure Data Sourceの完全性、業務上の正しさを証明しません。

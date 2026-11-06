@@ -1,6 +1,6 @@
 ---
 name: arp-release
-description: "Azure Retirement Planner自身のリリース計画、Bicep差分確認、GitHub Actions手動CD、配置後検証を行う。評価対象リソースの変更やPoC撤去は対象外。"
+description: "Azure Retirement Planner自身のリリース計画、Bicep差分確認、GitHub Actions手動CD、配置後確認を行う。評価対象リソースやアプリが所有しない共有資源の変更・撤去は対象外。"
 ---
 
 # リリース計画・手動CD
