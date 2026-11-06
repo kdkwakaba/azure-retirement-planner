@@ -1,99 +1,99 @@
-# System design
+# システム設計
 
-Azure Retirement Planner organizes lifecycle notices, Azure inventory, approved business facts, and work-planning decisions into evidence-linked assessments. It supports human review and optional work-item export. It does not execute migrations, remediate resources, or provide incident response.
+Azure Retirement Plannerは、ライフサイクル通知、Azureインベントリ、承認済み業務情報、作業計画上の判断を、根拠にひも付けたAssessmentとしてまとめます。人によるレビューと任意の作業登録を支援します。移行、Resourceの修復、Incident対応は実行しません。
 
-This describes the implementation in the repository. Environment-specific identities, scopes, model endpoints, network boundaries, and external destinations are supplied at deployment time.
+本書はRepository内の実装を説明します。環境固有のIdentity、Scope、Model Endpoint、Network境界、外部接続先は配置時に設定します。
 
-## Goals and boundaries
+## 目標と対象外
 
-### Goals
+### 目標
 
-- Collect lifecycle information from Microsoft Azure sources and distinguish complete, partial, and failed discovery.
-- Identify candidate Azure resources without treating inventory as proof of actual use.
-- Record risk if unaddressed separately from impact during and after a response.
-- Preserve official evidence, configured business facts, model results, human corrections, and approval history.
-- Present uncertainty and concrete confirmation tasks rather than inventing missing dates, owners, impacts, or plans.
-- Export only work selected and approved for a specific assessment version.
+- Microsoft Azureの情報源からライフサイクル情報を取得し、取得完了、一部取得、取得失敗を区別する。
+- Azure Resourceの候補を特定する。インベントリだけで実際の利用を断定しない。
+- 未対応時のリスクと対応中・対応後の影響を分けて記録する。
+- 公式情報、設定済み業務情報、Model結果、人の訂正、承認履歴を保持する。
+- 不足日付、Owner、影響、計画を創作せず、不確実性と具体的な確認作業を示す。
+- 特定Assessment版に対して選択・承認された作業だけを外部登録する。
 
-### Non-goals
+### 対象外
 
-- Repair, migrate, tag, delete, or otherwise modify assessed Azure resources.
-- Inspect guest operating systems, application code, credentials, connection strings, or data planes.
-- Replace Azure Service Health, Advisor, Resource Graph, Azure Policy, CMDB, ServiceNow, or organization change management.
-- Automatically prove business criticality, runtime usage, ownership, approved alternatives, or migration completion.
-- Automatically close internal or external work from a state change alone.
+- 評価対象Azure Resourceの修復、移行、タグ付け、削除、その他の変更。
+- Guest OS、アプリケーションコード、認証情報、接続文字列、Data Planeの調査。
+- Azure Service Health、Advisor、Resource Graph、Azure Policy、CMDB、ServiceNow、組織の変更管理の置き換え。
+- 業務上の重要度、実行時利用、所有者、承認済み代替策、移行完了の自動証明。
+- 状態変更だけを根拠とする内部・外部作業の自動完了。
 
-## Runtime architecture
+## 実行時アーキテクチャ
 
-The monorepo contains the assessment API and UI, a separate work-item exporter, shared contracts/domain/adapters, and Bicep deployment templates.
+モノレポにはAssessment APIと画面、独立したWork Item Exporter、共有Contract／Domain／Adapter、Bicep配置Templateが含まれます。
 
-```mermaid
+~~~mermaid
 flowchart TB
-  Reviewer[Entra user] --> UI[React UI]
+  Reviewer[Entra利用者] --> UI[React画面]
   UI --> API[Assessment API]
   SH[Service Health] --> API
   ARG[Resource Graph / Advisor] --> API
   SP[SharePoint via Graph] --> API
-  API --> Models[Decision and explanation deployments]
-  API --> Store[(Queues, Table, Blob)]
-  Store --> Exporter[Work-item exporter]
+  API --> Models[判断・説明Model]
+  API --> Store[(Queue、Table、Blob)]
+  Store --> Exporter[Work Item Exporter]
   Exporter --> GitHub[GitHub Issues / Projects]
-```
+~~~
 
-The API Function App serves the React build. API and exporter use separate system-assigned Managed Identities. GitHub Actions uses a separate OIDC deployment identity. The base Bicep config enables public network access for Functions and supporting services; private endpoints and network isolation require additional configuration.
+API Function AppがReact Buildを配信します。APIとExporterは別々のSystem-assigned Managed Identityを使います。GitHub Actionsは別のOIDC配置Identityを使います。基本Bicep配置ではFunctionsと関連サービスのPublic Network Accessを有効にします。Private EndpointとNetwork分離は追加設定が必要です。
 
-## Identity and authorization
+## Identityと認可
 
-User tokens are validated for tenant, audience, issuer, user/application type, and role. Roles in the API are `Reader`, `Reviewer`, `Operator`, `Governance`, and `NotificationSender`; the last is application-only. The API repeats authorization checks even when an action is hidden by the UI.
+利用者TokenのTenant、Audience、Issuer、User／Application種別、Roleを検証します。APIのRoleはReader、Reviewer、Operator、Governance、NotificationSenderです。最後のRoleはApplication専用です。画面で操作を隠していてもAPIで認可を再確認します。
 
-The API's Managed Identity reads configured Azure scopes and invokes configured services. The exporter identity accesses only the data and secrets needed for export. The assessed Azure scope receives read access, not Contributor. GitHub Actions deployment permissions are limited to the Planner's own resource group; privileged bootstrap role assignments use separate templates and authorization.
+API Managed Identityは設定済みAzure Scopeを読み、設定済みServiceを呼び出します。Exporter Identityは登録に必要なDataとSecretだけへアクセスします。評価対象Azure ScopeにはReaderを付与し、Contributorは付与しません。GitHub Actionsの配置権限はPlanner専用Resource Group内に限定し、権限付きBootstrapは別Templateと別認可で実行します。
 
-## Data flow
+## データフロー
 
-1. The user requests synchronization or review through the authenticated interface.
-2. Independent adapters collect Service Health notices, Resource Graph/Advisor information, configured SharePoint folder contents, and relevant control-plane attributes.
-3. Raw records and immutable versions are stored in Blob; indexes, status, outbox, and current-version pointers are stored in Azure Tables; asynchronous work uses Storage Queues.
-4. Discovery records source, query, scope, timestamp, completeness, and safe failure classification. Failed retrieval is not converted into an empty result.
-5. The assessment service groups a lifecycle event by workload, matches configured resource profiles, builds evidence-grounded model input, validates typed decisions, and applies deterministic rules.
-6. The review interface shows resource candidates, two impact axes, priority, evidence links, model invocation status, missing facts, and work proposals.
-7. A reviewer may correct an assessment or approve selected work against its current version/hash. The exporter separately reconciles GitHub Issues and Project items.
+1. 利用者が認証済み画面から同期やレビューを依頼する。
+2. 独立AdapterがService Health通知、Resource Graph／Advisor情報、設定済みSharePoint Folder、関連するControl Plane属性を取得する。
+3. 原Recordと不変版をBlobに保存する。Index、Status、Outbox、現行版の参照先はAzure Tableに保存し、非同期処理はStorage Queueで実行する。
+4. 取得Source、Query、Scope、時刻、完全性、安全な失敗分類を記録する。取得失敗を空の結果として扱わない。
+5. Assessment ServiceはLifecycle EventをWorkloadごとにまとめ、Resource Profileを適用し、根拠に基づくModel入力を作成する。型付き判断を検証し、決定的ルールを適用する。
+6. レビュー画面にResource候補、2つの影響軸、優先度、Evidence Link、Model呼出状態、不足情報、作業案を表示する。
+7. Reviewerは現行版／Hashに対するAssessment訂正または選択作業の承認を行える。ExporterはGitHub IssueとProject項目を個別に照合する。
 
-## Assessment and decision contract
+## Assessmentと判断Contract
 
-The lifecycle assessment is scoped to an event version and a workload. It contains source metadata, evidence, resource candidates, discovery results, decision and explanation invocations, rule results, work items, corrections, review state, and package hash.
+AssessmentはLifecycle Event版とWorkloadでScopeを定めます。Source情報、Evidence、Resource候補、取得結果、判断・説明の呼出、Rule結果、作業項目、訂正、Review状態、Package Hashを保持します。
 
-Microsoft-Decision-1 proposes typed values for unaddressed impact, response impact, priority, start window, complexity, and project need. Score distributions are retained as model outputs, not calibrated confidence. Deterministic rules enforce policy floors and completeness constraints. An `Unknown`, `Abstained`, low score, tied leading category, or material disagreement can require review; it cannot authorize a change.
+Microsoft-Decision-1は未対応時の影響、対応時の影響、優先度、開始時期、複雑さ、Project化要否の型付き値を提案します。Score分布はModel Outputとして保存し、校正済み信頼度として扱いません。決定的RuleはPolicy下限と完全性制約を適用します。Unknown、Abstained、低いScore、首位Categoryの同点、重大な不一致はReviewを必要とする場合があります。Resource変更を許可するものではありません。
 
-Date categories are separate: deprecation, creation stop, end of support, retirement, and response deadlines. The implementation only sets retirement dates from supported official signals. Missing or conflicting dates remain unresolved.
+非推奨開始、新規作成停止、サポート終了、退役、対応期限は別の日付です。実装は対応する公式Signalがあるときだけ退役日を設定します。欠落・競合する日付は未確定のままです。
 
-Explanation generation is separately configured. General lifecycle impact narratives are deterministic and not a substitute for an unavailable explanation model. Claim/evidence links are checked before persistence. Unsupported assertions, fabricated IDs, unreferenced citations, and unsupported plan dates are not accepted as confirmed facts.
+説明生成は独立して設定します。一般的なLifecycle影響文は決定的に生成され、説明Modelが使えない場合の代替ではありません。保存前に主張とEvidenceのLinkを検査します。裏付けのない主張、架空ID、参照のないCitation、根拠のない計画日は確認済みFactとして採用しません。
 
-## Azure resource discovery
+## Azure Resource調査
 
-Candidate resources come from official explicit targets and versioned applicability profiles. The current profile registry includes Basic Load Balancer, Storage GPv1, Application Insights URL ping tests, and classic Foundry Agent Service. A profile selects the relevant resource type and conditions but does not establish runtime use. Resource types without a matching notice profile are not treated as unaffected.
+候補Resourceは公式情報に明示された対象と、版管理された適用Profileから特定します。現行Profile RegistryはBasic Load Balancer、Storage GPv1、Application Insights URL ping test、Classic Foundry Agent Serviceを含みます。Profileは該当Resource Typeと条件を選びますが、実行時利用を証明しません。通知ProfileがないResource Typeを影響なしとは扱いません。
 
-Resource classifications distinguish `Confirmed`, `Probable`, `Possible`, `Verification Required`, `Not Impacted`, and `Unknown`. They are separate from business impact. Scope completeness and retrieval failures remain visible. Control-plane relationships such as associated storage do not by themselves prove that an application uses the resource.
+分類はConfirmed、Probable、Possible、Verification Required、Not Impacted、Unknownを区別し、業務影響とは別に保持します。Scopeの完全性と取得失敗も表示します。関連StorageのようなControl Plane上の関係だけでは、アプリがそのResourceを使うとは断定しません。
 
-## SharePoint document integration
+## SharePoint文書連携
 
-SharePoint Sources identify a tenant, site, document library, folder item, workload, and source class. The API reads files under configured folders through Microsoft Graph; it does not crawl arbitrary links. DOCX and XLSX text is extracted subject to size and batch limits. Original files and snapshots are immutable.
+SharePoint SourceにはTenant、Site、Document Library、Folder Item、Workload、Source区分を設定します。APIはMicrosoft Graphで指定Folder配下のFileを読み、任意URLを巡回しません。DOCX／XLSXから上限内で文章を抽出します。原本とSnapshotは不変です。
 
-Model extraction creates fact candidates with source location and hashes. Governance users can edit, confirm, or exclude candidates. Confirmed live-source facts can be included as workload evidence. A reviewer must explicitly link related facts and Azure resources; the API checks workload, resource membership, evidence, version, and dependency graph consistency. Synthetic-source facts stay separate from live assessment inputs.
+Model抽出は出典位置とHashを伴うFact候補を作ります。Governance利用者は候補を修正、確認、除外できます。確認済みのLive Source FactはWorkload Evidenceとして利用できます。関連FactとAzure ResourceのLinkは人が明示し、APIがWorkload、Resource所属、Evidence、版、依存Graphの整合性を検証します。合成Source Factは通常Assessment入力と分離します。
 
-Microsoft Graph access requires application `Sites.Selected` and a site-level `read` grant for the API identity. This grant is site-scoped, not folder-scoped. The application folder selection does not reduce the Graph permission boundary.
+Graph権限にはAPI IdentityへのApplication Permission Sites.Selectedと、Site単位のread許可が必要です。許可ScopeはFolderではなくSiteです。アプリ内のFolder指定はGraph権限範囲を狭めません。
 
-## Review, export, and versioning
+## Review、Export、版管理
 
-Corrections create immutable assessment versions with actor, reason, time, and evidence. Material changes invalidate affected approvals. No-action status removes an assessment from the ordinary list but retains its notice, evidence, and history.
+訂正は実行者、理由、時刻、Evidenceを持つ不変のAssessment版を作ります。重要変更は影響する承認を無効化します。対応不要の状態は通常一覧からAssessmentを隠しますが、通知、Evidence、履歴を保持します。
 
-The review approval applies to selected work items in one assessment version and hash; it is not authorization to alter assessed Azure. GitHub export is separately feature-gated. Parent/phase/work-item issue hierarchy and Project item updates use idempotency and reconciliation. Partial failure is represented by its stage and retried without assuming success.
+承認は1つのAssessment版／Hash内で選択した作業項目に適用され、評価対象Azureを変更する許可ではありません。GitHub Exportは別Feature Flagで制御します。親／Phase／作業Issueの階層とProject項目の更新にはIdempotencyと照合を使います。一部失敗は段階ごとに記録し、成功と決めつけず再試行します。
 
-## Environment settings
+## 環境設定
 
-Deployment parameters control synchronization, ingestion, model-call limits, SharePoint live sources and extraction, work-item export, progress synchronization, and isolated assessments. The Bicep parameter file uses safe disabled defaults when variables are absent. The maintained deployment currently enables live SharePoint synchronization and fact extraction and GitHub export, disables test mode and Project progress synchronization, and uses a configured GPT-6 Luna explanation deployment. These settings are specific to the maintained environment and must not be copied as universal defaults.
+配置Parameterは同期、通知受信、Model呼出上限、SharePoint Live Sourceと抽出、作業Export、進捗同期、隔離Assessmentを制御します。Variable未設定時のBicep Parameter File既定値は安全側で無効です。現行の保守対象環境ではLive SharePoint同期・Fact抽出、GitHub Exportを有効にし、Test ModeとProject進捗同期を無効にしています。GPT-6 Lunaの説明Deploymentを設定しています。これらは環境固有の値であり、全環境の既定値として扱いません。
 
-## Privacy and operations
+## プライバシーと運用
 
-Do not commit live resource identifiers, notification payloads, SharePoint IDs, tokens, personal data, model prompts, or model outputs. Logs contain safe error categories, status, stage, and correlation metadata rather than raw payloads. Operational storage, retention, deletion, and legal hold requirements must be configured by the deploying organization.
+実Resource ID、通知Payload、SharePoint ID、Token、個人情報、Model Prompt／Outputをコミットしません。Logには生Payloadではなく安全なError Category、Status、Stage、Correlation Metadataを記録します。運用Storage、保持、削除、Legal Holdは配置組織が設定します。
 
-The base deployment does not provide universal compliance, private networking, disaster recovery, or calibrated AI accuracy. Organizations must review those requirements, current provider support, region availability, quotas, prices, and data-processing terms before deployment.
+標準配置だけでは、全組織共通のCompliance、Private Network、災害復旧、校正済みAI精度は提供しません。配置前に要件、Providerのサポート、リージョン、Quota、価格、Data Processing条件を確認してください。

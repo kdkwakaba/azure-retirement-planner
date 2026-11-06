@@ -1,50 +1,50 @@
-# Implementation status
+# 実装状況
 
-This page summarizes the code at the current `main` revision and the maintained deployment configuration. It does not include environment-specific identifiers. Settings in other deployments may differ.
+本書は現在のmainのCodeと保守対象Deployment設定をまとめます。環境固有IDは含みません。他の配置先では設定値が異なる場合があります。
 
-## Implemented capabilities
+## 実装済み機能
 
-| Area | Current behavior |
+| 領域 | 現行動作 |
 |---|---|
-| API and interface | Azure Functions API with Entra authentication, role-based authorization, and React review interface |
-| Intake and discovery | Service Health notices, Azure Resource Graph inventory, selected Advisor and control-plane data; source-specific completeness and failure metadata are retained |
-| Assessment | Workload-scoped immutable assessments, notice-specific resource profiles, two impact axes, priority rules, human review, evidence, corrections, and re-evaluation history |
-| Decision model | Microsoft-Decision-1 typed decision adapter; score distributions and invocation status are stored with the assessment |
-| Explanation | Configured GPT-6 Luna deployment and a separate deterministic general-impact narrative path. An assessment records whether its explanation invocation succeeded; the narrative is not an LLM fallback. |
-| SharePoint | Microsoft Graph folder synchronization, immutable document snapshots, DOCX/XLSX text extraction, fact proposals, Governance review, and confirmed facts/dependency paths as workload evidence |
-| Review and approval | Version-specific correction, partial approval, defer, and no-action handling. Approval does not grant permission to change Azure resources. |
-| GitHub | Queued export of approved work items to Issues and Projects, with reconciliation and retry handling. Project progress synchronization is separately configured. |
-| Infrastructure and release | Bicep-managed Azure resources, OIDC release identity, artifact hash verification, What-If plan hash, and manual apply workflow |
-| Security checks | Runtime checks, npm audit, unit/contract tests, Bicep static checks, and dependency/action pinning in CI |
+| API／画面 | Entra認証、Role認可、Reactレビュー画面を備えたAzure Functions API |
+| 受付・調査 | Service Health通知、Azure Resource Graph Inventory、一部Advisor／Control Plane情報を取得。Sourceごとの完全性と失敗Metadataを保持 |
+| Assessment | Workload単位の不変Assessment、通知別Resource Profile、2つの影響軸、優先度Rule、人のReview、Evidence、訂正、再評価履歴 |
+| 判断Model | Microsoft-Decision-1型付き判断Adapter。Score分布と呼出状態をAssessmentに保存 |
+| 説明 | 設定済みGPT-6 Luna Deploymentと、独立した決定的な一般影響説明経路。AssessmentにLLM呼出成功状況を記録し、一般説明をLLMの代替にしない |
+| SharePoint | Microsoft GraphによるFolder同期、不変Document Snapshot、DOCX／XLSX文章抽出、Fact候補、Governance Review、確認済みFact／依存経路のWorkload Evidence利用 |
+| Review／承認 | 版単位の訂正、部分承認、保留、対応不要。承認はAzure Resource変更を許可しない |
+| GitHub | 承認済み作業のIssue／ProjectへのQueue登録、照合、再試行。Project進捗同期は個別設定 |
+| Infrastructure／Release | Bicep管理Resource、OIDC Release Identity、Artifact Hash検証、What-If Plan Hash、手動Apply Workflow |
+| Security検査 | Runtime検査、npm audit、Unit／Contract Test、Bicep静的検査、依存／Action固定 |
 
-## Maintained deployment configuration
+## 保守対象Deploymentの設定
 
-The current maintained deployment is configured as follows. These are values read from deployment variables, not Bicep defaults:
+次の値はBicep既定値ではなく、Deployment Variableから読み取った保守対象環境の値です。
 
-| Setting | Current value/effect |
+| 設定 | 現在値／効果 |
 |---|---|
-| Test mode | Disabled |
-| SharePoint synchronization | Enabled |
-| Live SharePoint sources | Enabled |
-| SharePoint fact extraction | Enabled |
-| GitHub work-item export | Enabled |
-| Project progress synchronization | Disabled |
-| Decision re-evaluation endpoint | Unavailable while test mode is disabled |
-| Synthetic assessment endpoint | Unavailable while test mode is disabled |
+| Test Mode | 無効 |
+| SharePoint同期 | 有効 |
+| Live SharePoint Source | 有効 |
+| SharePoint Fact抽出 | 有効 |
+| GitHub作業Export | 有効 |
+| Project進捗同期 | 無効 |
+| Decision再評価Endpoint | Test Mode無効時は利用不可 |
+| 合成Assessment Endpoint | Test Mode無効時は利用不可 |
 
-The Bicep parameter file defaults synchronization, ingestion, export, test-only operations, and SharePoint features to disabled unless deployment variables opt in. Do not treat the current hosted values as defaults for new installations.
+Bicep Parameter FileはVariableがない場合、同期、通知受信、Export、Test専用機能、SharePoint機能を無効にします。現在のHosted設定を新規配置の既定値とみなさないでください。
 
-## Boundaries and remaining product work
+## 境界と残作業
 
-- The application can only assess information available from configured Azure scopes, approved notice/resource profiles, and confirmed workload data. It cannot prove runtime usage from control-plane inventory alone.
-- Broader applicability-profile coverage and independent review of profile conditions remain necessary as supported Azure services expand.
-- Business ownership, criticality, business hours, RTO/RPO, approved response strategies, and task durations are not automatically sourced from a CMDB or ServiceNow. Explicitly confirmed SharePoint facts can inform assessments, but document statements still require human review.
-- Source configuration is folder-based. Multi-folder discovery, per-folder access boundaries, source precedence, and conflict resolution need further product design.
-- Decision probability calibration and domain-level agreement with independent human judgments require a representative, versioned evaluation set. Model schema compliance alone is not an accuracy measure.
-- GitHub export currently uses a GitHub token stored in Key Vault. GitHub App installation-token authentication and organization-specific permission/retention policy are not implemented by the current adapter.
-- Project progress synchronization is disabled in the maintained deployment. Notification webhook delivery and all destination-specific authorization settings must be enabled and verified independently.
-- The base Bicep templates permit public network access. Private networking, disaster recovery, and organization-specific retention/compliance controls require deployment-specific configuration.
+- 評価可能なのは設定されたAzure Scope、対応する通知／Resource Profile、確認済みWorkload情報の範囲です。Control Plane Inventoryだけで実行時利用を証明できません。
+- 対応Azure Serviceが増えるにつれ、適用Profileの拡充と条件の独立レビューが必要です。
+- 業務Owner、重要度、営業時間、RTO／RPO、承認済み対応、作業期間をCMDB／ServiceNowから自動取得しません。確認済みSharePoint Factは利用できますが、文書記載には人の確認が必要です。
+- Source設定はFolder単位です。複数Folder検出、Folder別アクセス境界、Source優先順位、競合解決は今後の設計が必要です。
+- Decision確率の校正と独立した人の判断との一致度を評価するには、版管理された代表的な評価セットが必要です。Schema適合だけでは正確性を測れません。
+- GitHub Exportは現在Key Vault内のGitHub Tokenを使います。GitHub App Installation Token認証や組織固有Permission／保持Policyは現行Adapterにありません。
+- 保守対象DeploymentではProject進捗同期が無効です。通知Webhookと各Destinationの認可設定は個別に有効化・確認が必要です。
+- 基本BicepはPublic Network Accessを許可します。Private Network、災害復旧、組織固有の保持／Compliance制御には環境別設定が必要です。
 
-## Release verification
+## Release検証
 
-The release workflow validates a successful `main` CI run and artifact hashes, recomputes What-If, compares the reviewed hash before apply, and optionally deploys both Function packages from the same artifact. A successful release workflow does not prove model accuracy, completeness of every Azure data source, or business correctness of an assessment.
+Release Workflowはmainの成功CI RunとArtifact Hashを検証し、What-Ifを再計算してApply前にレビュー済みHashと比較します。同一ArtifactからFunction Packageを配置できます。Release成功だけではModel精度、Azure Data Sourceの完全性、業務上の正しさを証明しません。

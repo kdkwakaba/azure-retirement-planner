@@ -1,83 +1,83 @@
-# User guide
+# 利用者向けガイド
 
-The review interface is hosted by the assessment API and requires Entra authentication and an assigned application role. The API enforces the same role checks as the interface.
+Review画面はAssessment APIから配信され、Entra認証と割り当て済みApplication Roleが必要です。APIも画面と同じRole制御を実施します。
 
-## Roles
+## Role
 
-| Role | Typical access |
+| Role | 主なアクセス |
 |---|---|
-| Reader | Read assessments, evidence, status, and configured sources |
-| Reviewer | Correct assessment details and review or approve work |
-| Operator | Start synchronization and view processing status |
-| Governance | Manage SharePoint sources and facts, start synchronization, correct and review assessments |
-| NotificationSender | Application-only access to the configured notice endpoint |
+| Reader | Assessment、Evidence、Status、設定済みSourceの閲覧 |
+| Reviewer | Assessment訂正、作業Review／承認 |
+| Operator | 同期開始、処理状況の確認 |
+| Governance | SharePoint Source／Fact管理、同期、訂正、Review |
+| NotificationSender | 設定された通知EndpointへのApplication専用アクセス |
 
-Role assignments are configured by the deploying organization. A role name shown in a policy does not assign an identity or grant API access.
+Role割当は配置組織が行います。PolicyにRole名があるだけではIdentityへの割当やAPIアクセス許可にはなりません。
 
-## Open the application and synchronize
+## アプリを開き、同期する
 
-1. Open the application URL supplied by your administrator and sign in with your organization account.
-2. Confirm that the displayed role grants the operation you need.
-3. Use **Azure情報を取得・評価** to retrieve notices and Azure configuration and create assessments. This reads the configured Azure scopes; it does not modify assessed resources.
-4. When processing is asynchronous, wait for the queue to finish and use **評価結果を更新** to reload the list.
-5. A partially failed source is shown with its retrieval status. An empty list is not proof that no applicable resource exists.
+1. 管理者から案内されたアプリURLを開き、組織アカウントでサインインする。
+2. 画面に表示されたRoleが必要な操作を許可していることを確認する。
+3. **Azure情報を取得・評価**を使って通知とAzure構成を取得し、Assessmentを作成する。設定Scopeを読み取るだけで、評価対象Resourceは変更しない。
+4. 非同期処理の場合はQueue完了を待ち、**評価結果を更新**して一覧を読み直す。
+5. 一部Sourceの失敗は取得状態に表示される。空一覧だけでは該当Resourceがないとは限らない。
 
-## Read an assessment
+## Assessmentを読む
 
-Select a notice to view its event/version, workload, assessment date, official deadlines, candidate resources, two impact axes, priority, model invocation status, evidence, missing information, and proposed work.
+通知を選択すると、Event／版、Workload、Assessment日、公式期限、候補Resource、2つの影響軸、優先度、Model呼出状態、Evidence、不足情報、作業案を確認できます。
 
-Resource classification answers whether an Azure resource may match the notice. Impact answers what could happen to the business. The two are separate. `Unknown` means the available evidence cannot establish a result; it does not mean unaffected. `Verification Required` should provide a concrete missing fact and confirmation task.
+Resource分類はAzure Resourceが通知に該当する可能性を示します。影響は業務に起き得ることを示します。別々の判断です。UnknownはEvidenceが結論を支えない状態で、非該当を意味しません。Verification Requiredには具体的な不足Factと確認作業が示されます。
 
-Decision score distributions are model-provided ordinal outputs, not calibrated probabilities or accuracy. When highest categories tie, the interface can display all tied categories. Read the explanation, rule constraints, evidence, and uncertainty together.
+Decision Score分布はModelが返した順序尺度であり、校正済み確率や正解率ではありません。最高Categoryが同点なら複数表示される場合があります。説明、Rule制約、Evidence、不確実性を合わせて確認してください。
 
-Microsoft official evidence shows its source URL when one is available and validated. Some Service Health notices have no separate public page URL; the application does not invent one. Translations are reference translations and do not replace official text.
+Microsoft公式Evidenceは、利用可能で検証済みのSource URLがあれば表示します。一部Service Health通知に公開URLがない場合があります。ApplicationはURLを創作しません。翻訳は参考情報であり公式文の代替ではありません。
 
-## Correct assessment facts
+## Assessment情報を訂正する
 
-Reviewer or Governance can open **業務影響・公式期限・計画を確認／訂正する** and create a new assessment version. Record the source and reason for each correction. Keep deprecation start, creation stop, end-of-support, retirement, and migration deadlines separate. If a date, workload owner, impact, or task duration cannot be supported, leave it unresolved and record what information is required.
+ReviewerまたはGovernanceは**業務影響・公式期限・計画を確認／訂正する**を開き、新しいAssessment版を作れます。訂正ごとにSourceと理由を記録します。非推奨開始、新規作成停止、サポート終了、退役、移行期限を別々に保持します。日付、Workload Owner、影響、作業期間を裏付けられない場合は未確定のままにし、必要な情報を記録します。
 
-The previous assessment and its evidence remain in history. A material correction invalidates approvals that no longer apply.
+前版とEvidenceは履歴に残ります。重要な訂正は該当する承認を無効にします。
 
-## Review work and mark no action
+## 作業をReviewし、対応不要にする
 
-In **作業案・部分承認**, check each item's purpose, category, required/recommended status, resource scope, team candidates, schedule status, dependencies, and completion criteria. `Required` does not mean that an uncertain migration is mandatory; confirmation work and migration work are distinct.
+**作業案・部分承認**で各項目の目的、Category、必須／推奨、Resource Scope、Team候補、Schedule状態、依存、完了条件を確認します。Requiredは不確かな移行が必須である意味ではありません。確認作業と移行作業は別です。
 
-To approve work:
+作業を承認するには：
 
-1. Select only the work that can proceed.
-2. Enter the decision reason and evidence.
-3. Choose **選択した作業を承認**.
+1. 進められる項目だけを選ぶ。
+2. 判断理由とEvidenceを入力する。
+3. **選択した作業を承認**を選ぶ。
 
-The approval is bound to the displayed assessment version and hash. It is not authorization to change Azure.
+承認は表示中のAssessment版とHashに紐付きます。Azure変更の許可ではありません。
 
-To defer work, enter a reason and choose **保留**. To return a decision for correction, enter the reason and choose **差し戻し**. To hide an assessment because no work is required, enter the scope and evidence and choose **対応不要として一覧から外す**. The original notice and review history remain stored; the action does not delete an Azure resource or close a GitHub issue.
+作業を保留するには理由を入力し、**保留**を選ぶ。訂正を求めるには理由を入力して**差し戻し**を選ぶ。作業不要として一覧から隠すにはScopeとEvidenceを入力し、**対応不要として一覧から外す**を選ぶ。元の通知とReview履歴は保持され、Azure Resource削除やGitHub Issue Closeは行いません。
 
-## SharePoint sources
+## SharePoint Source
 
-The SharePoint administration panel is collapsed near the bottom of the page. Governance users can register a folder source, start document extraction, and review fact proposals. Operators or Governance users can synchronize sources, depending on the deployment role policy.
+SharePoint管理Panelは画面下部に折り畳んであります。GovernanceはFolder Source登録、文書Fact抽出とReviewを行えます。OperatorまたはGovernanceは同期できます。
 
-Synchronization stores document snapshots but does not by itself make extracted statements trusted. A Governance user must verify the source location, edit or exclude inaccurate proposals, confirm facts, and explicitly link resource dependencies. Confirmed live-source facts can then inform a later assessment for the same workload.
+同期は文書Snapshotを保存するだけで、抽出文を信頼済みにはしません。GovernanceがSource位置を確かめ、誤った候補を編集／除外し、Factを確認して依存Resourceを明示Linkする必要があります。確認済みLive Source Factは同一Workloadの後続Assessmentに使えます。
 
-For site, drive, and folder IDs, Graph access, and deployment settings, see the [SharePoint connection guide](sharepoint-connection-guide.md).
+Site／Drive／Folder ID、Graph権限、配置設定は[SharePoint接続ガイド](sharepoint-connection-guide.md)を参照してください。
 
-## GitHub export
+## GitHub Export
 
-The maintained deployment enables work-item export. Export still requires a current approved assessment, valid GitHub configuration, and a usable credential. Issue creation and Project item updates are distinct stages; a partial result must be reconciled before retrying. Project progress synchronization is disabled in the maintained deployment.
+保守対象DeploymentではWork Item Exportが有効です。Exportには現行Assessmentの承認、有効なGitHub設定、利用可能な認証情報が必要です。Issue作成とProject項目更新は別処理です。一部成功した場合、再試行前に照合してください。保守対象DeploymentのProject進捗同期は無効です。
 
-The exporter creates or updates only the approved work items represented by the current version. It does not change Azure. A GitHub issue being closed does not by itself mark the Planner assessment complete.
+Exporterは現行版で承認されたWork Itemだけを作成・更新します。Azureは変更しません。GitHub IssueのCloseだけではPlanner Assessmentを完了にしません。
 
-## Troubleshooting
+## トラブルシューティング
 
-| Situation | Check |
+| 状況 | 確認事項 |
 |---|---|
-| Application asks you to sign in again | Sign in through the supplied application URL, then return to the assessment page. |
-| Assessment list is empty | Check sign-in and role, whether Azure synchronization has completed, selected date/scope, and source retrieval status. |
-| Results are missing after synchronization | Wait for queue processing and refresh the list. Ask an Operator or Governance user to inspect the run status. |
-| `Unknown` or `Abstained` | Read the classification reason, missing attribute, evidence, model invocation status, and confirmation task. Do not force a value without evidence. |
-| `No resources found` | Check scope, profile coverage, and discovery completeness. The result is not a business-impact or no-action decision. |
-| Explanation is unavailable | Read the model invocation state. The system does not fill a failed explanation with a fixed template; the separate general lifecycle narrative may still be present. |
-| Correction or approval is rejected | Confirm the role, required reason/evidence, current assessment version, selected work IDs, and validation errors. Refresh if the assessment has changed. |
-| GitHub export is partial or fails | Check the recorded export stage and safe failure category. Reconcile an issue created before a Project update failed before retrying. |
-| A SharePoint file is not available | Check the selected site/drive/folder, Graph permission and site grant, allowed extension, file limits, and synchronization status. |
+| 再サインインを求められる | 案内されたアプリURLからサインインし、Assessment画面へ戻る |
+| Assessment一覧が空 | サインイン、Role、Azure同期完了、日付／Scope、Source取得状態 |
+| 同期後も結果が出ない | Queue完了を待って画面更新。OperatorまたはGovernanceにRun状態を確認してもらう |
+| Unknown／Abstained | 分類理由、不足Attribute、Evidence、Model呼出状態、確認作業を読む。Evidenceなしで値を決めない |
+| No resources found | Scope、Profile網羅性、Discovery完全性を確認。業務影響なしや対応不要の判断ではない |
+| 説明が利用できない | Model呼出状態を確認。失敗説明を固定Templateで埋めず、一般的なLifecycle説明が別に表示される場合がある |
+| 訂正／承認が拒否される | Role、理由／Evidence、現行Assessment版、作業ID、Validation Errorを確認。Assessment変更後なら画面更新 |
+| GitHub Exportが一部失敗または停止 | Export Stageと安全なFailure Categoryを確認。Project更新前にIssueが作られた場合、再試行前に照合 |
+| SharePoint Fileが見えない | Site／Drive／Folder、Graph PermissionとSite許可、拡張子、File上限、同期状態を確認 |
 
-Record operational issues with time, operation, assessment or correlation ID, safe error category, and outcome. Do not include credentials, tokens, full resource IDs, or source documents in public issues.
+運用Issueには時刻、操作、Assessment／Correlation ID、安全なError Category、結果を記録します。公開IssueにCredential、Token、完全なResource ID、Source文書を含めないでください。

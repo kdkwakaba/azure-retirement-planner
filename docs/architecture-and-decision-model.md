@@ -1,85 +1,85 @@
-# Architecture and decision model
+# アーキテクチャと判断モデル
 
-This document describes the implementation in this repository. Deployment-specific values are supplied separately and must not be copied into source control.
+本書はRepository内の実装を説明します。配置固有の値は別に設定し、Source Controlへコピーしないでください。
 
-## Components
+## コンポーネント
 
-```mermaid
+~~~mermaid
 flowchart LR
-  User[Entra-authenticated reviewer] --> UI[React review interface]
+  User[Entra認証済みReviewer] --> UI[Reactレビュー画面]
   UI --> API[Assessment API / Azure Functions]
   SH[Azure Service Health] --> API
   ARG[Azure Resource Graph] --> API
   ARM[Azure Resource Manager] --> API
   SP[SharePoint / Microsoft Graph] --> API
-  API --> Q[Azure Storage queues]
-  API --> DB[(Azure Storage tables and blobs)]
+  API --> Q[Azure Storage Queue]
+  API --> DB[(Azure Storage Table / Blob)]
   API --> D1[Microsoft-Decision-1]
-  API --> EX[Configured explanation model]
+  API --> EX[設定済み説明Model]
   API --> TR[Azure AI Translator]
-  API --> EXP[Work item exporter / Azure Functions]
+  API --> EXP[Work Item Exporter / Azure Functions]
   EXP --> GH[GitHub Issues and Projects]
   GH --> EXP
-```
+~~~
 
-The React application is built with the assessment API and served from the API Function App. The exporter is a separate Function App. Both use system-assigned Managed Identities for Azure service access. GitHub Actions uses OIDC for the deployment identity. User authentication, application identity, and deployment identity are separate security principals.
+React画面はAssessment APIと一緒にBuildし、API Function Appから配信します。Exporterは別Function Appです。両方のAzure Service接続にはSystem-assigned Managed Identityを使います。GitHub Actionsは配置用IdentityにOIDCで接続します。利用者、Application、配置のIdentityは別々です。
 
-The base Bicep deployment provisions two Function Apps, separate hosting and data storage accounts, queues, a state table, a private blob container, Key Vault, Application Insights, Log Analytics, and Translator. Azure Functions and supporting endpoints use public network access in the base deployment; private endpoints and network isolation are not configured by default.
+基本Bicep配置ではFunction Appと関連EndpointのPublic Network Accessを有効にし、Private EndpointとNetwork分離を既定設定しません。
 
-## Request and assessment flow
+## RequestとAssessmentの流れ
 
-1. A user with an assigned Entra application role opens the review interface. Easy Auth and API token/role validation protect access.
-2. An authorized operator requests synchronization. Service Health notices, Resource Graph inventory, Advisor data, and configured SharePoint sources are fetched through separate adapters.
-3. The system records source, time, scope, completeness, failures, source version, and evidence. Partial or failed discovery is not treated as an empty, unaffected result.
-4. The assessment service selects candidate resources using explicit notice targets and enabled resource applicability profiles. Resource type, SKU, region, kind, and other applicable attributes are considered where the profile defines them. Unknown attributes remain visible for review.
-5. The service builds one assessment per lifecycle event and workload. It grounds model inputs in the notice, resource facts, and confirmed evidence, then validates model output and applies deterministic rules.
-6. The UI presents impact, evidence, uncertainty, candidate resources, and work proposals. A human can correct and review a specific immutable assessment version.
-7. An approved work item can be sent to a separately queued exporter. The exporter reconciles existing GitHub issues and Project items before creating or updating them. Issue creation and Project item updates are separate steps and may partially succeed.
+1. Entra App Roleが割り当てられた利用者がReview画面を開く。Easy AuthとAPIのToken／Role検査で保護する。
+2. 認可されたOperatorが同期を依頼する。Service Health通知、Resource Graph Inventory、Advisor情報、設定済みSharePoint Sourceを独立Adapterで取得する。
+3. Source、時刻、Scope、完全性、失敗、版、Evidenceを記録する。取得不完全や失敗を空または影響なしと扱わない。
+4. 明示Targetと有効なResource適用Profileから候補を選ぶ。Profileで定義された場合はResource Type、SKU、Region、Kindなどを検討する。不明AttributeはReview対象として残す。
+5. Lifecycle Event／WorkloadごとにAssessmentを作る。通知、Resource Fact、確認済みEvidenceをModel入力の根拠にし、Outputを検証して決定的Ruleを適用する。
+6. UIに影響、Evidence、不確実性、Resource候補、作業案を表示する。人は不変版のAssessmentを訂正・Reviewできる。
+7. 承認済みWork Itemは独立したQueue経由でExporterへ送る。ExporterはGitHub Issue／Project項目を作成または更新する前に既存状態を照合する。Issue作成とProject項目更新は別処理で、一部だけ成功することがある。
 
-Azure synchronization is read-only with respect to assessed subscriptions. It does not change Azure resources, resource tags, permissions, or workloads. Provisioning of the Planner's own infrastructure is a separate reviewed Bicep deployment.
+Azure同期は評価対象Subscriptionを読み取るだけです。Azure Resource、Tag、Permission、Workloadは変更しません。Planner自身のInfrastructure配置は、レビュー済みBicepで別途行います。
 
-## Decision responsibilities
+## 判断責務
 
-| Component | Responsibility | Does not decide |
+| 構成要素 | 責務 | 判断しないこと |
 |---|---|---|
-| Azure services | Publish notices, recommendations, resource inventory, and control-plane attributes | Business criticality, owner, or migration plan |
-| Applicability profiles | Identify possible resource candidates from notice-specific conditions | Runtime usage or business impact by themselves |
-| Microsoft-Decision-1 | Return typed choices and score distributions for impact, priority, timing, complexity, and project need | Evidence truth, team assignment, approval, or Azure changes |
-| Deterministic rules | Apply deadlines, priority floors, completeness constraints, and review requirements | Business acceptance or final policy exceptions |
-| Explanation model | Produce evidence-bounded explanations and work proposals when configured | Official dates, resource IDs, approvals, or unsupported facts |
-| Validators | Check schema, evidence references, IDs, dates, workload linkage, dependency graph, and approval hash | Guarantee that an otherwise valid work proposal is appropriate |
-| Human reviewer | Confirm business facts, applicability, impact, work, ownership, exceptions, and exports | — |
+| Azure Service | 通知、推奨、Resource Inventory、Control Plane Attributeを提供 | 業務重要度、Owner、移行計画 |
+| 適用Profile | 通知ごとの条件から候補Resourceを特定 | 実行時利用や業務影響の単独判定 |
+| Microsoft-Decision-1 | 影響、優先度、時期、複雑さ、Project要否の型付き選択とScore分布を返す | Evidenceの真偽、チーム割当、承認、Azure変更 |
+| 決定的Rule | Deadline、優先度下限、完全性制約、Review要件を適用 | 業務受容や最終的なPolicy例外 |
+| 説明Model | 設定済みの場合、Evidenceの範囲内で説明と作業案を生成 | 公式日付、Resource ID、承認、根拠のないFact |
+| Validator | Schema、Evidence Reference、ID、日付、Workload Link、依存Graph、承認Hashを検査 | 形式上有効な作業案が妥当であることの保証 |
+| 人間のReviewer | 業務Fact、適用性、影響、作業、Owner、例外、外部登録を確認 | — |
 
-Decision-1 score distributions are ordinal model outputs. The UI shows the highest-scored impact category or categories; ties may result in multiple categories being displayed. These scores are not calibrated probabilities of correctness. A score, `Unknown`, or `Abstained` result cannot approve work or establish that a resource is unaffected.
+Decision-1のScore分布は順序尺度のModel Outputです。UIは最高Scoreの影響Categoryを表示し、同点なら複数Categoryを示す場合があります。正解の校正済み確率ではありません。Score、Unknown、Abstainedだけでは作業を承認したり、Resourceを影響なしと確定したりできません。
 
-The two impact axes are distinct:
+2つの影響軸は異なる判断です。
 
-- **Risk if unaddressed**: potential consequence if an applicable capability is retired while still in use.
-- **Impact during and after response**: potential effects of upgrading, migrating, switching, or other response work.
+- **未対応時のリスク**：該当機能が使用中のまま退役した場合に想定される結果。
+- **対応時・対応後の影響**：Upgrade、Migration、切替などの対応作業中および完了後に想定される結果。
 
-Where business-specific dependencies are unavailable, the UI may show a general lifecycle-based impact narrative. It is conditional and does not identify a particular business process or downtime. Confirmed SharePoint facts can add workload evidence, but a document statement is not proof of current runtime use. Fact proposals require a Governance user to confirm the statement and explicitly link dependencies to resources.
+業務固有の依存情報がなければ、UIにLifecycle一般論の影響説明を示す場合があります。特定業務処理や停止時間を示すものではありません。確認済みSharePoint FactはWorkload Evidenceを補えますが、文書記載だけでは現在の実行時利用を証明しません。Fact候補はGovernanceが内容を確認し、依存先を明示的にLinkする必要があります。
 
-## Evidence and model input
+## EvidenceとModel入力
 
-Each assessment preserves source and observation metadata, evidence IDs, model invocation status, model and prompt versions, input/result hashes, and assessment version. Resource IDs and team names are aliased in model input. The system does not provide the model the full ARM `properties` object. Text from Microsoft or internal documents is untrusted input; embedded instructions are not executable instructions.
+AssessmentにはSource・観測Metadata、Evidence ID、Model呼出状態、Model／Prompt版、入力／結果Hash、Assessment版を保持します。Model入力ではResource IDとTeam名を別名化し、ARMのproperties全体を渡しません。Microsoft文書と社内文書は信頼できない入力であり、埋め込み命令は実行しません。
 
-Explanation behavior has two separate paths. The explanation deployment is configurable and its invocation state is recorded per assessment. Deterministic general impact narratives are not a substitute for a failed or unavailable explanation-model invocation. Microsoft facts, evidence, and official URLs are kept separate from generated explanations. Date parsing does not turn a migration deadline or deprecation start date into a retirement date.
+説明は2経路に分かれます。説明Deploymentは個別に設定し、Assessmentごとに呼出状態を記録します。一般的な影響説明は決定的に生成し、説明Modelが失敗・利用不能な場合の代用にしません。Microsoft Fact、Evidence、公式URLは生成説明と分けて保持します。日付処理でMigration Deadlineや非推奨開始を退役日に変換しません。
 
-## SharePoint document flow
+## SharePoint文書フロー
 
-The API reads configured SharePoint folders using Microsoft Graph and a Managed Identity. Files are listed and stored as immutable snapshots; supported extraction formats are DOCX and XLSX, subject to configured file, page, batch, and text limits. Fact extraction produces candidates with source location and content hash. A Governance reviewer can correct, confirm, or exclude each candidate. Confirmed facts and explicitly reviewed dependency links are versioned and scoped to a workload. Only confirmed live-source facts are eligible for ordinary assessments; isolated synthetic-source facts remain segregated.
+APIはManaged IdentityでMicrosoft Graphを使い、設定済みSharePoint Folderを読み取ります。File一覧とSnapshotを不変で保存します。対応形式はDOCXとXLSXで、File、Page、Batch、Textの各上限があります。Fact抽出は出典位置とContent Hashを持つ候補を作ります。Governance Reviewerは候補を修正、確認、除外できます。確認済みFactと明示的な依存Linkは版管理され、WorkloadにScopeされます。確認済みLive Source Factだけが通常Assessmentへ入り、隔離されたSynthetic Source Factとは分離します。
 
-The Graph `Sites.Selected` application permission and site-level `read` grant are both required. A configured folder does not narrow the Graph grant: the site grant permits access at site scope. Use a dedicated site when that access boundary is too broad.
+GraphのSites.Selected Application PermissionとSite単位のread許可の両方が必要です。Folderを設定してもGraph許可は狭まりません。許可境界が広すぎる場合は専用Siteを使います。
 
-## Environment controls
+## 環境制御
 
-Synchronization, notification ingestion, SharePoint synchronization, SharePoint extraction, live SharePoint sources, GitHub export, Project progress synchronization, and isolated assessment flows have independent settings. The Bicep parameter file defaults these functions to disabled unless deployment variables explicitly enable them. In the currently configured deployment, test mode is disabled; live SharePoint synchronization and fact extraction and GitHub export are enabled; Project progress synchronization is disabled. These values are deployment-specific and may differ in other installations.
+同期、通知受信、SharePoint同期・抽出・Live Source、GitHub Export、Project進捗同期、隔離Assessmentには個別設定があります。Bicep Parameter FileはDeployment Variableから明示的に有効化されない場合、これらを無効にします。現行配置はTest Modeを無効、Live SharePoint同期・Fact抽出とGitHub Exportを有効、Project進捗同期を無効にしています。別環境では異なる場合があります。
 
-## Known boundaries
+## 既知の制約
 
-- Resource Graph and control-plane inspection cannot establish runtime use in all cases. Data-plane, guest OS, application-code, and connection-string discovery are not performed.
-- Applicability profiles cover configured resource types and conditions. A missing profile results in review, not a global claim of no impact.
-- Business ownership, criticality, RTO/RPO, change windows, approved migration options, and task durations require explicit business data or human confirmation.
-- SharePoint source configuration currently targets a folder and its descendants. Source discovery from arbitrary URLs is not performed. Multiple folders and more advanced source governance are not a unified search capability.
-- GitHub export depends on configured token credentials and permissions. The adapter currently reads a GitHub token from Key Vault; a GitHub App installation-token flow is not implemented.
-- Notification delivery, export, and progress synchronization are independently enabled. Their presence in code or infrastructure does not mean every destination or role is configured in every deployment.
+- Resource GraphとControl Plane調査だけでは、すべてのケースで実行時利用を証明できません。Data Plane、Guest OS、Application Code、Connection Stringは調査しません。
+- 適用Profileは設定済みResource Typeと条件を対象にします。Profileがない場合はReviewにし、全体を影響なしと判断しません。
+- 業務Owner、重要度、RTO／RPO、変更可能期間、承認済みMigration、作業期間には明示された業務情報または人の確認が必要です。
+- SharePoint Sourceは現在Folderと配下を対象にします。任意URLの巡回はしません。複数Folderや高度なSource統制を統合検索する機能ではありません。
+- GitHub Exportには設定済みTokenとPermissionが必要です。現行AdapterはKey VaultからGitHub Tokenを読みます。GitHub App Installation Token方式はありません。
+- 通知配送、Export、進捗同期は個別に有効化します。CodeやInfrastructureに実装があるだけでは、全環境でDestination／Roleが設定済みとは限りません。

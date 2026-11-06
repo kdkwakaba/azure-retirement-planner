@@ -1,28 +1,28 @@
-# Reference Azure workload deployment
+# 参照Azure Workloadの配置
 
-The Bicep templates in this directory create a separately scoped Azure workload with common platform resources, application hosting, data services, monitoring, and a Foundry account/project. The templates apply tags for workload, owner team, environment, management source, and purpose. They do not deploy application code, business data, or business transactions.
+このDirectory内のBicep Templateは、共通Platform Resource、Application Host、Data Service、監視、Foundry Account／Projectを含む、別ScopeのAzure Workloadを作ります。Workload、Owner Team、Environment、管理元、用途のTagを設定します。Application Code、業務Data、業務処理は配置しません。
 
-This is a tagged reference workload for exercising Resource Graph discovery and workload/resource relationships. It is not a production application architecture. Review the template and pricing for every resource before deployment; some resources can incur ongoing charges.
+Resource Graph DiscoveryとWorkload／Resourceの関連を確認するためのTag付きReference Workloadです。本番Application Architectureではありません。配置前に各Resourceと費用を確認してください。一部Resourceは継続課金されます。
 
-## Scope and parameters
+## ScopeとParameter
 
-`main.bicep` is a subscription-scope deployment. It creates a dedicated resource group and deploys `workload.bicep` into it. The workload template assigns the Planner API Managed Identity a Reader role only on that resource group. It also configures a Microsoft Entra administrator for the SQL resource. `foundry.bicep` deploys an Azure AI Foundry account and project within the same group.
+main.bicepはSubscription Scopeの配置です。専用Resource Groupを作成し、workload.bicepをその中へ配置します。Workload TemplateはPlanner API Managed Identityへ、そのResource Group範囲だけのReader Roleを設定します。SQL ResourceにはMicrosoft Entra Administratorも設定します。foundry.bicepは同じResource Group内にAzure AI Foundry AccountとProjectを配置します。
 
-The default resource group, workload labels, and resource names in the templates are reference defaults. Change them before deployment if they conflict with your naming policy. Use a globally unique suffix only where the template requires one, and keep the SharePoint workload ID, resource tags, and document references consistent.
+Resource Group、Workload Label、Resource Nameの既定値はReference用です。命名規則と衝突する場合は配置前に変更します。Templateが必要とするNameだけ一意Suffixを使い、SharePoint Workload ID、Resource Tag、文書Referenceを一致させます。
 
-## Before deployment
+## 配置前の確認
 
-1. Sign in to the intended tenant and select the exact target subscription ID. Do not select by a display name that may be ambiguous.
-2. Confirm subscription ownership, allowed regions, resource provider registration, service availability, quotas, and estimated charges.
-3. Obtain the Planner API Managed Identity principal ID, SQL Microsoft Entra administrator object ID/type/display name, and tenant ID.
-4. Choose a dedicated resource group name and a workload ID. Confirm no existing resources or role assignments will be replaced unexpectedly.
-5. Review all default SKUs, tags, public network settings, and role assignments in the templates.
+1. 対象Tenantにサインインし、対象Subscription IDを明示して選択する。曖昧な表示名で選ばない。
+2. Subscription所有者、許可Region、Resource Provider登録、Service提供、Quota、見積費用を確認する。
+3. Planner API Managed IdentityのPrincipal ID、SQL Entra管理者のObject ID／Type／Display Name、Tenant IDを取得する。
+4. 専用Resource Group NameとWorkload IDを決める。既存ResourceやRole Assignmentが意図せず置換されないことを確認する。
+5. Templateの既定SKU、Tag、Public Network設定、Role Assignmentを確認する。
 
-## Preview and deploy
+## What-Ifと配置
 
-Use a local parameter file outside the repository, or pass explicit parameters in a protected shell. Do not commit tenant, subscription, object, or principal IDs.
+Repository外のLocal Parameter Fileを使うか、保護されたShellからParameterを渡します。Tenant、Subscription、Object、Principal IDをCommitしないでください。
 
-```powershell
+~~~powershell
 $targetSubscriptionId = '<TARGET_SUBSCRIPTION_ID>'
 $deploymentLocation = '<AZURE_LOCATION>'
 $resourceGroupName = '<DEDICATED_RESOURCE_GROUP>'
@@ -31,41 +31,42 @@ $sqlAdminObjectId = '<SQL_ENTRA_ADMIN_OBJECT_ID>'
 $sqlAdminDisplayName = '<SQL_ENTRA_ADMIN_DISPLAY_NAME>'
 $tenantId = '<TENANT_ID>'
 $workloadId = '<WORKLOAD_ID>'
+$params = @(
+  "resourceGroupName=$resourceGroupName"
+  "location=$deploymentLocation"
+  "apiPrincipalId=$apiPrincipalId"
+  "sqlEntraAdminObjectId=$sqlAdminObjectId"
+  "sqlEntraAdminDisplayName=$sqlAdminDisplayName"
+  "tenantId=$tenantId"
+  "workloadId=$workloadId"
+)
 
 az account set --subscription $targetSubscriptionId
 az account show --query '{subscription:id,tenant:tenantId}' --output table
+az deployment sub what-if --subscription $targetSubscriptionId --location $deploymentLocation --template-file validation/azure-workload/main.bicep --parameters $params
 
-az deployment sub what-if `
-  --subscription $targetSubscriptionId `
-  --location $deploymentLocation `
-  --template-file validation/azure-workload/main.bicep `
-  --parameters resourceGroupName=$resourceGroupName `
-    location=$deploymentLocation apiPrincipalId=$apiPrincipalId `
-    sqlEntraAdminObjectId=$sqlAdminObjectId `
-    sqlEntraAdminDisplayName=$sqlAdminDisplayName tenantId=$tenantId `
-    workloadId=$workloadId
+# What-If全体と対象Scopeを確認してからApplyする。
+~~~
 
-# Apply only after reviewing the full What-If and confirming the target scope.
-```
+Review後、同じSubscription、Location、Template、Parameterでaz deployment sub createを実行します。実行者にはResource作成とTemplate内Reader Role Assignmentの権限が必要です。Planner Runtime Identityへその権限を与えないでください。
 
-Use `az deployment sub create` with the exact same subscription, location, template, and parameters after review. The operator needs resource creation permission and permission to create the template's Reader role assignment. Do not grant those permissions to the Planner runtime identity.
+## PlannerへWorkloadを接続
 
-## Connect the workload to the Planner
-
-1. Add the selected subscription to the Planner's target subscription configuration without removing other approved scopes.
-2. Apply the subscription Reader assignment through the Planner's reviewed deployment procedure.
-3. In the SharePoint folder source, use the same workload ID and link only the approved document folder.
-4. Run synchronization and review discovered resource candidates. Azure resource discovery alone does not confirm business usage.
-5. Review extracted document facts, evidence locations, and dependencies before allowing them to inform an assessment.
+1. 承認済みScopeを削除せず、対象SubscriptionをPlannerのTarget Subscription設定へ追加する。
+2. Plannerのレビュー済み配置手順でSubscription Readerを割り当てる。
+3. SharePoint Folder Sourceに同じWorkload IDを設定し、許可された文書Folderだけを紐付ける。
+4. 同期し、検出Resource候補を確認する。Azure Resource検出だけでは業務利用を確定できない。
+5. 抽出Fact、Evidence位置、依存関係をReviewしてからAssessmentに使う。
 
 ## Cleanup
 
-Delete only a resource group created specifically for this reference workload. First confirm the selected subscription, group name, contents, ownership tags, and dependencies. Never delete the Planner's own resource group, an assessed shared resource, or a resource group that contains unrelated resources.
+このReference Workload専用に作成したResource Groupだけを削除します。対象Subscription、Group名、内容、所有Tag、依存を確認してください。Planner自身のResource Group、評価対象の共有Resource、無関係なResourceを含むGroupは削除しないでください。
 
-```powershell
+~~~powershell
 $targetSubscriptionId = '<TARGET_SUBSCRIPTION_ID>'
 $resourceGroupName = '<DEDICATED_RESOURCE_GROUP>'
 az group show --subscription $targetSubscriptionId --name $resourceGroupName
-# After confirming the group is dedicated and approved for removal:
+
+# 専用Groupであり削除承認済みと確認した後に実行
 az group delete --subscription $targetSubscriptionId --name $resourceGroupName --yes
-```
+~~~

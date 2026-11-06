@@ -1,34 +1,34 @@
-# Organization-specific workflow configuration
+# 組織別Workflow設定
 
-The application loads `config/workflow-policy.json` at runtime and validates it against a schema. The policy version and canonical hash are included in assessments. Changes require validation and a new assessment; previous approvals are not silently transferred.
+アプリはconfig/workflow-policy.jsonをRuntimeで読み込み、Schemaに照合する。Policy版と正規化HashをAssessmentに記録する。変更後は検証し、新しいAssessmentを作る。古い承認を自動で引き継がない。
 
-## Supported configuration
+## 設定できる項目
 
-- Team and department roles and candidate assignment rules for work categories, resource types, environment, and impact.
-- Coordination roles and approval-stage descriptions.
-- Task categories, required/recommended status, completion criteria, and dependency ordering.
-- Explicit workload business-context records with source, record ID, update time, and confirmation metadata.
+- 作業カテゴリ、Resource種別、環境、影響に基づくチーム／部門Roleと担当候補ルール。
+- 調整Roleと承認段階の説明。
+- 作業カテゴリ、必須／推奨区分、完了条件、依存順序。
+- Source、Record ID、更新時刻、確認情報を持つ明示的なWorkload業務Context Record。
 
-Rules return candidate teams; they do not assert that a team is the confirmed owner. Multiple candidates are retained. Missing or conflicting assignments, missing prerequisites, and dependency cycles require human attention. A configured approval path is descriptive: it does not create or enforce additional API roles.
+ルールは担当チーム候補を返すもので、チームを確定Ownerと断言しない。複数候補を保持する。担当の欠落・競合、前提条件の欠落、依存関係の循環は人の確認が必要。設定上の承認経路は説明情報であり、追加API Roleを作成・強制しない。
 
-## Current configuration
+## 現在の設定
 
-The checked-in policy contains generic infrastructure, application, and information-systems role labels and category-based assignment rules. It has no workload-specific business profiles, task templates, confirmed owners, approval durations, blackout windows, or criticality records. These labels are routing suggestions, not verified organization structure or identity assignments.
+Repository内のPolicyは、一般的なインフラ、アプリケーション、情報システムのRole名とカテゴリ別振り分けルールを含む。Workload固有の業務Profile、作業Template、確認済みOwner、承認期間、停止期間、重要度Recordは含まない。設定ラベルは振り分け候補であり、組織構造や実在Identityを確認したものではない。
 
-The API also supports Governance-managed business-context records. Records are versioned and tied to a workload and source reference. This is a controlled manual data-entry API; it is not an automatic CMDB or ServiceNow connector. The current review interface does not provide a general business-context authoring console.
+APIはGovernance管理の業務Context Recordも扱える。Recordは版管理され、WorkloadとSource Referenceに結び付く。これは制御された手入力APIであり、自動CMDB／ServiceNow Connectorではない。現行レビュー画面に汎用業務Contextの入力画面はない。
 
-## Change process
+## 変更手順
 
-1. Propose changes to the JSON policy in a pull request.
-2. Run schema, role-reference, matching-rule, duplicate, and dependency-cycle validation.
-3. Have the policy owner and affected workload owner review assignments and approval descriptions.
-4. Record the approved policy version and hash, then re-evaluate affected assessments.
-5. Confirm that the new version does not inherit approvals from an older assessment.
+1. JSON Policyの変更をPull Requestで提案する。
+2. Schema、Role Reference、照合ルール、重複、依存循環を検証する。
+3. Policy Ownerと影響を受けるWorkload Ownerが担当候補と承認説明を確認する。
+4. 承認済みPolicy版とHashを記録し、対象Assessmentを再評価する。
+5. 新版が旧Assessmentの承認を引き継がないことを確認する。
 
-Do not put credentials, personal data, or unverified business facts in the policy. Use role identifiers rather than individual names. Do not add arbitrary code or model-generated teams to the configuration.
+認証情報、個人情報、未確認の業務情報をPolicyに含めない。個人名ではなくRole IDを使う。任意コードやModelが生成したチームを設定に追加しない。
 
-## Task and coordination behavior
+## 作業と調整の動作
 
-The policy can propose customer communication, cross-team coordination, vendor assessment, cost assessment, budget approval, contract review, documentation, and CMDB update work when an explicitly confirmed condition applies. It does not infer vendor use, cost, a contract obligation, or a required migration without evidence. `Required` is reserved for a supported, adopted response; uncertain checks remain `Recommended`.
+明示的に確認された条件に応じて、顧客連絡、チーム間調整、Vendor評価、費用確認、予算承認、契約確認、文書更新、CMDB更新を提案できる。証拠なしにVendor利用、費用、契約義務、移行必須を推定しない。Requiredは根拠のある採用済み対応に限る。不確実な確認作業はRecommendedとする。
 
-The interface may display the information-systems department as an initial coordination route, the workload owner as the business decision role, and governance as the policy/exception role. These are recommended responsibilities and do not establish a real assigned user or change API authorization.
+画面では初期調整先として情報システム部門、業務判断RoleとしてWorkload Owner、Policy／例外RoleとしてGovernanceを表示する場合がある。これらは推奨責務であり、実際の利用者割当やAPI認可を変更しない。

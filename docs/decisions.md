@@ -1,31 +1,31 @@
-# Architecture decisions
+# アーキテクチャ決定
 
-This document records current, implementation-relevant decisions. It replaces historical discussion notes and environment-specific operating records.
+本書は現行実装に関係する決定を記録します。過去の議論や環境固有の運用記録は含みません。
 
-## Adopted decisions
+## 採用済みの決定
 
-| Area | Decision |
+| 領域 | 決定 |
 |---|---|
-| Product boundary | Support lifecycle impact assessment and planning; do not perform incident recovery or modify assessed resources. |
-| Data sources | Use Azure Service Health, Resource Graph, selected Advisor/control-plane data, and explicitly configured SharePoint sources. Preserve source, time, scope, and retrieval completeness. |
-| Identity | Use Entra authentication and API role checks for users, Managed Identity for Azure service access, and OIDC for deployment automation. |
-| Decision ownership | Microsoft-Decision-1 returns typed proposals; deterministic rules enforce policy constraints; explanation generation organizes evidence; humans confirm business facts and approve work. |
-| Uncertainty | Unknown and incomplete evidence are explicit states. Missing data is not interpreted as no impact. |
-| Impact | Keep risk if unaddressed separate from impact during and after response. Do not equate technical change size with business impact. |
-| Assessment identity | Assessments are versioned by lifecycle event and workload. Corrections and source updates create new versions and invalidate affected approvals. |
-| Evidence | Preserve immutable source evidence, model invocation metadata, human corrections, and approval hashes. Do not create unsupported dates, IDs, costs, owners, or successor services. |
-| SharePoint | Read only configured folders using selected Graph access. Require human confirmation of extracted facts and explicit dependency links before using them as assessment evidence. |
-| External work | Export only human-approved work items. GitHub Issue creation and Project item updates are separate and retryable stages. Closing an external issue does not automatically complete internal work. |
-| Infrastructure | Manage the Planner's own infrastructure through Bicep and reviewed release workflows. Keep bootstrap permissions separate from routine deployment. |
-| Test data | Keep isolated synthetic records distinct from live notices and resources. Test-only endpoints require explicit configuration and are disabled when test mode is off. |
+| 製品範囲 | Lifecycle影響評価と計画を支援する。Incident対応や評価対象Resource変更は実行しない。 |
+| Data Source | Azure Service Health、Resource Graph、一部Advisor／Control Plane情報、明示的に設定したSharePoint Sourceを使う。Source、時刻、Scope、取得完全性を保持する。 |
+| Identity | 利用者はEntra認証とAPI Role検査、Azure Service接続はManaged Identity、配置自動化はOIDCを使う。 |
+| 判断責務 | Microsoft-Decision-1が型付き判断案を返す。決定的RuleがPolicy制約を適用する。説明生成はEvidenceを整理する。人が業務Factを確認して作業を承認する。 |
+| 不確実性 | UnknownとEvidence不足を明示する。不足情報を影響なしと解釈しない。 |
+| 影響 | 未対応時のリスクと対応中・対応後の影響を分ける。技術的変更規模を業務影響と同一視しない。 |
+| Assessment ID | Lifecycle Event／Workload単位で版管理する。訂正とSource更新で新版を作り、影響する承認を無効にする。 |
+| Evidence | 不変のSource Evidence、Model呼出Metadata、人の訂正、承認Hashを保持する。裏付けのない日付、ID、費用、Owner、後継Serviceを作らない。 |
+| SharePoint | 選択されたGraph権限で設定Folderを読み取る。Fact候補は人が確認し、依存Linkを指定してからAssessment Evidenceに使う。 |
+| 外部作業 | 人が承認したWork ItemだけをExportする。GitHub Issue作成とProject項目更新は別の再試行可能な処理とする。外部IssueのCloseだけでは内部作業を完了しない。 |
+| Infrastructure | Planner自身のInfrastructureをBicepとレビュー済みRelease Workflowで管理する。Bootstrap権限は通常配置から分離する。 |
+| Test Data | 隔離された合成RecordをLive通知・Resourceと分離する。Test専用Endpointは明示設定が必要で、Test Mode無効時は使えない。 |
 
-## Decisions that deployments must supply
+## 配置時に決める項目
 
-- Target tenant and subscription scopes, required roles, and identity assignments.
-- Applicable resource profiles, business ownership, criticality, task durations, calendars, and review responsibilities.
-- SharePoint sites, folders, file limits, retention, and which confirmed facts may enter assessments.
-- Model deployments, region, quota, cost controls, retention, and approved data egress.
-- GitHub owner, repository, Project, token scope, export enablement, and retention policy.
-- Network isolation, disaster recovery, operational SLOs, security response ownership, and regulatory requirements.
+- 対象Tenant／Subscription Scope、必要Role、Identity割当。
+- 適用Resource Profile、業務Owner、重要度、作業期間、Calendar、Review責務。
+- SharePoint Site／Folder、File上限、保持、Assessmentへ入れる確認済みFact。
+- Model Deployment、Region、Quota、費用制御、保持、承認済みData送信先。
+- GitHub Owner、Repository、Project、Token権限、Export有効化、保持Policy。
+- Network分離、災害復旧、運用SLO、Security対応責任者、規制要件。
 
-These values are environment-specific; do not put production identifiers or credentials in the public repository. Review the current implementation limits in [Implementation status](implementation-backlog.md).
+これらの値は環境固有です。本番IDや認証情報を公開Repositoryへ入れないでください。現行実装の制約は[実装状況](implementation-backlog.md)を参照してください。

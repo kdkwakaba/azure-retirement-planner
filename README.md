@@ -1,61 +1,61 @@
 # Azure Retirement Planner
 
-Azure Retirement Planner collects Azure lifecycle notices, discovers potentially affected Azure resources, and prepares evidence-linked assessments and work proposals for human review. It does not modify, migrate, or delete assessed Azure resources.
+Azure Retirement Plannerは、Azureのライフサイクル通知を収集し、影響を受ける可能性のあるAzureリソースを調査し、根拠に基づく評価と作業案を人が確認できる形で提示します。評価対象のAzureリソースを変更、移行、削除する機能はありません。
 
-The repository contains a TypeScript and React application, Azure Functions APIs, Bicep infrastructure, and GitHub Actions workflows. It integrates with Azure Service Health, Resource Graph, Microsoft-Decision-1, Azure AI Foundry, SharePoint document sources, and the review interface. Capability and deployment settings vary by environment; this repository does not include tenant-specific identifiers or credentials.
+このリポジトリには、TypeScript／Reactアプリ、Azure Functions API、Bicepによるインフラ、GitHub Actions Workflowが含まれます。Azure Service Health、Resource Graph、Microsoft-Decision-1、Azure AI Foundry、SharePoint文書、レビュー画面と連携します。機能や配置設定は環境ごとに異なります。このリポジトリにはテナント固有のIDや認証情報を含めません。
 
-## Capabilities
+## 主な機能
 
-- Collect lifecycle notices and Azure configuration through read-only Azure APIs.
-- Evaluate resource applicability separately from business impact, preserve missing information, and present evidence and Microsoft source links.
-- Use Microsoft-Decision-1 for typed decision proposals, deterministic rules for policy constraints, and a separately configured explanation model. Invocation status is recorded per assessment.
-- Read configured SharePoint folders through Microsoft Graph, extract DOCX/XLSX text and fact proposals, and require a Governance user to confirm facts and dependency links before they are used as assessment evidence.
-- Review, correct, approve, defer, or mark an assessment as requiring no action. Approval applies to a specific assessment version and does not authorize changes to assessed Azure resources.
-- Export only approved work items to configured GitHub Issues and Projects. Export and Project progress synchronization are independently configurable.
+- 読み取り専用のAzure APIからライフサイクル通知とAzure構成を取得します。
+- リソースが通知の対象に該当するかと、業務への影響を分けて評価します。不足情報を保持し、根拠とMicrosoft公式情報へのリンクを提示します。
+- 型付き判断案にはMicrosoft-Decision-1を使い、ポリシー制約には決定的なルールを適用します。説明モデルは別に設定し、呼び出し状況を評価ごとに記録します。
+- Microsoft Graph経由で設定済みのSharePointフォルダを読み取り、DOCX／XLSXから文章と事実候補を抽出します。Governanceユーザーが事実と依存関係を確認してから、評価根拠として使います。
+- 評価を確認、訂正、承認、保留、対応不要として記録できます。承認は特定の評価版に対するもので、Azureリソースを変更する許可にはなりません。
+- 承認済み作業だけを、設定済みのGitHub IssueおよびProjectへ登録できます。作業登録とProject進捗の同期は個別に設定します。
 
-## Architecture and operation
+## 構成と運用
 
-| Document | Description |
+| 文書 | 内容 |
 |---|---|
-| [System design](docs/design.md) | Current components, data flow, requirements, and limitations |
-| [Architecture and decision model](docs/architecture-and-decision-model.md) | Runtime architecture, model roles, evidence, and assessment behavior |
-| [Decision policy](docs/decision-policy.md) | Impact axes, priority, resource classification, and review rules |
-| [Workflow configuration](docs/workflow-configuration.md) | Team routing, coordination, approvals, and task dependencies |
-| [SharePoint integration](docs/sharepoint-document-impact-plan.md) | Document ingestion, fact review, grounding, and current limits |
-| [SharePoint connection guide](docs/sharepoint-connection-guide.md) | Graph IDs, permissions, source setup, and synchronization |
-| [Testing and quality](docs/testing-and-quality.md) | Automated checks, model quality evaluation, and safety criteria |
-| [Review interface behavior](docs/review-interface.md) | Authorization, correction, approval, and export behavior |
-| [User guide](docs/user-operations-guide.md) | Sign-in, synchronization, assessment review, and approvals |
-| [Operations runbook](docs/runbook.md) | Bootstrap, release, access, monitoring, and recovery |
-| [Deployment and SharePoint assessment guide](docs/deployment-and-sharepoint-evaluation.md) | End-to-end Azure deployment, Graph permissions, SharePoint setup, and assessment review |
-| [Implementation status](docs/implementation-backlog.md) | Implemented capabilities and remaining product limitations |
-| [CI failure agent](docs/ci-failure-agent.md) | Automated CI failure triage and patch workflow |
+| [システム設計](docs/design.md) | 現行コンポーネント、データフロー、要件、制約 |
+| [アーキテクチャと判断モデル](docs/architecture-and-decision-model.md) | 実行構成、各モデルの役割、根拠、評価動作 |
+| [判断ポリシー](docs/decision-policy.md) | 影響軸、優先度、リソース分類、レビュー規則 |
+| [Workflow設定](docs/workflow-configuration.md) | チーム振り分け、調整、承認、作業依存関係 |
+| [SharePoint連携](docs/sharepoint-document-impact-plan.md) | 文書取得、事実確認、根拠、現行上限 |
+| [SharePoint接続ガイド](docs/sharepoint-connection-guide.md) | Graph ID、権限、Source設定、同期 |
+| [テストと品質](docs/testing-and-quality.md) | 自動チェック、モデル品質評価、安全要件 |
+| [レビュー画面の動作](docs/review-interface.md) | 認可、訂正、承認、外部登録 |
+| [利用者向けガイド](docs/user-operations-guide.md) | サインイン、同期、評価確認、承認 |
+| [運用Runbook](docs/runbook.md) | Bootstrap、リリース、アクセス、監視、復旧 |
+| [構築・SharePoint評価ガイド](docs/deployment-and-sharepoint-evaluation.md) | Azure配置、Graph権限、SharePoint設定、評価までの一連の手順 |
+| [実装状況](docs/implementation-backlog.md) | 実装済み機能と製品上の制約 |
+| [CI失敗エージェント](docs/ci-failure-agent.md) | CI失敗の自動調査と修正PR作成 |
 
-## Security and limitations
+## セキュリティと制約
 
-- Assessed subscriptions are read-only. The system's own resource group is managed separately through a reviewed Bicep deployment workflow.
-- The base deployment uses public Azure endpoints protected by Entra authentication and API authorization. Private networking must be designed and configured for environments that require it.
-- SharePoint access is explicitly scoped; the application identity requires both the Graph `Sites.Selected` permission and a site-level grant. The site-level grant covers the site, even when a single folder is configured in the application.
-- Azure resource presence does not prove runtime use or business criticality. The system does not inspect guest operating systems, application code, or data planes.
-- Decision probabilities are model-reported distributions, not calibrated confidence or accuracy. Human review remains required for uncertain or policy-sensitive decisions.
-- GitHub export uses a credential stored in Key Vault. The current adapter does not use a GitHub App installation token.
-- Operators must configure identity, data retention, network controls, policies, quotas, model deployments, and external integrations for their environment.
+- 評価対象Subscriptionは読み取り専用です。本システム自身のResource Groupは、レビュー済みのBicep配置Workflowで別途管理します。
+- 標準配置ではEntra認証とAPI認可で保護した公開Azure Endpointを使います。Private Networkが必要な環境では、別途設計・設定が必要です。
+- SharePoint権限の対象を明示します。アプリのManaged IdentityにはGraphのSites.Selectedとサイト単位の許可が必要です。アプリに単一フォルダを設定しても、サイト単位の許可範囲はサイト全体です。
+- Azure上にリソースが存在することだけでは、実行時の利用状況や業務上の重要度を証明できません。ゲストOS、アプリケーションコード、データプレーンは調査しません。
+- 判断モデルが返す確率分布は、校正済みの信頼度や正解率ではありません。不確実な判断やポリシーに関わる判断は人が確認します。
+- GitHub登録にはKey Vaultに保管した認証情報を使います。現行アダプターはGitHub AppのInstallation Token方式ではありません。
+- 運用者は、利用環境に合わせてID、データ保持、ネットワーク制御、ポリシー、Quota、モデル配置、外部連携を設定します。
 
-## Development
+## 開発
 
-Use the Node.js and npm versions in `.node-version` and `package.json`.
+Node.jsとnpmは、.node-versionおよびpackage.jsonに記載された版を使います。
 
-```sh
+~~~sh
 npm ci --ignore-scripts
 npm run verify
-```
+~~~
 
-The verification command runs formatting, lint, type checking, unit and contract tests, build, documentation checks, runtime checks, artifact checks, and dependency audit. Azure changes, model calls, and GitHub exports are not part of routine CI.
+verifyは、Format、Lint、型検査、Unit／Contract Test、Build、文書リンク、Runtime／Artifact検査、依存パッケージ監査を実行します。通常のCIではAzure変更、有料モデル呼び出し、GitHubへの作業登録を行いません。
 
-The manual release workflow deploys only a successful `main` CI artifact. It recomputes Bicep What-If, checks the reviewed plan hash for apply, and can deploy the API and exporter packages from the same artifact. See the operations runbook before using it.
+手動リリースWorkflowは、mainの成功済みCI Artifactだけを配置します。Bicep What-Ifを再計算し、Apply時にレビュー済みPlan Hashを照合します。同一ArtifactからAPIとExporterのパッケージを配置できます。詳細は運用Runbookを参照してください。
 
-## Configuration
+## 設定
 
-Infrastructure parameters and runtime flags are supplied through Bicep parameters and deployment variables. Features are disabled by default unless explicitly enabled. Do not commit tenant IDs, subscription IDs, SharePoint IDs, resource identifiers, credentials, real payloads, or model inputs/outputs. Use a private, approved operational store for environment-specific configuration and records.
+インフラパラメーターと実行時Feature Flagは、Bicepパラメーターと配置変数から設定します。明示的に有効化しない機能は無効です。Tenant ID、Subscription ID、SharePoint ID、Resource ID、認証情報、実データ、モデル入出力をコミットしないでください。環境固有の設定や記録は、承認済みの非公開運用先に保管してください。
 
-See [Implementation status](docs/implementation-backlog.md) for current deployment-specific behavior and outstanding limitations.
+環境固有の現行設定と製品上の制約は[実装状況](docs/implementation-backlog.md)を参照してください。

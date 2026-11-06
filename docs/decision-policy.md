@@ -1,97 +1,97 @@
-# Decision and approval policy
+# 判断・承認ポリシー
 
-This policy defines how the application separates notice scope, Azure resource applicability, business impact, priority, and human approval. It is not an organization-wide standard until an organization adopts and configures it.
+本ポリシーは、通知範囲、Azure Resource適用性、業務影響、優先度、人による承認をどう分けるかを定めます。組織が採用・設定するまでは、全社標準ではありません。
 
-## Notice scope
+## 通知範囲
 
-The source's official lifecycle category is retained separately from a human scope disposition. The application does not exclude a notice using a keyword alone. A reviewer may mark a notice out of scope only with a reason and human evidence. Out-of-scope assessments do not retain active priority or work items and cannot be approved or exported. Reconsideration creates a new assessment version.
+公式Lifecycle Categoryは、人が決めたScope判定とは別に保持します。単一Keywordだけで通知を除外しません。Reviewerが対象外にするには、理由とHuman Evidenceが必要です。対象外Assessmentは有効な優先度や作業案を持たず、承認・Exportできません。再検討は新しいAssessment版を作ります。
 
-## Impact axes
+## 影響軸
 
-The application records two independent impact judgments:
+アプリは独立した2つの影響判断を記録します。
 
-| Level | Risk if unaddressed | Impact during and after response |
+| レベル | 未対応時のリスク | 対応時・対応後の影響 |
 |---|---|---|
-| Low | Limited operational inconvenience; business effects are minor | Change effects, cost, or operational differences are within confirmed tolerances |
-| Medium | Partial feature, monitoring, cost, or service degradation; a workaround may exist | Bounded outage, differences, or workload that can be managed using a confirmed plan |
-| High | Important business capability may stop or materially degrade, or a substantial cost/operational effect may occur | Important capabilities may be interrupted or require significant mitigation |
-| Critical | Continuity, major data, regulatory, or contractual exposure is supported by evidence | A comparable severe effect during or after the response is supported by evidence |
-| Unknown | Available information cannot support a level | Available information cannot support a level |
+| Low | 業務への影響が小さい、限定的な運用不便 | 変更、費用、運用差が確認済み許容範囲に収まる |
+| Medium | 一部機能、監視、費用、Serviceが低下する可能性。回避策がある場合がある | 確認済み計画で管理できる範囲の停止、差異、作業が発生する |
+| High | 重要業務機能が停止・大幅劣化する、または費用／運用へ大きく影響する可能性 | 重要機能の中断や大規模な緩和作業が発生する可能性 |
+| Critical | 事業継続、重大Data、規制、契約上の深刻なリスクが根拠付きである | 対応中または対応後に同程度の深刻な影響が根拠付きである |
+| Unknown | 利用可能な情報ではレベルを裏付けられない | 利用可能な情報ではレベルを裏付けられない |
 
-Do not average away a severe dimension. Unknown is not Low. Critical workload designations require a human-confirmed source. Change size and business impact are different judgments. Missing alternatives alone do not establish Critical impact.
+一方の重大な影響を平均化して弱めない。UnknownはLowではない。Critical Workload指定には人が確認したSourceが必要。変更規模と業務影響は別の判断。代替策が不明なだけではCriticalとしない。
 
-If workload-specific dependency data is unavailable, the interface may show a conditional general lifecycle narrative. It must not invent business process names, outage duration, costs, or migration requirements. A document statement does not establish current runtime use.
+Workload固有の依存情報がなければ、条件付きの一般的なLifecycle影響説明を表示する場合があります。業務処理名、停止時間、費用、移行必須を創作してはいけません。文書記載だけでは現在の実行時利用を証明しません。
 
-## Priority and timing
+## 優先度と時期
 
-Priority is the urgency of planning and decision-making; P1 does not authorize an immediate production change.
+優先度は計画・判断の緊急度です。P1でも本番を即時変更する許可にはなりません。
 
-| Priority | Meaning |
+| 優先度 | 意味 |
 |---|---|
-| P1 | Decide or start planning urgently; confirm feasibility or risk acceptance |
-| P2 | Establish the plan early; begin investigation, design, and staffing |
-| P3 | Include in a normal change plan and track progress |
-| P4 | Limited impact and adequate lead time; monitor or plan later |
+| P1 | 急いで判断または計画を開始し、実現可能性やリスク受容を確認する |
+| P2 | 早期に計画を作り、調査、設計、人員確保を始める |
+| P3 | 通常の変更計画に含め、進捗を追う |
+| P4 | 影響が限定的で余裕があるため、監視または後続計画とする |
 
-Where the required deadline and approved work durations are available, planning margin is the latest feasible start date minus assessment date. Critical path, dependencies, blackout periods, staffing, and contingency must be considered. If dates or durations are missing, do not invent plan dates. The current deployment conservatively uses a P2 floor for important unresolved cases and P1 for an unresolved overdue or near-term deadline; see the rule implementation for exact conditions.
+必須期限と承認済み作業期間が分かる場合、計画余裕は最も遅い実行可能開始日からAssessment日を引いて算定します。Critical Path、依存、停止期間、人員、予備期間も考慮します。日付や期間が欠ける場合、計画日を創作しません。現行配置では、重要な未解決CaseにP2、期限超過または直近期限の未解決CaseにP1の保守的な下限を使います。正確な条件はRule実装を参照してください。
 
-For deadlines that require a response, the baseline matrix is:
+対応期限に対する基準Matrix：
 
-| Unaddressed impact | 0 days or less | 1–30 days | 31–90 days | 91+ days |
+| 未対応時の影響 | 0日以下 | 1～30日 | 31～90日 | 91日以上 |
 |---|---:|---:|---:|---:|
 | Critical | P1 | P1 | P2 | P2 |
 | High | P1 | P1 | P2 | P3 |
 | Medium | P1 | P2 | P3 | P3 |
 | Low | P1 | P2 | P3 | P4 |
 
-These are planning thresholds, not universal business requirements. A confirmed high or critical response impact without an approved mitigation has a P2 floor. Rules set lower bounds; the model cannot reduce priority below the applicable floor. A human records the reason for an approved reduction.
+これは計画基準であり、全組織共通要件ではありません。確認済み緩和策がないHigh／Criticalな対応影響にはP2下限を適用します。Ruleは優先度の下限を設定し、Modelは下限未満へ下げられません。人が下げる場合は承認理由を記録します。
 
-The model may return `Immediate`, `Within 30 days`, `Within 90 days`, `Within 180 days`, `Later`, `No action`, or `Unknown` for the beginning of the overall program. This is not a calculated start date for each work item. `No action` is a reasoned candidate, not a blank or an incomplete review.
+ModelはProgram全体の開始時期としてImmediate、Within 30 days、Within 90 days、Within 180 days、Later、No action、Unknownを返す場合があります。個別Work Itemの算定開始日ではありません。No actionは理由を伴う候補であり、未記入や未レビューではありません。
 
-## Lifecycle dates
+## Lifecycleの日付
 
-Keep deprecation start, new creation stop, support end, retirement date, and other response deadlines separate. Do not reuse a deprecation start date or migration deadline as a retirement date. If a retirement date is not explicitly supported by an authoritative structured field or narrowly recognized official retirement statement, leave it unknown. Conflicting or ambiguous dates require human review.
+非推奨開始、新規作成停止、サポート終了、退役日、その他の対応期限を分けて保持します。非推奨開始日や移行期限を退役日に使い回しません。権威ある構造化Fieldまたは限定的に認識された公式退役文だけが退役日を裏付ける場合、そうでなければ未確定にします。競合・曖昧な日付は人が確認します。
 
-An unannounced retirement date remains null. This alone does not establish overdue status or mandatory migration. A later official update creates a new event/assessment version; affected approvals expire. Similar titles or names are not sufficient to merge events.
+未発表の退役日はnullのままです。それだけでは期限超過や移行必須を意味しません。後続の公式更新は新しいEvent／Assessment版を作り、影響を受ける承認を失効させます。似たTitleやNameだけでEventを統合しません。
 
-## Resource classification
+## Resource分類
 
-Resource applicability is recorded per Azure resource, separately from business impact.
+Azure Resourceの適用性は、業務影響とは分けて記録します。
 
-| Classification | Use |
+| 分類 | 用途 |
 |---|---|
-| Confirmed | Service Health or Advisor explicitly identifies the resource. Preserve the explicit evidence even if other attributes require review. |
-| Probable | A resource matches an enabled, versioned notice applicability profile and its documented conditions. |
-| Possible | Direct Azure configuration evidence supports a relationship, without sufficient basis for a stronger result. |
-| Verification Required | A concrete unknown can be resolved through a defined human check. State the missing attribute and the check. |
-| Not Impacted | Required attributes and scope are complete and an approved profile or official exclusion establishes non-applicability. |
-| Unknown | Applicability cannot be determined and no specific verification route is known. |
+| Confirmed | Service HealthまたはAdvisorがResourceを明示した。属性の追加確認が必要でも明示Evidenceを保持する |
+| Probable | 有効な版管理済み通知適用Profileと条件に一致する |
+| Possible | Azure設定が関係を示すが、より強い結論には不足する |
+| Verification Required | 具体的な不明点を人の確認で解消できる。属性と確認作業を示す |
+| Not Impacted | 必須属性とScopeが完全で、承認済みProfileまたは公式除外が非該当を裏付ける |
+| Unknown | 適用性を決められず、具体的な確認方法も分からない |
 
-The current profile registry covers Basic Load Balancer, Storage GPv1, Application Insights URL ping tests, and classic Foundry Agent Service. Profile coverage is not exhaustive. Profiles select candidate resource types; matching does not prove runtime use. Explicit Service Health/Advisor resources are retained even outside these profiles.
+現行Profile RegistryはBasic Load Balancer、Storage GPv1、Application Insights URL ping test、Classic Foundry Agent Serviceを対象とします。Profile網羅性は完全ではありません。Profileは候補Resource Typeを絞るもので、実行時利用を証明しません。明示されたService Health／Advisor ResourceはProfile外でも保持します。
 
-An unsupported profile results in `ProfileUnavailable` review rather than a claim of no impact. A complete search with zero candidates is distinct from incomplete discovery, all resources explicitly not impacted, and an unsupported profile. `No resources found` is not equivalent to no business impact or no action.
+Profile未対応は非該当ではなく、ProfileUnavailableのReviewになります。候補なしの完全検索、取得不完全、全件Not Impacted、Profile未対応は別状態です。No resources foundは、業務影響なしや対応不要と同じではありません。
 
-## Review requirements
+## Review要件
 
-Human review is required when uncertainty can change the conclusion, including:
+不確実性が結論を変え得る場合は人のReviewが必要です。例：
 
-- Unknown, Possible, Verification Required, or relevant incomplete discovery;
-- missing deadline, criticality, scope, migration duration, or alternative that affects feasibility;
-- a material conflict between official evidence and configuration/business records;
-- assumptions that could change priority or response choice;
-- Critical workloads or high-risk model disagreement, low scores, or tied leading categories;
-- work-item approval, scope disposition, or external registration.
+- Unknown、Possible、Verification Required、関連する取得不完全。
+- 実現可能性に影響する期限、重要度、Scope、移行期間、代替案の不足。
+- 公式Evidenceと設定／業務Recordの重大な不一致。
+- 優先度や対応方法を変え得る前提。
+- Critical Workload、またはHigh RiskとModelの重大な不一致、低Score、首位Category同点。
+- Work Item承認、Scope判定、外部登録。
 
-Decision score distributions are not calibrated confidence. High model scores do not replace review. The UI may allow assessment review to be skipped for a fully scoped, completely retrieved, clearly non-applicable case, but this does not approve work, declare no business impact, or permit an export.
+Decision Scoreは校正済み信頼度ではありません。高いModel ScoreでもReviewを省略できません。Scopeと取得が完全で明確に非該当の場合、UIがAssessment Reviewを省略可能とする場合がありますが、作業承認、業務影響なしの宣言、Exportを許可するものではありません。
 
-## Work and approval
+## 作業と承認
 
-Work items distinguish evidence-backed required tasks from recommended investigations. Uncertain migration is not a required migration. Impact Verification items are confirmation tasks and do not authorize production changes.
+Work Itemは根拠のある必須作業と推奨調査を区別します。不確かな移行は移行必須ではありません。Impact Verificationは確認作業であり、本番変更を許可しません。
 
-Approvals are bound to the current assessment version and package hash. Partial approval applies only to selected items. Correction, re-evaluation, evidence changes, material dates, scope, impact, priority, owner, schedule, or acceptance-criteria changes invalidate affected approvals. Old assessments and source records remain immutable history.
+承認は現行Assessment版とPackage Hashに紐付きます。部分承認は選択Itemだけに適用します。訂正、再評価、Evidence、重要日付、Scope、影響、優先度、Owner、Schedule、受入条件が変わると、影響を受ける承認は失効します。旧AssessmentとSource Recordは不変で保持します。
 
-The review outcomes are approve, partial approve, return for correction, defer, and no action. No action hides an event/workload from the normal list but preserves the notice, evidence, assessment, and review history. It does not close GitHub work or change Azure.
+Review結果は承認、部分承認、差し戻し、保留、対応不要です。対応不要は通常一覧からEvent／Workloadを隠しますが、通知、Evidence、Assessment、Review履歴は残します。GitHub作業をCloseしたりAzureを変更したりしません。
 
-## Evidence and reassessment
+## Evidenceと再評価
 
-Store official source, source version/hash, observation time, scope completeness, decision and explanation invocation records, human corrections, and approval identity/time. Do not fabricate resource IDs, dates, prices, successors, or owners. A source update or human correction creates a new version; it never overwrites prior evidence or silently carries forward an invalid approval.
+公式Source、Source版／Hash、観測時刻、Scope完全性、判断・説明の呼出Record、人の訂正、承認者／時刻を保存します。Resource ID、日付、費用、後継、Ownerを捏造しません。Source更新や人の訂正は新しい版を作り、過去Evidenceを上書きせず無効な承認を引き継ぎません。
