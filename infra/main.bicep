@@ -3,6 +3,7 @@ targetScope = 'resourceGroup'
 @minLength(3)
 @maxLength(7)
 param prefix string = 'arp'
+param environmentName string = 'default'
 param location string = resourceGroup().location
 param hostStorageBlobEndpoint string
 param tenantId string
@@ -47,7 +48,7 @@ param processingFailureAlertsEnabled bool = false
 param processingFailureAlertActionGroupId string = ''
 
 var suffix = uniqueString(resourceGroup().id)
-var tags = { application: 'azure-retirement-planner', environment: 'poc', managedBy: 'bicep' }
+var tags = { application: 'azure-retirement-planner', environment: environmentName, managedBy: 'bicep' }
 
 resource hostStorage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: '${prefix}host${suffix}'
