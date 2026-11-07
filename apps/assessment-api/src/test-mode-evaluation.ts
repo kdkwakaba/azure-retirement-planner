@@ -9,44 +9,55 @@ import {
 } from '@arp/domain'
 import { fixture } from '../../../tests/fixtures.ts'
 
-export const SYNTHETIC_UAT_TRACKING_ID = 'ARP-SYNTHETIC-UAT-001'
-export const SYNTHETIC_UAT_WORKLOAD_ID = 'synthetic-uat-workload'
-export const SYNTHETIC_UAT_SUBSCRIPTION_ID =
+export const TEST_MODE_EVALUATION_TRACKING_ID = 'ARP-TEST-MODE-EVALUATION-001'
+export const TEST_MODE_EVALUATION_WORKLOAD_ID = 'test-mode-evaluation-workload'
+export const TEST_MODE_EVALUATION_SUBSCRIPTION_ID =
   '00000000-0000-4000-8000-000000000001'
-export const SYNTHETIC_UAT_RESOURCE_ID = [
-  `/subscriptions/${SYNTHETIC_UAT_SUBSCRIPTION_ID}`,
-  '/resourceGroups/synthetic-uat/providers/' +
-    'Microsoft.Network/loadBalancers/arp-demo-only',
+export function isTestModeEvaluationTrackingId(trackingId: string): boolean {
+  return [TEST_MODE_EVALUATION_TRACKING_ID, 'ARP-SYNTHETIC-UAT-001'].includes(
+    trackingId,
+  )
+}
+export function testModeEvaluationEnabled(): boolean {
+  return (
+    process.env.TEST_MODE_EVALUATION_ENABLED === 'true' ||
+    process.env.SYNTHETIC_UAT_ENABLED === 'true'
+  )
+}
+export const TEST_MODE_EVALUATION_RESOURCE_ID = [
+  `/subscriptions/${TEST_MODE_EVALUATION_SUBSCRIPTION_ID}`,
+  '/resourceGroups/test-mode-evaluation/providers/' +
+    'Microsoft.Network/loadBalancers/test-mode-evaluation',
 ].join('')
 
-export function createSyntheticUatAssessment(): Assessment {
+export function createTestModeEvaluationAssessment(): Assessment {
   const assessment = fixture()
   const event = normalizeNotice({
-    tenantId: SYNTHETIC_UAT_SUBSCRIPTION_ID,
-    trackingId: SYNTHETIC_UAT_TRACKING_ID,
-    title: '[合成UAT] Azure Basic Load Balancerの廃止通知例',
+    tenantId: TEST_MODE_EVALUATION_SUBSCRIPTION_ID,
+    trackingId: TEST_MODE_EVALUATION_TRACKING_ID,
+    title: '[テストモード評価] Azure Basic Load Balancerの廃止通知例',
     body: 'これはGitHub連携の接続確認専用に生成した合成データです。Microsoft公式通知ではなく、実環境・実リソース・実期限を示しません。',
     updatedAt: new Date().toISOString(),
   })
   event.evidence = event.evidence.map((evidence) => ({
     ...evidence,
     sourceType: 'Internal',
-    fact: '合成UATデータ。公式情報・実環境の事実として使用しない。',
+    fact: 'テストモード評価データ。公式情報・実環境の事実として使用しない。',
     officialUrl: null,
   }))
 
-  assessment.id = hash({ syntheticUat: SYNTHETIC_UAT_TRACKING_ID })
+  assessment.id = hash({ testModeEvaluation: TEST_MODE_EVALUATION_TRACKING_ID })
   assessment.sourceInputHash = assessment.id
   assessment.event = event
   assessment.eventVersionId = event.versionId
-  assessment.workloadId = SYNTHETIC_UAT_WORKLOAD_ID
+  assessment.workloadId = TEST_MODE_EVALUATION_WORKLOAD_ID
   assessment.createdAt = new Date().toISOString()
   assessment.asOf = new Date().toISOString().slice(0, 10)
   assessment.resources = [
     {
       ...assessment.resources[0]!,
-      id: SYNTHETIC_UAT_RESOURCE_ID,
-      workloadId: SYNTHETIC_UAT_WORKLOAD_ID,
+      id: TEST_MODE_EVALUATION_RESOURCE_ID,
+      workloadId: TEST_MODE_EVALUATION_WORKLOAD_ID,
       classification: 'Probable',
       classificationReason: 'ProfileConditionMatched',
       evidenceIds: event.evidence.map((item) => item.id),
@@ -56,45 +67,49 @@ export function createSyntheticUatAssessment(): Assessment {
   assessment.workItems = [
     {
       ...assessment.workItems[0]!,
-      id: hash({ syntheticUatWorkItem: SYNTHETIC_UAT_TRACKING_ID }),
-      title: '[SYNTHETIC UAT] Decision-1評価とGitHub Project登録を確認',
+      id: hash({
+        testModeEvaluationWorkItem: TEST_MODE_EVALUATION_TRACKING_ID,
+      }),
+      title: '[TEST MODE EVALUATION] Decision-1評価とGitHub Project登録を確認',
       description:
-        '合成UATです。GitHub APIへの接続、Issue作成、Project追加だけを確認します。' +
+        'テストモード評価です。GitHub APIへの接続、Issue作成、Project追加だけを確認します。' +
         'Azureリソースの変更や移行は行いません。',
-      workloadId: SYNTHETIC_UAT_WORKLOAD_ID,
-      resourceIds: [SYNTHETIC_UAT_RESOURCE_ID],
+      workloadId: TEST_MODE_EVALUATION_WORKLOAD_ID,
+      resourceIds: [TEST_MODE_EVALUATION_RESOURCE_ID],
       evidenceIds: event.evidence.map((item) => item.id),
       officialReferenceIds: [],
       confidence: {
         kind: 'EvidenceSupport',
         value: 1,
-        method: '固定された合成UAT fixture',
+        method: '固定されたテストモード評価 fixture',
         limitations: ['業務影響・Microsoft公式情報・実環境を表さない'],
       },
     },
   ]
   assessment.humanReviewRequired = true
-  assessment.reviewReasons = ['合成UATのため人間がIssue作成を明示承認する']
+  assessment.reviewReasons = [
+    'テストモード評価のため人間がIssue作成を明示承認する',
+  ]
   assessment.missingInformation = []
   assessment.validationErrors = []
   assessment.packageHash = packageHash(assessment)
   return assessmentSchema.parse(assessment)
 }
 
-export function applySyntheticUatDecision(
+export function applyTestModeEvaluationDecision(
   source: Assessment,
   decision: Decision,
   invocations: ModelInvocation[],
   assessmentId: string,
   asOf: string,
 ): Assessment {
-  if (!isSyntheticUatAssessment(source))
-    throw new Error('Only the synthetic UAT assessment can be evaluated')
+  if (!isTestModeEvaluationAssessment(source))
+    throw new Error('Only the test-mode evaluation assessment can be evaluated')
 
   const missingInformation = [
     ...new Set([
       ...source.missingInformation,
-      '合成UATデータであり、Microsoft公式通知・実期限・実環境の事実ではありません',
+      'テストモード評価データであり、Microsoft公式通知・実期限・実環境の事実ではありません',
     ]),
   ]
   const rules = applyRules({
@@ -114,7 +129,7 @@ export function applySyntheticUatDecision(
     ...source,
     id: assessmentId,
     sourceInputHash: hash({
-      syntheticUat: source.event.trackingId,
+      testModeEvaluation: source.event.trackingId,
       assessmentId,
       decisionModel: decision.model,
       modelVersion: decision.modelVersion,
@@ -126,12 +141,12 @@ export function applySyntheticUatDecision(
     modelInvocations: invocations,
     impactDiscoveryOutcome: 'CandidatesFound',
     discoveryScope: {
-      subscriptionIds: [SYNTHETIC_UAT_SUBSCRIPTION_ID],
+      subscriptionIds: [TEST_MODE_EVALUATION_SUBSCRIPTION_ID],
       resourceTypes: [
         ...new Set(source.resources.map((resource) => resource.type)),
       ],
-      profileIds: ['synthetic-uat-profile-v1'],
-      profileRegistryVersion: 'synthetic-uat-v1',
+      profileIds: ['test-mode-evaluation-profile-v1'],
+      profileRegistryVersion: 'test-mode-evaluation-v1',
       resourceCount: source.resources.length,
       scopeComplete: true,
     },
@@ -144,10 +159,11 @@ export function applySyntheticUatDecision(
     workItems: [
       {
         ...item,
-        id: hash({ syntheticUatWorkItem: assessmentId }),
-        title: '[SYNTHETIC UAT] Decision-1評価とGitHub Project登録を確認',
+        id: hash({ testModeEvaluationWorkItem: assessmentId }),
+        title:
+          '[TEST MODE EVALUATION] Decision-1評価とGitHub Project登録を確認',
         description: [
-          '合成通知と合成リソースを使ったPoCの動作確認です。Decision-1の構造化評価を実行し、レビュー承認後にGitHub IssueとProjectへ登録します。Azureリソースの変更や移行は行いません。結果は実環境やMicrosoft公式通知の事実を示しません。',
+          'テストモードの架空通知とリソースを使った評価です。Decision-1の構造化評価を実行し、レビュー承認後にGitHub IssueとProjectへ登録します。Azureリソースの変更や移行は行いません。結果は実環境やMicrosoft公式通知の事実を示しません。',
           '',
           `Decision-1 status: ${decision.status} (model ${decision.model}, version ${decision.modelVersion})`,
           `未対応時の影響: ${decision.impactIfUnaddressed ?? '未確定'}`,
@@ -164,10 +180,10 @@ export function applySyntheticUatDecision(
         confidence: {
           kind: 'EvidenceSupport',
           value: null,
-          method: 'Decision-1を含む合成UAT経路',
+          method: 'Decision-1を含むテストモード評価経路',
           limitations: [
-            '合成UATであり、Microsoft公式通知・実環境・実期限を表さない',
-            '判断結果と作業登録はPoC動作確認にのみ使用する',
+            'テストモード評価であり、Microsoft公式通知・実環境・実期限を表さない',
+            '判断結果と作業登録はテストモード内でのみ使用する',
           ],
         },
       },
@@ -180,9 +196,35 @@ export function applySyntheticUatDecision(
   return assessmentSchema.parse(revised)
 }
 
-export function isSyntheticUatAssessment(assessment: Assessment): boolean {
-  return (
-    assessment.event.trackingId === SYNTHETIC_UAT_TRACKING_ID &&
+export function isTestModeEvaluationAssessment(
+  assessment: Assessment,
+): boolean {
+  const isCurrentTestModeRecord =
+    assessment.event.trackingId === TEST_MODE_EVALUATION_TRACKING_ID &&
+    assessment.event.title.startsWith('[テストモード評価]') &&
+    assessment.event.evidence.length === 1 &&
+    assessment.event.evidence.every(
+      (evidence) =>
+        evidence.sourceType === 'Internal' &&
+        evidence.officialUrl === null &&
+        evidence.fact.includes('テストモード評価データ'),
+    ) &&
+    assessment.workloadId === TEST_MODE_EVALUATION_WORKLOAD_ID &&
+    assessment.resources.length === 1 &&
+    assessment.resources[0]?.id === TEST_MODE_EVALUATION_RESOURCE_ID &&
+    assessment.workItems.length === 1 &&
+    assessment.workItems[0]?.title.startsWith('[TEST MODE EVALUATION]') === true
+  // Accept records written by the former synthetic UAT identity.
+  const legacyTrackingId = 'ARP-SYNTHETIC-UAT-001'
+  const legacyWorkloadId = 'synthetic-uat-workload'
+  const legacyResourceId = [
+    `/subscriptions/${TEST_MODE_EVALUATION_SUBSCRIPTION_ID}`,
+    '/resourceGroups/synthetic-uat/providers/' +
+      'Microsoft.Network/loadBalancers/arp-demo-only',
+  ].join('')
+  const legacyWorkItemTitle = '[SYNTHETIC UAT]'
+  const isLegacyTestModeRecord =
+    assessment.event.trackingId === legacyTrackingId &&
     assessment.event.title.startsWith('[合成UAT]') &&
     assessment.event.evidence.length === 1 &&
     assessment.event.evidence.every(
@@ -191,20 +233,20 @@ export function isSyntheticUatAssessment(assessment: Assessment): boolean {
         evidence.officialUrl === null &&
         evidence.fact.includes('合成UATデータ'),
     ) &&
-    assessment.workloadId === SYNTHETIC_UAT_WORKLOAD_ID &&
+    assessment.workloadId === legacyWorkloadId &&
     assessment.resources.length === 1 &&
-    assessment.resources[0]?.id === SYNTHETIC_UAT_RESOURCE_ID &&
+    assessment.resources[0]?.id === legacyResourceId &&
     assessment.workItems.length === 1 &&
-    assessment.workItems[0]?.title.startsWith('[SYNTHETIC UAT]') === true
-  )
+    assessment.workItems[0]?.title.startsWith(legacyWorkItemTitle) === true
+  return isCurrentTestModeRecord || isLegacyTestModeRecord
 }
 
 /**
- * Exported UAT rows created before parent/phase issue tracking was added can
- * still be reconciled. Only skip the export pipeline when all three managed
+ * Existing test-mode export rows created before parent/phase issue tracking
+ * was added can still be reconciled. Skip export only after all three managed
  * issue links have been persisted.
  */
-export function hasCompleteSyntheticUatIssueHierarchy(
+export function hasCompleteTestModeIssueHierarchy(
   row: Record<string, unknown>,
 ): boolean {
   const isGitHubIssueUrl = (value: unknown): value is string => {

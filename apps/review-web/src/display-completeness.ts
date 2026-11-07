@@ -500,7 +500,7 @@ export function claimKindDisplay(kind: string): string {
 
 export function workloadDisplay(workloadId: string): string {
   return workloadId === 'unassigned'
-    ? 'Workload未割当（情報システム部門が初動で振り分け）'
+    ? 'Workload未割当（調整窓口が初動で担当を割り当て）'
     : `Workload ${workloadId}`
 }
 
@@ -532,17 +532,15 @@ export function ownerDisplay(
   if (teams.length === 1)
     return `初動担当候補: ${teams[0]}（作業承認時に担当を確定）`
   if (teams.length > 1)
-    return `担当候補: ${teams.join('、')}。情報システム部門が調整し、Workload責任者が決定`
-  return '担当候補なし。情報システム部門が初動窓口となり、Workload責任者と割当を決定'
+    return `担当候補: ${teams.join('、')}。調整窓口が調整し、Workload責任者が決定`
+  return '担当候補なし。調整窓口が初動対応となり、Workload責任者と割当を決定'
 }
 
 export function coordinationDisplay(routing: WorkRouting): string {
   const departments = routing.coordinationCandidates.map(
     (department) => department.displayName,
   )
-  return departments.length
-    ? departments.join('、')
-    : '情報システム部門（初動調整窓口）'
+  return departments.length ? departments.join('、') : '調整窓口'
 }
 
 export function approvalDisplay(routing: WorkRouting): string {
@@ -557,12 +555,11 @@ export function approvalDisplay(routing: WorkRouting): string {
 
 export function routingDisplay(routing: WorkRouting | undefined): string {
   if (!routing)
-    return '設定経路なし。情報システム部門が初動窓口となり、Workload責任者と担当・承認役割を決定'
+    return '設定経路なし。調整窓口が初動対応となり、Workload責任者と担当・承認役割を決定'
   const teams = routing.teamCandidates.map((team) => team.displayName)
   if (teams.length === 1) return `初動担当候補: ${teams[0]}`
-  if (teams.length > 1)
-    return `担当候補: ${teams.join('、')}（情報システム部門が調整）`
-  return '担当候補なし（情報システム部門が初動で割当調整）'
+  if (teams.length > 1) return `担当候補: ${teams.join('、')}（調整窓口が調整）`
+  return '担当候補なし（調整担当が初動で割当調整）'
 }
 
 export function sequenceDisplay(routing: WorkRouting): string {
@@ -672,7 +669,7 @@ export function reviewReasonDisplay(reason: string): string {
   )
     return 'クラシック API の使用有無を判断できないため、対象リソースとプロジェクトでの利用状況の確認が必要です。'
   if (reason.includes('担当チーム候補が設定されていません'))
-    return '担当チームが選定されていません。情報システム部門が初動調整し、Workload責任者と担当部門を決めます。'
+    return '担当チームが選定されていません。調整窓口が初動調整し、Workload責任者と担当部門を決めます。'
   if (reason.includes('未確認のOwner Team'))
     return '担当チームの根拠がありません。Workload責任者と担当部門を確認してください。'
   return reason

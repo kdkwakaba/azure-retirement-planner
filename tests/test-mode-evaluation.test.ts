@@ -1,24 +1,24 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  createSyntheticUatAssessment,
-  applySyntheticUatDecision,
-  hasCompleteSyntheticUatIssueHierarchy,
-  isSyntheticUatAssessment,
-  SYNTHETIC_UAT_RESOURCE_ID,
-  SYNTHETIC_UAT_TRACKING_ID,
-} from '../apps/assessment-api/src/uat.ts'
+  createTestModeEvaluationAssessment,
+  applyTestModeEvaluationDecision,
+  hasCompleteTestModeIssueHierarchy,
+  isTestModeEvaluationAssessment,
+  TEST_MODE_EVALUATION_RESOURCE_ID,
+  TEST_MODE_EVALUATION_TRACKING_ID,
+} from '../apps/assessment-api/src/test-mode-evaluation.ts'
 import { fixture } from './fixtures.ts'
 import { parseDecision, questions } from '../packages/adapters/src/models.ts'
 import { hash } from '../packages/domain/src/index.ts'
 
-test('synthetic UAT fixture is isolated from real Azure resources and official facts', () => {
-  const assessment = createSyntheticUatAssessment()
-  assert.equal(isSyntheticUatAssessment(assessment), true)
-  assert.equal(assessment.event.trackingId, SYNTHETIC_UAT_TRACKING_ID)
+test('test-mode evaluation fixture is isolated from real Azure resources and official facts', () => {
+  const assessment = createTestModeEvaluationAssessment()
+  assert.equal(isTestModeEvaluationAssessment(assessment), true)
+  assert.equal(assessment.event.trackingId, TEST_MODE_EVALUATION_TRACKING_ID)
   assert.deepEqual(
     assessment.resources.map((resource) => resource.id),
-    [SYNTHETIC_UAT_RESOURCE_ID],
+    [TEST_MODE_EVALUATION_RESOURCE_ID],
   )
   assert.ok(
     assessment.event.evidence.every(
@@ -31,16 +31,16 @@ test('synthetic UAT fixture is isolated from real Azure resources and official f
     ),
   )
   assert.equal(assessment.workItems.length, 1)
-  assert.match(assessment.workItems[0]!.title, /^\[SYNTHETIC UAT\]/)
+  assert.match(assessment.workItems[0]!.title, /^\[TEST MODE EVALUATION\]/)
 })
 
-test('live assessment fixtures cannot pass the synthetic UAT export guard', () => {
+test('live assessment fixtures cannot pass the test-mode evaluation export guard', () => {
   const assessment = fixture()
-  assert.equal(isSyntheticUatAssessment(assessment), false)
+  assert.equal(isTestModeEvaluationAssessment(assessment), false)
 })
 
-test('synthetic UAT preserves synthetic grounding and records a Decision-1 result', () => {
-  const source = createSyntheticUatAssessment()
+test('test-mode evaluation preserves synthetic grounding and records a Decision-1 result', () => {
+  const source = createTestModeEvaluationAssessment()
   const answers = Object.fromEntries(
     Object.entries(questions).map(([key, question]) => {
       if (question.type === 'noul') return [key, { type: 'noul', noul: 0.95 }]
@@ -97,7 +97,7 @@ test('synthetic UAT preserves synthetic grounding and records a Decision-1 resul
     },
   ]
 
-  const assessed = applySyntheticUatDecision(
+  const assessed = applyTestModeEvaluationDecision(
     source,
     decision,
     invocations,
@@ -109,9 +109,11 @@ test('synthetic UAT preserves synthetic grounding and records a Decision-1 resul
   assert.equal(assessed.decision.status, 'Proposed')
   assert.equal(assessed.modelInvocations?.[0]?.status, 'Succeeded')
   assert.equal(assessed.humanReviewRequired, true)
-  assert.equal(isSyntheticUatAssessment(assessed), true)
+  assert.equal(isTestModeEvaluationAssessment(assessed), true)
   assert.ok(
-    assessed.missingInformation.some((value) => value.includes('合成UAT')),
+    assessed.missingInformation.some((value) =>
+      value.includes('テストモード評価'),
+    ),
   )
   assert.match(assessed.workItems[0]!.title, /Decision-1/)
   assert.ok(assessed.validationErrors.length === 0)
@@ -123,21 +125,21 @@ test('synthetic UAT preserves synthetic grounding and records a Decision-1 resul
   )
 })
 
-test('legacy exported UAT rows are reconciled until all issue hierarchy links exist', () => {
+test('legacy test evaluation export rows are reconciled until all issue hierarchy links exist', () => {
   const childOnly = {
     state: 'Exported',
     issueUrl: 'https://github.com/example/repo/issues/10',
   }
-  assert.equal(hasCompleteSyntheticUatIssueHierarchy(childOnly), false)
+  assert.equal(hasCompleteTestModeIssueHierarchy(childOnly), false)
   assert.equal(
-    hasCompleteSyntheticUatIssueHierarchy({
+    hasCompleteTestModeIssueHierarchy({
       ...childOnly,
       parentIssueUrl: 'https://github.com/example/repo/issues/8',
     }),
     false,
   )
   assert.equal(
-    hasCompleteSyntheticUatIssueHierarchy({
+    hasCompleteTestModeIssueHierarchy({
       ...childOnly,
       parentIssueUrl: 'https://github.com/example/repo/issues/8',
       phaseIssueUrl: 'https://github.com/example/repo/issues/9',
@@ -145,7 +147,7 @@ test('legacy exported UAT rows are reconciled until all issue hierarchy links ex
     true,
   )
   assert.equal(
-    hasCompleteSyntheticUatIssueHierarchy({
+    hasCompleteTestModeIssueHierarchy({
       state: 'Processing',
       issueUrl: 'https://github.com/example/repo/issues/10',
       parentIssueUrl: 'https://github.com/example/repo/issues/8',
@@ -154,7 +156,7 @@ test('legacy exported UAT rows are reconciled until all issue hierarchy links ex
     false,
   )
   assert.equal(
-    hasCompleteSyntheticUatIssueHierarchy({
+    hasCompleteTestModeIssueHierarchy({
       ...childOnly,
       parentIssueUrl: 'https://github.com.attacker.example/repo/issues/8',
       phaseIssueUrl: 'https://github.com/example/repo/issues/9',

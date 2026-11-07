@@ -921,7 +921,7 @@ export function SharePointPanel({
                 サンプル文書の影響評価（テスト専用）
               </h3>
               <p className="muted">
-                確認済みFactと合成UAT評価のリソース対応を照合します。通常のAssessment、承認、GitHub
+                確認済みFactとテストモード評価で検出したリソースの対応を照合します。通常のAssessment、承認、GitHub
                 Projectには反映しません。文書に明記された影響を表示し、重要度・優先度は自動判定しません。
               </p>
               <button
@@ -939,7 +939,7 @@ export function SharePointPanel({
               </button>
               {!assessment || assessment.workloadId !== selectedWorkloadId ? (
                 <p className="muted">
-                  同じWorkloadの合成UAT評価を選択すると実行できます。
+                  同じWorkloadのテストモード評価を選択すると実行できます。
                 </p>
               ) : null}
               {sampleEvaluation && (

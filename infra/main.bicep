@@ -39,7 +39,9 @@ param projectProgressSyncEnabled bool = false
 param ingestEnabled bool = false
 param exportEnabled bool = false
 param testModeEnabled bool = false
+param testModeEvaluationEnabled bool = false
 param syntheticUatEnabled bool = false
+param workflowPolicyJson string = ''
 param decisionReevaluationEnabled bool = false
 param sharePointSyncEnabled bool = false
 param sharePointFactExtractionEnabled bool = false
@@ -192,7 +194,7 @@ resource functions 'Microsoft.Web/sites@2024-11-01' = [for (name,i) in ['api','e
         { name: 'MAX_MODEL_CALLS_PER_DAY', value: string(maxModelCallsPerDay) }
         { name: 'EXPORT_ENABLED', value: toLower(string(exportEnabled)) }
         { name: 'TEST_MODE_ENABLED', value: toLower(string(testModeEnabled)) }
-        { name: 'SYNTHETIC_UAT_ENABLED', value: toLower(string(syntheticUatEnabled)) }
+        { name: 'TEST_MODE_EVALUATION_ENABLED', value: toLower(string(testModeEvaluationEnabled || syntheticUatEnabled)) }
         { name: 'DECISION_REEVALUATION_ENABLED', value: toLower(string(decisionReevaluationEnabled)) }
         { name: 'SHAREPOINT_SYNC_ENABLED', value: toLower(string(sharePointSyncEnabled)) }
         { name: 'SHAREPOINT_FACT_EXTRACTION_ENABLED', value: toLower(string(sharePointFactExtractionEnabled)) }
@@ -215,6 +217,7 @@ resource functions 'Microsoft.Web/sites@2024-11-01' = [for (name,i) in ['api','e
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: insights.properties.ConnectionString }
       ], name == 'api' ? [
         { name: 'ENTRA_CLIENT_SECRET', value: '@Microsoft.KeyVault(VaultName=${vault.name};SecretName=entra-client-secret)' }
+        { name: 'WORKFLOW_POLICY_JSON', value: workflowPolicyJson }
       ] : [])
     }
   }

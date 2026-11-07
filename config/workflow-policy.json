@@ -1,6 +1,7 @@
 {
   "schemaVersion": "1",
-  "version": "poc-department-routing-1",
+  "version": "department-routing-v1",
+  "defaultCoordinationRoleId": "information-systems",
   "roles": [
     {
       "id": "infrastructure-team",

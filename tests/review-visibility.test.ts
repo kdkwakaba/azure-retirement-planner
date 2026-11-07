@@ -2,14 +2,14 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { fixture } from './fixtures.ts'
 import {
-  syntheticUatTrackingId,
+  testModeEvaluationTrackingId,
   visibleAssessments,
 } from '../apps/review-web/src/visibility.ts'
 
-test('synthetic UAT record is hidden unless both test-mode flags are enabled', () => {
+test('test-mode evaluation record is hidden unless both test-mode flags are enabled', () => {
   const real = fixture()
   const synthetic = fixture()
-  synthetic.event.trackingId = syntheticUatTrackingId
+  synthetic.event.trackingId = testModeEvaluationTrackingId
   const records = [real, synthetic]
 
   assert.deepEqual(visibleAssessments(records, false, false), [real])

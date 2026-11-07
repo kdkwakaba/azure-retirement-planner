@@ -47,8 +47,9 @@ import {
 import {
   assessSnapshot,
   config,
-  evaluateSyntheticUat,
+  evaluateTestModeEvaluation,
   applyReviewWorkflowPolicy,
+  workflowPolicyForReview,
   isTestReevaluation,
   processDecisionReevaluation,
   processSharePointSync,
@@ -59,10 +60,12 @@ import {
   sharePointSourceModeEnabled,
 } from './sharepoint-mode.ts'
 import {
-  createSyntheticUatAssessment,
-  hasCompleteSyntheticUatIssueHierarchy,
-  isSyntheticUatAssessment,
-} from './uat.ts'
+  createTestModeEvaluationAssessment,
+  hasCompleteTestModeIssueHierarchy,
+  isTestModeEvaluationAssessment,
+  isTestModeEvaluationTrackingId,
+  testModeEvaluationEnabled,
+} from './test-mode-evaluation.ts'
 
 let verifier: ReturnType<typeof createVerifier> | undefined
 function reply(status: number, jsonBody: unknown): HttpResponseInit {
@@ -129,12 +132,17 @@ app.http('api', {
       requireUserRole(principal, apiRolePolicy.read)
       if (request.method === 'GET' && path === 'me')
         return reply(200, principal)
-      if (request.method === 'GET' && path === 'uat/status')
+      if (request.method === 'GET' && path === 'workflow-policy')
+        return reply(200, workflowPolicyForReview())
+      if (
+        request.method === 'GET' &&
+        ['test-mode/status', 'uat/status'].includes(path)
+      )
         return reply(200, {
           testModeEnabled: process.env.TEST_MODE_ENABLED === 'true',
-          syntheticUatEnabled:
+          testModeEvaluationEnabled:
             process.env.TEST_MODE_ENABLED === 'true' &&
-            process.env.SYNTHETIC_UAT_ENABLED === 'true',
+            testModeEvaluationEnabled(),
           decisionReevaluationEnabled:
             process.env.TEST_MODE_ENABLED === 'true' &&
             process.env.DECISION_REEVALUATION_ENABLED === 'true',
@@ -207,12 +215,15 @@ app.http('api', {
         )
         return reply(200, { assessmentId: assessment.id, diagnostics })
       }
-      if (request.method === 'GET' && path === 'uat/export-status') {
+      if (
+        request.method === 'GET' &&
+        ['test-mode/export-status', 'uat/export-status'].includes(path)
+      ) {
         if (
           process.env.TEST_MODE_ENABLED !== 'true' ||
-          process.env.SYNTHETIC_UAT_ENABLED !== 'true'
+          !testModeEvaluationEnabled()
         )
-          return reply(404, { error: 'Synthetic UAT is disabled' })
+          return reply(404, { error: 'Test-mode evaluation is disabled' })
         const query = z
           .object({
             assessmentId: z.string().regex(/^[a-f0-9]{64}$/),
@@ -224,14 +235,16 @@ app.http('api', {
             itemId: request.query.get('itemId'),
           })
         const assessment = await store.assessment(query.assessmentId)
-        if (!isSyntheticUatAssessment(assessment))
-          return reply(404, { error: 'Synthetic UAT record not found' })
+        if (!isTestModeEvaluationAssessment(assessment))
+          return reply(404, { error: 'Test-mode evaluation record not found' })
         const item = assessment.workItems.find(
           (candidate) =>
             candidate.id === query.itemId &&
-            candidate.title.startsWith('[SYNTHETIC UAT]'),
+            (candidate.title.startsWith('[TEST MODE EVALUATION]') ||
+              candidate.title.startsWith('[SYNTHETIC UAT]')),
         )
-        if (!item) return reply(404, { error: 'Synthetic UAT item not found' })
+        if (!item)
+          return reply(404, { error: 'Test-mode evaluation item not found' })
         const logicalId = hash({
           eventId: assessment.event.id,
           workloadId: assessment.workloadId,
@@ -369,7 +382,7 @@ app.http('api', {
           return reply(404, { error: 'Sample SharePoint source not found' })
         const assessment = await store.assessment(query.assessmentId)
         if (
-          !isSyntheticUatAssessment(assessment) ||
+          !isTestModeEvaluationAssessment(assessment) ||
           assessment.workloadId !== query.workloadId
         )
           return reply(404, { error: 'Synthetic sample assessment not found' })
@@ -453,7 +466,7 @@ app.http('api', {
             return reply(404, { error: 'Sample SharePoint source not found' })
           const assessment = await store.assessment(body.assessmentId)
           if (
-            !isSyntheticUatAssessment(assessment) ||
+            !isTestModeEvaluationAssessment(assessment) ||
             assessment.workloadId !== body.workloadId
           )
             return reply(404, {
@@ -1158,7 +1171,7 @@ app.http('api', {
             .parse(payload)
           const assessment = await store.assessment(body.assessmentId)
           if (
-            assessment.event.trackingId === 'ARP-SYNTHETIC-UAT-001' ||
+            isTestModeEvaluationTrackingId(assessment.event.trackingId) ||
             assessment.event.classification === 'OutOfScope' ||
             assessment.humanContext?.scopeDisposition === 'OutOfScope'
           )
@@ -1203,15 +1216,15 @@ app.http('api', {
           }
           return reply(202, run)
         }
-        if (path === 'uat/seed') {
+        if (['test-mode/evaluation', 'uat/seed'].includes(path)) {
           requireUserRole(principal, apiRolePolicy.review)
           if (
             process.env.TEST_MODE_ENABLED !== 'true' ||
-            process.env.SYNTHETIC_UAT_ENABLED !== 'true'
+            !testModeEvaluationEnabled()
           )
-            return reply(404, { error: 'Synthetic UAT is disabled' })
+            return reply(404, { error: 'Test-mode evaluation is disabled' })
           z.object({}).strict().parse(payload)
-          const sample = createSyntheticUatAssessment()
+          const sample = createTestModeEvaluationAssessment()
           const logicalId = hash({
             eventId: sample.event.id,
             workloadId: sample.workloadId,
@@ -1220,8 +1233,10 @@ app.http('api', {
           let source = sample
           if (prior) {
             const existing = await store.assessment(prior.assessmentId)
-            if (!isSyntheticUatAssessment(existing))
-              return reply(409, { error: 'Synthetic UAT identity conflict' })
+            if (!isTestModeEvaluationAssessment(existing))
+              return reply(409, {
+                error: 'Test-mode evaluation identity conflict',
+              })
             if (
               existing.modelInvocations?.some(
                 (invocation) =>
@@ -1236,8 +1251,8 @@ app.http('api', {
               })
             source = existing
           }
-          processingStage = 'synthetic-uat-decision'
-          const evaluated = await evaluateSyntheticUat(source)
+          processingStage = 'test-mode-evaluation-decision'
+          const evaluated = await evaluateTestModeEvaluation(source)
           await store.commitAssessment(evaluated, prior)
           return reply(201, {
             assessmentId: evaluated.id,
@@ -1245,13 +1260,13 @@ app.http('api', {
             decisionStatus: evaluated.decision.status,
           })
         }
-        if (path === 'uat/export') {
+        if (['test-mode/export', 'uat/export'].includes(path)) {
           requireUserRole(principal, apiRolePolicy.review)
           if (
             process.env.TEST_MODE_ENABLED !== 'true' ||
-            process.env.SYNTHETIC_UAT_ENABLED !== 'true'
+            !testModeEvaluationEnabled()
           )
-            return reply(404, { error: 'Synthetic UAT is disabled' })
+            return reply(404, { error: 'Test-mode evaluation is disabled' })
           const body = z
             .object({
               assessmentId: z.string().regex(/^[a-f0-9]{64}$/),
@@ -1262,18 +1277,23 @@ app.http('api', {
             .parse(payload)
           const assessment = await store.assessment(body.assessmentId)
           if (
-            !isSyntheticUatAssessment(assessment) ||
+            !isTestModeEvaluationAssessment(assessment) ||
             assessment.packageHash !== body.packageHash
           )
             return reply(409, {
-              error: 'Assessment is not the current synthetic UAT record',
+              error:
+                'Assessment is not the current test-mode evaluation record',
             })
           const item = assessment.workItems.find(
             (candidate) => candidate.id === body.itemId,
           )
-          if (!item || !item.title.startsWith('[SYNTHETIC UAT]'))
+          if (
+            !item ||
+            (!item.title.startsWith('[TEST MODE EVALUATION]') &&
+              !item.title.startsWith('[SYNTHETIC UAT]'))
+          )
             return reply(400, {
-              error: 'Only a synthetic UAT work item can be exported',
+              error: 'Only a test-mode evaluation work item can be exported',
             })
           if (
             assessment.modelInvocations?.find(
@@ -1281,7 +1301,8 @@ app.http('api', {
             )?.status !== 'Succeeded'
           )
             return reply(409, {
-              error: 'Decision-1 evaluation must succeed before UAT export',
+              error:
+                'Decision-1 evaluation must succeed before test-mode export',
             })
           const logicalId = hash({
             eventId: assessment.event.id,
@@ -1295,7 +1316,7 @@ app.http('api', {
           const reviewId = head.lastReviewId
           if (typeof reviewId !== 'string')
             return reply(409, {
-              error: 'Human approval is required before UAT export',
+              error: 'Human approval is required before test-mode export',
             })
           const approval = approvalSchema.parse(
             await store.get('approvals', reviewId),
@@ -1335,7 +1356,7 @@ app.http('api', {
           const alreadyExported =
             row.state === 'Exported' &&
             safeGitHubIssueUrl(row.issueUrl) !== null
-          if (hasCompleteSyntheticUatIssueHierarchy(row))
+          if (hasCompleteTestModeIssueHierarchy(row))
             return reply(200, {
               issueUrl: row.issueUrl,
               parentIssueUrl:
@@ -1680,14 +1701,14 @@ app.http('api', {
             })
           if (approval.result === 'NoAction' && !approval.reason.trim())
             return reply(400, { error: 'No-action decision requires a reason' })
-          const syntheticUat = isSyntheticUatAssessment(assessment)
-          await store.approve(assessment, approval, syntheticUat)
-          if (!syntheticUat && process.env.EXPORT_ENABLED === 'true')
+          const testModeEvaluation = isTestModeEvaluationAssessment(assessment)
+          await store.approve(assessment, approval, testModeEvaluation)
+          if (!testModeEvaluation && process.env.EXPORT_ENABLED === 'true')
             await store.dispatchOutbox()
           return reply(200, {
             reviewId: approval.id,
             exportEnabled:
-              !syntheticUat && process.env.EXPORT_ENABLED === 'true',
+              !testModeEvaluation && process.env.EXPORT_ENABLED === 'true',
           })
         }
       }
