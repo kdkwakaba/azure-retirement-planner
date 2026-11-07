@@ -34,7 +34,7 @@ import {
 } from '../apps/review-web/src/display-completeness.ts'
 
 const routing = {
-  policyVersion: 'poc-department-routing-1',
+  policyVersion: 'department-routing-v1',
   teamCandidates: [],
   coordinationCandidates: [],
   approvalStages: [],
@@ -51,9 +51,9 @@ test('incomplete assessment values display their reason and next decision', () =
   )
   assert.match(priorityDisplay(null), /対象範囲と影響を確認後/)
   assert.match(plannedDateDisplay(null, '完了日'), /計画担当が設定/)
-  assert.match(ownerDisplay(null, routing), /情報システム部門が初動窓口/)
-  assert.match(routingDisplay(routing), /情報システム部門が初動で割当調整/)
-  assert.match(coordinationDisplay(routing), /情報システム部門/)
+  assert.match(ownerDisplay(null, routing), /調整窓口が初動対応/)
+  assert.match(routingDisplay(routing), /調整担当が初動で割当調整/)
+  assert.match(coordinationDisplay(routing), /調整窓口/)
   assert.match(approvalDisplay(routing), /Workload責任者.*ガバナンス責任者/)
   assert.match(sequenceDisplay(routing), /個別の順序指定なし.*前提作業なし/)
   assert.match(projectProgressDisplay(null), /登録状態と同期結果を確認/)
@@ -64,10 +64,7 @@ test('incomplete assessment values display their reason and next decision', () =
   assert.equal(claimKindDisplay('General Impact'), '一般的な影響想定')
   assert.match(milestoneDateDisplay(null, null), /公式通知の原文を確認/)
   assert.equal(milestoneKindDisplay('Retirement'), '廃止日')
-  assert.match(
-    workloadDisplay('unassigned'),
-    /情報システム部門が初動で振り分け/,
-  )
+  assert.match(workloadDisplay('unassigned'), /調整窓口が初動で担当を割り当て/)
 })
 
 test('known values remain visible without being replaced by fallback text', () => {
@@ -408,7 +405,7 @@ test('review reasons omit model status and scheduling notes', () => {
   )
   assert.match(
     reviewReasonDisplay('担当チーム候補が設定されていません'),
-    /情報システム部門が初動調整/,
+    /調整窓口が初動調整/,
   )
   assert.equal(
     isModelDecisionStatusOnlyReviewReason('モデル判断を確定できない'),

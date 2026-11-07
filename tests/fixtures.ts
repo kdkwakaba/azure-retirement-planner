@@ -69,7 +69,7 @@ export function fixture(): Assessment {
     missingInformation: [],
     decision: unavailableDecision(),
     effectivePriority: 'P2',
-    reviewReasons: ['PoC human review'],
+    reviewReasons: ['Test-mode review'],
     explanation: {
       impact: [],
       increasingFactors: [],

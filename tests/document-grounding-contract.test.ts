@@ -56,7 +56,7 @@ test('sample document impact evaluation is isolated and does not assert severity
     groundingHash: 'b'.repeat(64),
     evaluatedAt: '2026-11-05T00:00:00.000Z',
     outcome: 'MatchedResources',
-    matchedResourceIds: ['/subscriptions/00000000/resourceGroups/demo'],
+    matchedResourceIds: ['/subscriptions/00000000/resourceGroups/example'],
     facts: [],
     limitations: ['影響度は自動判定しません。'],
   })

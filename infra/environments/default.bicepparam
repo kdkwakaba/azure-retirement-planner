@@ -5,6 +5,7 @@ param targetSubscriptionIds = split(readEnvironmentVariable('ARP_TARGET_SUBSCRIP
 param location = readEnvironmentVariable('ARP_LOCATION')
 param hostStorageBlobEndpoint = readEnvironmentVariable('ARP_HOST_STORAGE_BLOB_ENDPOINT')
 param prefix = 'arp'
+param environmentName = readEnvironmentVariable('ARP_ENVIRONMENT_NAME', 'default')
 param decisionEndpoint = readEnvironmentVariable('ARP_DECISION_ENDPOINT')
 param decisionDeployment = 'arp-decision-1'
 param decisionModelVersion = '1'
@@ -15,7 +16,8 @@ param githubProjectStatusFieldId = readEnvironmentVariable('ARP_GITHUB_PROJECT_S
 param githubProjectStatusTodoOptionId = readEnvironmentVariable('ARP_GITHUB_PROJECT_STATUS_TODO_OPTION_ID', '')
 param exportEnabled = toLower(readEnvironmentVariable('ARP_EXPORT_ENABLED', 'false')) == 'true'
 param testModeEnabled = toLower(readEnvironmentVariable('ARP_TEST_MODE_ENABLED', 'false')) == 'true'
-param syntheticUatEnabled = toLower(readEnvironmentVariable('ARP_SYNTHETIC_UAT_ENABLED', 'false')) == 'true'
+param testModeEvaluationEnabled = toLower(readEnvironmentVariable('ARP_TEST_MODE_EVALUATION_ENABLED', readEnvironmentVariable('ARP_SYNTHETIC_UAT_ENABLED', 'false'))) == 'true'
+param workflowPolicyJson = readEnvironmentVariable('ARP_WORKFLOW_POLICY_JSON', '')
 param decisionReevaluationEnabled = toLower(readEnvironmentVariable('ARP_DECISION_REEVALUATION_ENABLED', 'false')) == 'true'
 param projectProgressSyncEnabled = toLower(readEnvironmentVariable('ARP_PROJECT_PROGRESS_SYNC_ENABLED', 'false')) == 'true'
 param sharePointSyncEnabled = toLower(readEnvironmentVariable('ARP_SHAREPOINT_SYNC_ENABLED', 'false')) == 'true'

@@ -1,40 +1,41 @@
 {
   "schemaVersion": "1",
-  "version": "demo-synthetic-1",
+  "version": "example-synthetic-1",
+  "defaultCoordinationRoleId": "business-owner",
   "roles": [
     {
       "id": "platform-team",
-      "displayName": "サンプル: Azure基盤チーム",
+      "displayName": "プラットフォームチーム",
       "kind": "Team"
     },
     {
       "id": "application-team",
-      "displayName": "サンプル: アプリケーションチーム",
+      "displayName": "アプリケーションチーム",
       "kind": "Team"
     },
     {
       "id": "business-owner",
-      "displayName": "サンプル: 業務利用者窓口",
+      "displayName": "サービスオーナー",
       "kind": "Department"
     },
     {
       "id": "security-dept",
-      "displayName": "サンプル: セキュリティ部門",
+      "displayName": "セキュリティ部門",
       "kind": "Department"
     },
     {
       "id": "finance-dept",
-      "displayName": "サンプル: 財務・購買部門",
+      "displayName": "財務・購買部門",
       "kind": "Department"
     },
     {
       "id": "change-board",
-      "displayName": "サンプル: 変更承認会議",
+      "displayName": "変更承認会議",
       "kind": "Approver"
     },
     {
       "id": "budget-approver",
-      "displayName": "サンプル: 予算承認者",
+      "displayName": "予算承認者",
       "kind": "Approver"
     }
   ],
@@ -114,9 +115,9 @@
   "sequence": [],
   "businessContextProfiles": [
     {
-      "workloadId": "synthetic-demo-workload",
-      "displayLabel": "登壇デモ用サンプル業務システム（架空）",
-      "dataClassification": "SyntheticDemo",
+      "workloadId": "synthetic-example-workload",
+      "displayLabel": "業務システムの設定例",
+      "dataClassification": "SyntheticExample",
       "businessImpact": "Confirmed",
       "vendorUse": "Confirmed",
       "additionalCost": "Possible",

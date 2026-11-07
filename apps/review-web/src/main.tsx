@@ -46,7 +46,10 @@ import { EvidenceCard, safeOfficialEvidenceUrl } from './EvidenceFact.tsx'
 import { summarizeAssessments } from './summary.ts'
 
 import { ApiRequestError, request, syncFeedback } from './api.ts'
-import { syntheticUatTrackingId, visibleAssessments } from './visibility.ts'
+import {
+  isTestModeEvaluationTrackingId,
+  visibleAssessments,
+} from './visibility.ts'
 
 const discoveryOutcomeLabels: Record<string, string> = {
   CandidatesFound: '影響候補あり',
@@ -254,7 +257,7 @@ type UatExportStatus = {
 }
 type FeatureStatus = {
   testModeEnabled: boolean
-  syntheticUatEnabled: boolean
+  testModeEvaluationEnabled: boolean
   decisionReevaluationEnabled: boolean
   canReevaluate: boolean
   canSync: boolean
@@ -264,6 +267,11 @@ type FeatureStatus = {
   sharePointFactExtractionEnabled: boolean
   sharePointSampleSourcesEnabled: boolean
   sharePointLiveSourcesEnabled: boolean
+}
+type WorkflowPolicySettings = {
+  valid: boolean
+  ownerTeams: string[]
+  defaultCoordinationTeam: string | null
 }
 type DecisionReevaluationStatus = {
   runId: string
@@ -340,7 +348,13 @@ function App() {
     [reason, setReason] = useState(''),
     [notice, setNotice] = useState(''),
     [testModeEnabled, setTestModeEnabled] = useState(false),
-    [syntheticUatEnabled, setSyntheticUatEnabled] = useState(false),
+    [testModeEvaluationEnabled, setTestModeEvaluationEnabled] = useState(false),
+    [workflowPolicySettings, setWorkflowPolicySettings] =
+      useState<WorkflowPolicySettings>({
+        valid: true,
+        ownerTeams: [],
+        defaultCoordinationTeam: null,
+      }),
     [confirmingUatExport, setConfirmingUatExport] = useState(false),
     [decisionReevaluationEnabled, setDecisionReevaluationEnabled] =
       useState(false),
@@ -486,28 +500,45 @@ function App() {
         .parse(
           await request(`assessments?includeNoAction=${showNoAction}`, 'GET'),
         )
-      const uat = (await request('uat/status', 'GET')) as FeatureStatus
-      const showSynthetic = uat.testModeEnabled && uat.syntheticUatEnabled
+      const testModeStatus = (await request(
+        'test-mode/status',
+        'GET',
+      )) as FeatureStatus
+      const policy = (await request(
+        'workflow-policy',
+        'GET',
+      )) as WorkflowPolicySettings
+      const showTestModeEvaluation =
+        testModeStatus.testModeEnabled &&
+        testModeStatus.testModeEvaluationEnabled
       const visible = visibleAssessments(
         data,
-        uat.testModeEnabled,
-        uat.syntheticUatEnabled,
+        testModeStatus.testModeEnabled,
+        testModeStatus.testModeEvaluationEnabled,
         showNoAction,
       )
       setItems(visible)
-      setTestModeEnabled(uat.testModeEnabled)
-      setSyntheticUatEnabled(showSynthetic)
+      setTestModeEnabled(testModeStatus.testModeEnabled)
+      setTestModeEvaluationEnabled(showTestModeEvaluation)
+      setWorkflowPolicySettings(policy)
       setDecisionReevaluationEnabled(
-        uat.testModeEnabled && uat.decisionReevaluationEnabled,
+        testModeStatus.testModeEnabled &&
+          testModeStatus.decisionReevaluationEnabled,
       )
-      setCanReevaluate(uat.canReevaluate)
-      setCanSync(uat.canSync)
-      setCanManageSharePoint(uat.canManageSharePoint)
-      setSharePointSyncEnabled(uat.sharePointSyncEnabled)
-      setSharePointFactExtractionEnabled(uat.sharePointFactExtractionEnabled)
-      setSharePointSampleSourcesEnabled(uat.sharePointSampleSourcesEnabled)
-      setSharePointLiveSourcesEnabled(uat.sharePointLiveSourcesEnabled)
-      setCanReview(uat.canReview)
+      setCanReevaluate(testModeStatus.canReevaluate)
+      setCanSync(testModeStatus.canSync)
+      setCanManageSharePoint(testModeStatus.canManageSharePoint)
+      setSharePointSyncEnabled(testModeStatus.sharePointSyncEnabled)
+      setSharePointFactExtractionEnabled(
+        testModeStatus.sharePointFactExtractionEnabled,
+      )
+      setSharePointSampleSourcesEnabled(
+        testModeStatus.sharePointSampleSourcesEnabled,
+      )
+      setSharePointLiveSourcesEnabled(
+        testModeStatus.sharePointLiveSourcesEnabled,
+      )
+      setCanReview(testModeStatus.canReview)
       if (selected && !visible.some((item) => item.id === selected))
         setSelected(null)
       const progress = await request('project-progress', 'GET')
@@ -537,12 +568,14 @@ function App() {
     void refresh()
   }, [showNoAction])
   useEffect(() => {
-    const item = current?.workItems.find((candidate) =>
-      candidate.title.startsWith('[SYNTHETIC UAT]'),
+    const item = current?.workItems.find(
+      (candidate) =>
+        candidate.title.startsWith('[TEST MODE EVALUATION]') ||
+        candidate.title.startsWith('[SYNTHETIC UAT]'),
     )
     if (
-      !syntheticUatEnabled ||
-      current?.event.trackingId !== syntheticUatTrackingId ||
+      !testModeEvaluationEnabled ||
+      !isTestModeEvaluationTrackingId(current?.event.trackingId ?? '') ||
       !current ||
       !item
     ) {
@@ -552,7 +585,7 @@ function App() {
     const loadStatus = async () => {
       try {
         const status = (await request(
-          `uat/export-status?assessmentId=${encodeURIComponent(current.id)}&itemId=${encodeURIComponent(item.id)}`,
+          `test-mode/export-status?assessmentId=${encodeURIComponent(current.id)}&itemId=${encodeURIComponent(item.id)}`,
           'GET',
         )) as UatExportStatus
         if (!active) return
@@ -576,7 +609,7 @@ function App() {
       active = false
       window.clearInterval(timer)
     }
-  }, [selected, syntheticUatEnabled, busy])
+  }, [selected, testModeEvaluationEnabled, busy])
   useEffect(() => {
     if (
       !reevaluationStatus ||
@@ -627,12 +660,12 @@ function App() {
       setBusy(false)
     }
   }
-  async function seedSyntheticUat() {
+  async function seedTestModeEvaluation() {
     setBusy(true)
     setError('')
     setUatIssueUrl('')
     try {
-      const result = (await request('uat/seed', 'POST', {})) as {
+      const result = (await request('test-mode/evaluation', 'POST', {})) as {
         assessmentId: string
         created: boolean
         decisionStatus: 'Proposed' | 'Abstained' | 'Unavailable'
@@ -640,16 +673,17 @@ function App() {
       await refresh()
       setSelected(result.assessmentId)
       setNotice(
-        `合成通知をDecision-1で評価しました（${result.decisionStatus}）。結果を確認し、人間承認後にGitHub Projectへ登録できます。`,
+        `テスト用通知をDecision-1で評価しました（${result.decisionStatus}）。結果を確認し、人間承認後にGitHub Projectへ登録できます。`,
       )
     } catch (e) {
-      setError(e instanceof Error ? e.message : '合成UAT作成失敗')
+      setError(e instanceof Error ? e.message : 'テストモード評価作成失敗')
     } finally {
       setBusy(false)
     }
   }
   async function reevaluateCurrentNotice() {
-    if (!current || current.event.trackingId === syntheticUatTrackingId) return
+    if (!current || isTestModeEvaluationTrackingId(current.event.trackingId))
+      return
     const reason = window.prompt(
       '再評価理由を入力してください（10〜500文字）。保存済みの調査結果を使い、Decision-1とGPT-6 Lunaを最大各1回実行します。',
     )
@@ -676,8 +710,9 @@ function App() {
       setBusy(false)
     }
   }
-  async function exportSyntheticUat() {
-    if (!current || current.event.trackingId !== syntheticUatTrackingId) return
+  async function exportTestModeEvaluation() {
+    if (!current || !isTestModeEvaluationTrackingId(current.event.trackingId))
+      return
     const item = current.workItems[0]
     if (!item) return
     setConfirmingUatExport(false)
@@ -699,7 +734,7 @@ function App() {
       updatedAt: new Date().toISOString(),
     })
     try {
-      const result = await request('uat/export', 'POST', {
+      const result = await request('test-mode/export', 'POST', {
         assessmentId: current.id,
         packageHash: current.packageHash,
         itemId: item.id,
@@ -718,7 +753,7 @@ function App() {
           : status,
       )
       setNotice(
-        '合成UATの親Issue・フェーズIssue・作業IssueをProjectへ登録しました。',
+        'テストモード評価の親Issue・フェーズIssue・作業IssueをProjectへ登録しました。',
       )
     } catch (e) {
       if (e instanceof ApiRequestError) {
@@ -801,9 +836,9 @@ function App() {
           '対応不要の判断を記録し、通知を通常一覧から外しました。履歴から再表示できます。'
       else if (response.exportEnabled)
         exportNotice = '承認済み作業を登録待ちへ送ります。'
-      else if (current.event.trackingId === syntheticUatTrackingId)
+      else if (isTestModeEvaluationTrackingId(current.event.trackingId))
         exportNotice =
-          '通常の外部登録は無効です。合成UATのIssue登録は専用ボタンから実行できます。'
+          '通常の外部登録は無効です。テストモード評価のIssue登録は専用ボタンから実行できます。'
       setNotice(`レビューを記録しました。${exportNotice}`)
       setChecked([])
       setReason('')
@@ -840,9 +875,12 @@ function App() {
             />
             対応不要の通知も表示
           </label>
-          {syntheticUatEnabled && (
-            <button disabled={busy} onClick={() => void seedSyntheticUat()}>
-              合成UATを作成・Decision-1評価
+          {testModeEvaluationEnabled && (
+            <button
+              disabled={busy}
+              onClick={() => void seedTestModeEvaluation()}
+            >
+              テストモード評価を作成・Decision-1評価
             </button>
           )}
           {testModeEnabled && <span className="notice">テストモード</span>}
@@ -889,22 +927,27 @@ function App() {
             {error} <a href="/.auth/login/aad">サインイン</a>
           </div>
         )}
+        {!workflowPolicySettings.valid && (
+          <div role="alert" className="error">
+            チーム振り分け設定を読み込めません。JSON設定とRole参照を確認してください。
+          </div>
+        )}
         {notice && <p role="status">{notice}</p>}
-        {syntheticUatEnabled && uatIssueUrl && (
+        {testModeEvaluationEnabled && uatIssueUrl && (
           <p>
             <a href={uatIssueUrl} target="_blank" rel="noopener noreferrer">
-              作成した合成UAT Issueを開く
+              作成したテストモード評価 Issueを開く
             </a>
           </p>
         )}
-        {syntheticUatEnabled && uatExportStatus?.parentIssueUrl && (
+        {testModeEvaluationEnabled && uatExportStatus?.parentIssueUrl && (
           <p>
             <a
               href={uatExportStatus.parentIssueUrl}
               target="_blank"
               rel="noopener noreferrer"
             >
-              合成UATの親Issueを開く
+              テストモード評価の親Issueを開く
             </a>
             {uatExportStatus.phaseIssueUrl && (
               <>
@@ -977,7 +1020,7 @@ function App() {
                 </p>
                 {decisionReevaluationEnabled &&
                   canReevaluate &&
-                  current.event.trackingId !== syntheticUatTrackingId && (
+                  !isTestModeEvaluationTrackingId(current.event.trackingId) && (
                     <div
                       className="notice"
                       role="region"
@@ -1132,6 +1175,10 @@ function App() {
                   <CorrectionForm
                     key={current.id}
                     assessment={current}
+                    ownerTeams={workflowPolicySettings.ownerTeams}
+                    defaultCoordinationTeam={
+                      workflowPolicySettings.defaultCoordinationTeam
+                    }
                     onRevised={async (id) => {
                       await refresh()
                       setSelected(id)
@@ -1438,7 +1485,9 @@ function App() {
                       </p>
                     )}
                     {canSync &&
-                      current.event.trackingId !== syntheticUatTrackingId && (
+                      !isTestModeEvaluationTrackingId(
+                        current.event.trackingId,
+                      ) && (
                         <div
                           className="notice"
                           role="region"
@@ -1456,10 +1505,12 @@ function App() {
                           </button>
                         </div>
                       )}
-                    {syntheticUatEnabled &&
-                      current.event.trackingId === syntheticUatTrackingId && (
+                    {testModeEvaluationEnabled &&
+                      isTestModeEvaluationTrackingId(
+                        current.event.trackingId,
+                      ) && (
                         <div className="notice">
-                          <b>合成UAT専用</b>
+                          <b>テストモード評価専用</b>
                           <p>
                             この通知とリソースは架空です。実Azureリソースへの変更はなく、
                             通常Exporter／Outboxは使用しません。
@@ -1582,18 +1633,17 @@ function App() {
                           {priorityDisplay(w.priority)} <PriorityHelp />
                         </p>
                         <p>{w.description}</p>
-                        {w.description.includes(
-                          '合成デモ用業務コンテキスト',
-                        ) && (
+                        {w.description.includes('合成例の業務コンテキスト') && (
                           <small className="notice">
-                            合成デモデータ（実際の部署・契約・費用ではありません）
+                            合成例データ（実際の部署・契約・費用ではありません）
                           </small>
                         )}
                         <small>
-                          {current.event.trackingId ===
-                          syntheticUatTrackingId ? (
+                          {isTestModeEvaluationTrackingId(
+                            current.event.trackingId,
+                          ) ? (
                             <>
-                              合成UAT登録状態:{' '}
+                              テストモード評価登録状態:{' '}
                               {uatProgressLabel(uatExportStatus)}
                             </>
                           ) : (
@@ -1619,7 +1669,7 @@ function App() {
                             調整部署:{' '}
                             {w.workflowRouting
                               ? coordinationDisplay(w.workflowRouting)
-                              : '情報システム部門（初動調整窓口）'}
+                              : '調整窓口'}
                           </p>
                           <p>
                             標準確認経路:{' '}
@@ -1762,7 +1812,7 @@ function App() {
               GitHub Issueへの登録を確認
             </h2>
             <p>
-              合成UATの承認済み作業1件について、親Issue・作業フェーズIssue・作業Issueを作成し、Sub-Issue関係とProject登録を行います。
+              テストモード評価の承認済み作業1件について、親Issue・作業フェーズIssue・作業Issueを作成し、Sub-Issue関係とProject登録を行います。
             </p>
             <p>
               この通知とリソースは合成データです。実環境の作業やAzureリソースの変更は行いません。
@@ -1778,7 +1828,7 @@ function App() {
               </button>
               <button
                 disabled={busy}
-                onClick={() => void exportSyntheticUat()}
+                onClick={() => void exportTestModeEvaluation()}
                 type="button"
               >
                 IssueとProjectに登録

@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import type { Assessment, Correction } from '@arp/contracts'
 
-const initialWorkItemAdditions = (assessment: Assessment) => {
+const initialWorkItemAdditions = (
+  assessment: Assessment,
+  defaultCoordinationTeam: string | null,
+) => {
   if (!assessment.event.title.toLowerCase().includes('foundry agent service'))
     return []
   return [
@@ -9,30 +12,27 @@ const initialWorkItemAdditions = (assessment: Assessment) => {
       clientId: crypto.randomUUID(),
       category: 'Cross-Team Coordination' as const,
       title: '関係チームとの影響確認を調整',
-      description:
-        '社内外の利用者・関係チームと確認日程および回答を調整し、情報システム部門が窓口となる。',
+      description: `社内外の利用者・関係チームと確認日程および回答を調整し、${defaultCoordinationTeam ?? '調整担当'}が窓口となる。`,
       completionCriteria: ['関係者、回答、未解決事項、次の確認日を記録する'],
-      ownerTeam: '情報システム部門',
+      ownerTeam: defaultCoordinationTeam,
     },
     {
       clientId: crypto.randomUUID(),
       category: 'Cost Assessment' as const,
       title: '追加費用と予算確保の要否を確認',
-      description:
-        '選択肢と見積りを確認して追加費用の有無を整理し、必要な場合に情報システム部門が予算調整を行う。費用や予算の発生は未確定。',
+      description: `選択肢と見積りを確認して追加費用の有無を整理し、必要な場合に${defaultCoordinationTeam ?? '調整担当'}が予算調整を行う。費用や予算の発生は未確定。`,
       completionCriteria: [
         '費用の根拠または未確定理由と、予算調整の要否を記録する',
       ],
-      ownerTeam: '情報システム部門',
+      ownerTeam: defaultCoordinationTeam,
     },
     {
       clientId: crypto.randomUUID(),
       category: 'Change Management' as const,
       title: '承認要件と関係者調整を確認',
-      description:
-        '必要な社内承認・外部調整の有無を確認し、情報システム部門が調整する。承認者や承認結果は未確認のままとする。',
+      description: `必要な社内承認・外部調整の有無を確認し、${defaultCoordinationTeam ?? '調整担当'}が調整する。承認者や承認結果は未確認のままとする。`,
       completionCriteria: ['必要な承認役割・調整事項・判断結果を記録する'],
-      ownerTeam: '情報システム部門',
+      ownerTeam: defaultCoordinationTeam,
     },
   ]
 }
@@ -67,9 +67,13 @@ const initialWorkItemUpdates = (assessment: Assessment) => {
 
 export function CorrectionForm({
   assessment,
+  ownerTeams,
+  defaultCoordinationTeam,
   onRevised,
 }: {
   assessment: Assessment
+  ownerTeams: string[]
+  defaultCoordinationTeam: string | null
   onRevised: (id: string) => Promise<void>
 }) {
   const [form, setForm] = useState<Correction>(
@@ -108,7 +112,10 @@ export function CorrectionForm({
           applicableKind: null,
           reason: '',
           workItemUpdates: initialWorkItemUpdates(assessment),
-          workItemAdditions: initialWorkItemAdditions(assessment),
+          workItemAdditions: initialWorkItemAdditions(
+            assessment,
+            defaultCoordinationTeam,
+          ),
         },
   )
   const [error, setError] = useState(''),
@@ -450,9 +457,13 @@ export function CorrectionForm({
               }
             >
               <option value="">担当確認後に選択</option>
-              <option value="インフラ部門">インフラ部門</option>
-              <option value="アプリ部門">アプリ部門</option>
-              <option value="情報システム部門">情報システム部門</option>
+              {[...new Set([...ownerTeams, item.ownerTeam ?? ''])]
+                .filter(Boolean)
+                .map((ownerTeam) => (
+                  <option key={ownerTeam} value={ownerTeam}>
+                    {ownerTeam}
+                  </option>
+                ))}
             </select>
           </label>
           <button

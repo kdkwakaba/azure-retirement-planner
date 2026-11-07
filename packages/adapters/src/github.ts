@@ -176,9 +176,10 @@ export function managedIssueContent(
 ): string {
   // Work Itemの承認済み作業内容を転記し、Resource ID・メールは外部へ複製しない。
   return [
-    ...(item.title.startsWith('[SYNTHETIC UAT]')
+    ...(item.title.startsWith('[TEST MODE EVALUATION]') ||
+    item.title.startsWith('[SYNTHETIC UAT]')
       ? [
-          '> **合成UAT** — 合成データのみを使用します。Azureリソースの変更は実行しません。',
+          '> **テストモード評価** — 合成データのみを使用します。Azureリソースの変更は実行しません。',
         ]
       : []),
     `カテゴリ: ${japaneseCategory(item.category)}`,
@@ -436,15 +437,17 @@ export class GitHubClient {
     await this.ensureLabels(labels)
     const result = z.object({ node_id: z.string(), html_url: z.url() }).parse(
       await this.request(`/repos/${this.owner}/${this.repo}/issues`, {
-        title: item.title.startsWith('[SYNTHETIC UAT]')
-          ? `[ARP][SYNTHETIC UAT][${japaneseCategory(item.category)}] ${boundedTitle(item.title)} (${item.id.slice(0, 8)})`.slice(
-              0,
-              256,
-            )
-          : `[ARP][${japaneseCategory(item.category)}] ${boundedTitle(item.title)} (${item.id.slice(0, 8)})`.slice(
-              0,
-              256,
-            ),
+        title:
+          item.title.startsWith('[TEST MODE EVALUATION]') ||
+          item.title.startsWith('[SYNTHETIC UAT]')
+            ? `[ARP][TEST MODE EVALUATION][${japaneseCategory(item.category)}] ${boundedTitle(item.title)} (${item.id.slice(0, 8)})`.slice(
+                0,
+                256,
+              )
+            : `[ARP][${japaneseCategory(item.category)}] ${boundedTitle(item.title)} (${item.id.slice(0, 8)})`.slice(
+                0,
+                256,
+              ),
         body: issueText(item),
         ...(labels.length ? { labels } : {}),
       }),

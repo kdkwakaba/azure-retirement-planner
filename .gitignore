@@ -14,5 +14,7 @@ infra/**/*.json
 !infra/runtime-policy.json
 .azure/
 data/
+.work/
+outputs/
 *.log
 *.zip

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import workflowPolicyData from '../../../config/workflow-policy.json' with { type: 'json' }
+import bundledWorkflowPolicyData from '../../../config/workflow-policy.json' with { type: 'json' }
 import { randomUUID } from 'node:crypto'
 import type {
   Assessment,
@@ -58,8 +58,38 @@ import {
   persistSharePointFolderSnapshot,
 } from '@arp/adapters'
 
+function workflowPolicyConfiguration(): unknown {
+  const configured = process.env.WORKFLOW_POLICY_JSON?.trim()
+  if (!configured) return bundledWorkflowPolicyData
+  try {
+    return JSON.parse(configured) as unknown
+  } catch {
+    return null
+  }
+}
+
+export function workflowPolicyForReview() {
+  const parsed = workflowPolicySchema.safeParse(workflowPolicyConfiguration())
+  if (!parsed.success)
+    return {
+      valid: false,
+      ownerTeams: [],
+      defaultCoordinationTeam: null,
+    }
+  const ownerTeams = parsed.data.roles
+    .filter((role) => role.kind === 'Team' || role.kind === 'Department')
+    .map((role) => role.displayName)
+    .filter((name, index, all) => all.indexOf(name) === index)
+  const defaultCoordinationTeam =
+    parsed.data.roles.find(
+      (role) => role.id === parsed.data.defaultCoordinationRoleId,
+    )?.displayName ?? null
+  return { valid: true, ownerTeams, defaultCoordinationTeam }
+}
+
 export function applyReviewWorkflowPolicy(input: Assessment): Assessment {
-  const parsed = workflowPolicySchema.safeParse(workflowPolicyData)
+  const policyData = workflowPolicyConfiguration()
+  const parsed = workflowPolicySchema.safeParse(policyData)
   if (!parsed.success)
     throw new Error('Workflow policy configuration is invalid')
   const result = structuredClone(input)
@@ -70,7 +100,7 @@ export function applyReviewWorkflowPolicy(input: Assessment): Assessment {
   )
   result.workItems = routing.workItems
   result.workflowPolicyVersion = parsed.data.version
-  result.workflowPolicyHash = hash(workflowPolicyData)
+  result.workflowPolicyHash = hash(policyData)
   result.humanReviewRequired = true
   result.reviewReasons = [
     ...new Set([
@@ -87,7 +117,10 @@ export function applyReviewWorkflowPolicy(input: Assessment): Assessment {
   result.packageHash = packageHash(result)
   return assessmentSchema.parse(result)
 }
-import { applySyntheticUatDecision } from './uat.ts'
+import {
+  applyTestModeEvaluationDecision,
+  isTestModeEvaluationTrackingId,
+} from './test-mode-evaluation.ts'
 import { sharePointSourceModeEnabled } from './sharepoint-mode.ts'
 
 export function config() {
@@ -191,7 +224,7 @@ export function isTestReevaluation(
   return assessment.reevaluation !== undefined
 }
 
-export async function evaluateSyntheticUat(
+export async function evaluateTestModeEvaluation(
   source: Assessment,
 ): Promise<Assessment> {
   const settings = config()
@@ -199,9 +232,9 @@ export async function evaluateSyntheticUat(
   const endpoint = process.env.DECISION_ENDPOINT
   const deployment = process.env.DECISION_DEPLOYMENT
   if (!endpoint || !deployment)
-    throw new Error('Decision-1 is not configured for synthetic UAT')
+    throw new Error('Decision-1 is not configured for test-mode evaluation')
 
-  const assessmentId = hash({ syntheticUatDecisionRun: randomUUID() })
+  const assessmentId = hash({ testModeEvaluationDecisionRun: randomUUID() })
   const asOf = new Date().toISOString().slice(0, 10)
   const startedAt = Date.now()
   let requestStarted = false
@@ -221,7 +254,7 @@ export async function evaluateSyntheticUat(
         ...grounding.state,
         missingInformation: [
           ...source.missingInformation,
-          '合成UATデータであり、Microsoft公式通知・実期限・実環境の事実ではありません',
+          'テストモード評価データであり、Microsoft公式通知・実期限・実環境の事実ではありません',
         ],
         asOf,
       },
@@ -259,7 +292,7 @@ export async function evaluateSyntheticUat(
       failureCategory: null,
       httpStatus: null,
     })
-    return applySyntheticUatDecision(
+    return applyTestModeEvaluationDecision(
       source,
       output.decision,
       [decisionInvocation, explanationInvocation],
@@ -352,7 +385,7 @@ export async function synchronize(assessmentIds: string[] = []): Promise<{
   for (const assessmentId of assessmentIds) {
     const assessment = await store.assessment(assessmentId)
     if (
-      assessment.event.trackingId === 'ARP-SYNTHETIC-UAT-001' ||
+      isTestModeEvaluationTrackingId(assessment.event.trackingId) ||
       assessment.event.classification === 'OutOfScope' ||
       assessment.humanContext?.scopeDisposition === 'OutOfScope'
     )
@@ -630,7 +663,7 @@ export async function processDecisionReevaluation(
     if (
       !prior ||
       prior.assessmentId !== source.id ||
-      source.event.trackingId === 'ARP-SYNTHETIC-UAT-001'
+      isTestModeEvaluationTrackingId(source.event.trackingId)
     ) {
       await store.finishDecisionReevaluation(
         runId,
@@ -728,8 +761,9 @@ async function assessWorkload(
     documentGrounding && hasConfirmedDocumentFacts
       ? confirmedDocumentGroundingInputHash(documentGrounding)
       : null
-  const policyHash = hash(workflowPolicyData)
-  const policyParsed = workflowPolicySchema.safeParse(workflowPolicyData)
+  const policyData = workflowPolicyConfiguration()
+  const policyHash = hash(policyData)
+  const policyParsed = workflowPolicySchema.safeParse(policyData)
   const officialReferenceVersions = event.evidence
     .filter((item) => item.officialUrl !== null)
     .map((item) => item.sourceVersion)

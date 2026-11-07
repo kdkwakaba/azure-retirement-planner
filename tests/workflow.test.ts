@@ -8,7 +8,7 @@ import {
   workflowPolicySchema,
 } from '@arp/domain'
 import { fixture, resourceId } from './fixtures.ts'
-import demoPolicy from '../config/examples/workflow-policy.demo.json' with { type: 'json' }
+import examplePolicy from '../config/examples/workflow-policy.example.json' with { type: 'json' }
 import departmentPolicy from '../config/workflow-policy.json' with { type: 'json' }
 
 const policy = {
@@ -220,20 +220,20 @@ test('business coordination and commercial work categories are supported by poli
   assert.equal(extended.assignmentRules.length, 2)
 })
 
-test('synthetic demo workflow policy conforms to the runtime contract', () => {
-  const parsed = workflowPolicySchema.parse(demoPolicy)
-  assert.equal(parsed.version, 'demo-synthetic-1')
+test('example workflow policy conforms to the runtime contract', () => {
+  const parsed = workflowPolicySchema.parse(examplePolicy)
+  assert.equal(parsed.version, 'example-synthetic-1')
   assert.ok(
-    parsed.roles.every((role) => role.displayName.startsWith('サンプル: ')),
+    parsed.roles.every((role) => !role.displayName.startsWith('サンプル: ')),
   )
 })
 
 test('business workflow templates generate only triggered, evidence-backed sample tasks', () => {
-  const demo = workflowPolicySchema.parse(demoPolicy)
+  const example = workflowPolicySchema.parse(examplePolicy)
   const assessment = fixture()
   const policy = {
-    ...demo,
-    businessContextProfiles: demo.businessContextProfiles.map((profile) => ({
+    ...example,
+    businessContextProfiles: example.businessContextProfiles.map((profile) => ({
       ...profile,
       workloadId: assessment.workloadId,
     })),
@@ -260,7 +260,7 @@ test('business workflow templates generate only triggered, evidence-backed sampl
     generated.workItems.every((item) => item.necessity === 'Recommended'),
   )
   assert.equal(generated.evidence.length, 1)
-  assert.match(generated.evidence[0]!.fact, /合成デモデータ/)
+  assert.match(generated.evidence[0]!.fact, /合成例データ/)
   assert.ok(
     generated.workItems.every((item) =>
       item.evidenceIds.includes(generated.evidence[0]!.id),
@@ -269,11 +269,11 @@ test('business workflow templates generate only triggered, evidence-backed sampl
 })
 
 test('business profile does not create budget approval before additional cost is confirmed', () => {
-  const demo = workflowPolicySchema.parse(demoPolicy)
+  const example = workflowPolicySchema.parse(examplePolicy)
   const assessment = fixture()
   const policy = {
-    ...demo,
-    businessContextProfiles: demo.businessContextProfiles.map((profile) => ({
+    ...example,
+    businessContextProfiles: example.businessContextProfiles.map((profile) => ({
       ...profile,
       workloadId: assessment.workloadId,
       additionalCost: 'Possible' as const,
@@ -298,8 +298,8 @@ test('business profile does not create budget approval before additional cost is
   assert.equal(generated.workItems[0]!.necessity, 'Recommended')
 })
 
-test('business task generation does not apply demo profiles to unmatched workloads', () => {
-  const parsed = workflowPolicySchema.parse(demoPolicy)
+test('business task generation does not apply example profiles to unmatched workloads', () => {
+  const parsed = workflowPolicySchema.parse(examplePolicy)
   const assessment = fixture()
   const result = generateBusinessWorkflowTasks({
     policy: parsed,
@@ -314,7 +314,7 @@ test('business task generation does not apply demo profiles to unmatched workloa
 })
 
 test('business tasks remain recommended for uncertain resources and validate with deprecation events', () => {
-  const demo = workflowPolicySchema.parse(demoPolicy)
+  const example = workflowPolicySchema.parse(examplePolicy)
   const assessment = fixture()
   assessment.resources[0]!.classification = 'Unknown'
   assessment.resources[0]!.verificationRequired = true
@@ -327,8 +327,8 @@ test('business tasks remain recommended for uncertain resources and validate wit
     evidenceIds: [assessment.event.evidence[0]!.id],
   })
   const policy = {
-    ...demo,
-    businessContextProfiles: demo.businessContextProfiles.map((profile) => ({
+    ...example,
+    businessContextProfiles: example.businessContextProfiles.map((profile) => ({
       ...profile,
       workloadId: assessment.workloadId,
     })),
@@ -357,11 +357,11 @@ test('business tasks remain recommended for uncertain resources and validate wit
 })
 
 test('unknown vendor use proposes recommended verification without assuming a vendor or contract', () => {
-  const demo = workflowPolicySchema.parse(demoPolicy)
+  const example = workflowPolicySchema.parse(examplePolicy)
   const assessment = fixture()
   const policy = {
-    ...demo,
-    businessContextProfiles: demo.businessContextProfiles.map((profile) => ({
+    ...example,
+    businessContextProfiles: example.businessContextProfiles.map((profile) => ({
       ...profile,
       workloadId: assessment.workloadId,
       businessImpact: 'Unknown' as const,
@@ -391,11 +391,11 @@ test('unknown vendor use proposes recommended verification without assuming a ve
 })
 
 test('budget and contract categories cannot bypass confirmed prerequisites through template triggers', () => {
-  const demo = workflowPolicySchema.parse(demoPolicy)
+  const example = workflowPolicySchema.parse(examplePolicy)
   const assessment = fixture()
   const policy = {
-    ...demo,
-    businessContextProfiles: demo.businessContextProfiles.map((profile) => ({
+    ...example,
+    businessContextProfiles: example.businessContextProfiles.map((profile) => ({
       ...profile,
       workloadId: assessment.workloadId,
       businessImpact: 'Confirmed' as const,
@@ -404,7 +404,7 @@ test('budget and contract categories cannot bypass confirmed prerequisites throu
       contractReview: 'Required' as const,
     })),
     businessTaskTemplates: [
-      ...demo.businessTaskTemplates,
+      ...example.businessTaskTemplates,
       {
         id: 'unsafe-budget-trigger',
         trigger: 'BusinessImpact' as const,
@@ -443,11 +443,11 @@ test('budget and contract categories cannot bypass confirmed prerequisites throu
 })
 
 test('business task IDs remain stable across routing-only policy version bumps', () => {
-  const demo = workflowPolicySchema.parse(demoPolicy)
+  const example = workflowPolicySchema.parse(examplePolicy)
   const assessment = fixture()
   const policy = {
-    ...demo,
-    businessContextProfiles: demo.businessContextProfiles.map((profile) => ({
+    ...example,
+    businessContextProfiles: example.businessContextProfiles.map((profile) => ({
       ...profile,
       workloadId: assessment.workloadId,
     })),

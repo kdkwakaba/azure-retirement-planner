@@ -51,7 +51,8 @@ const businessContextProfileSchema = z
   .object({
     workloadId: z.string().regex(/^synthetic-[a-z0-9][a-z0-9-]{1,100}$/),
     displayLabel: z.string().min(1).max(120),
-    dataClassification: z.literal('SyntheticDemo'),
+    // Accept SyntheticDemo for existing deployment policies.
+    dataClassification: z.enum(['SyntheticExample', 'SyntheticDemo']),
     businessImpact: z.enum(['Confirmed', 'None', 'Unknown']),
     vendorUse: z.enum(['Confirmed', 'No', 'Unknown']),
     additionalCost: z.enum(['Confirmed', 'Possible', 'None', 'Unknown']),
@@ -95,6 +96,7 @@ export const workflowPolicySchema = z
   .object({
     schemaVersion: z.literal('1'),
     version: z.string().min(1).max(100),
+    defaultCoordinationRoleId: z.string().nullable().optional(),
     roles: z.array(roleSchema),
     assignmentRules: z.array(assignmentRuleSchema),
     sequence: z.array(sequenceRuleSchema),
@@ -104,6 +106,15 @@ export const workflowPolicySchema = z
   .strict()
   .superRefine((policy, context) => {
     const roles = new Map(policy.roles.map((role) => [role.id, role]))
+    if (
+      policy.defaultCoordinationRoleId &&
+      roles.get(policy.defaultCoordinationRoleId)?.kind !== 'Department'
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['defaultCoordinationRoleId'],
+        message: '既定の調整RoleはDepartmentとして定義してください',
+      })
     if (roles.size !== policy.roles.length)
       context.addIssue({
         code: 'custom',
@@ -418,7 +429,7 @@ export function generateBusinessWorkflowTasks(input: {
       ...input.resources.map((resource) => resource.id),
     ],
     fact: [
-      `合成デモデータ (${profile.displayLabel})`,
+      `合成例データ (${profile.displayLabel})`,
       `業務影響=${profile.businessImpact}`,
       `ベンダー利用=${profile.vendorUse}`,
       `追加費用=${profile.additionalCost}`,
@@ -441,7 +452,7 @@ export function generateBusinessWorkflowTasks(input: {
       .digest('hex'),
     category: template.category,
     title: template.title,
-    description: `${template.description} (合成デモ用業務コンテキスト: ${profile.displayLabel})`,
+    description: `${template.description} (合成例の業務コンテキスト: ${profile.displayLabel})`,
     workloadId: input.workloadId,
     resourceIds: input.resources.map((resource) => resource.id),
     ownerTeam: null,
@@ -466,7 +477,7 @@ export function generateBusinessWorkflowTasks(input: {
     confidence: {
       kind: 'EvidenceSupport' as const,
       value: null,
-      method: `明示された合成デモ業務コンテキストとテンプレート ${template.id}`,
+      method: `明示された合成例の業務コンテキストとテンプレート ${template.id}`,
       limitations: ['実企業の業務情報・担当・費用を表すものではない'],
     },
   }))
