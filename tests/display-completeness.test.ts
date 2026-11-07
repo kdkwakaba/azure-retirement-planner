@@ -405,7 +405,7 @@ test('review reasons omit model status and scheduling notes', () => {
   )
   assert.match(
     reviewReasonDisplay('担当チーム候補が設定されていません'),
-    /調整担当が初動調整/,
+    /調整窓口が初動調整/,
   )
   assert.equal(
     isModelDecisionStatusOnlyReviewReason('モデル判断を確定できない'),
